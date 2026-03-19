@@ -26,6 +26,11 @@
   <div class="flex items-center justify-center min-h-screen">
     <div class="label text-text-muted">loading</div>
   </div>
+{:else if $route.isNoAccess}
+  <div class="flex flex-col items-center justify-center min-h-screen gap-4">
+    <div class="label text-danger">access denied</div>
+    <div class="text-sm text-text-muted">you need an invite to join jerboa</div>
+  </div>
 {:else if !$user}
   <Login />
 {:else}

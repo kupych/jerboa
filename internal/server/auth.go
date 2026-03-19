@@ -111,7 +111,7 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !hasInvite {
-			http.Redirect(w, r, h.baseURL+"/#/no-access", http.StatusFound)
+			http.Redirect(w, r, h.baseURL+"/no-access", http.StatusFound)
 			return
 		}
 	}

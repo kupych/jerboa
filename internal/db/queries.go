@@ -31,17 +31,17 @@ func (q *Queries) UpsertUser(ctx context.Context, email, displayName, avatarURL 
 		ON CONFLICT (email) DO UPDATE SET
 			display_name = COALESCE(NULLIF($2, ''), users.display_name),
 			avatar_url = COALESCE(NULLIF($3, ''), users.avatar_url)
-		RETURNING id, email, display_name, avatar_url, created_at
-	`, email, displayName, avatarURL).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt)
+		RETURNING id, email, display_name, avatar_url, is_admin, created_at
+	`, email, displayName, avatarURL).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt)
 	return &u, err
 }
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	var u models.User
 	err := q.pool.QueryRow(ctx, `
-		SELECT id, email, display_name, avatar_url, created_at
+		SELECT id, email, display_name, avatar_url, is_admin, created_at
 		FROM users WHERE id = $1
-	`, id).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt)
+	`, id).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -66,10 +66,10 @@ func (q *Queries) CreateSession(ctx context.Context, userID uuid.UUID, ttl time.
 func (q *Queries) GetSession(ctx context.Context, token string) (*models.User, error) {
 	var u models.User
 	err := q.pool.QueryRow(ctx, `
-		SELECT u.id, u.email, u.display_name, u.avatar_url, u.created_at
+		SELECT u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
 		FROM sessions s JOIN users u ON s.user_id = u.id
 		WHERE s.token = $1 AND s.expires_at > now()
-	`, token).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt)
+	`, token).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -146,7 +146,7 @@ func (q *Queries) IsBandMember(ctx context.Context, bandID, userID uuid.UUID) (b
 func (q *Queries) GetBandMembers(ctx context.Context, bandID uuid.UUID) ([]models.BandMember, error) {
 	rows, err := q.pool.Query(ctx, `
 		SELECT bm.band_id, bm.user_id, bm.role, bm.joined_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.created_at
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
 		FROM band_members bm JOIN users u ON bm.user_id = u.id
 		WHERE bm.band_id = $1
 		ORDER BY bm.joined_at
@@ -161,7 +161,7 @@ func (q *Queries) GetBandMembers(ctx context.Context, bandID uuid.UUID) ([]model
 		var m models.BandMember
 		var u models.User
 		if err := rows.Scan(&m.BandID, &m.UserID, &m.Role, &m.JoinedAt,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt); err != nil {
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		m.User = &u
@@ -357,7 +357,7 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
 		       t.status, t.tags, t.notes, t.song_id, t.source_url, t.created_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.created_at,
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
 		       s.name
 		FROM tracks t
 		JOIN users u ON t.uploaded_by = u.id
@@ -366,7 +366,7 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 	`, id).Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
 		&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
 		&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL, &t.CreatedAt,
-		&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt,
+		&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
 		&songName)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -384,7 +384,7 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
 		       t.status, t.tags, t.notes, t.song_id, t.source_url, t.created_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.created_at,
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
 		       s.name
 		FROM tracks t
 		JOIN users u ON t.uploaded_by = u.id
@@ -406,7 +406,7 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 		if err := rows.Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
 			&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
 			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL, &t.CreatedAt,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt,
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
 			&songName); err != nil {
 			return nil, err
 		}
@@ -444,7 +444,7 @@ func (q *Queries) DeleteTrack(ctx context.Context, id uuid.UUID) (string, error)
 func (q *Queries) ListTrackPersonnel(ctx context.Context, trackID uuid.UUID) ([]models.TrackPersonnel, error) {
 	rows, err := q.pool.Query(ctx, `
 		SELECT tp.track_id, tp.user_id, tp.role,
-		       u.id, u.email, u.display_name, u.avatar_url, u.created_at
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
 		FROM track_personnel tp JOIN users u ON tp.user_id = u.id
 		WHERE tp.track_id = $1
 		ORDER BY tp.role, u.display_name
@@ -459,7 +459,7 @@ func (q *Queries) ListTrackPersonnel(ctx context.Context, trackID uuid.UUID) ([]
 		var p models.TrackPersonnel
 		var u models.User
 		if err := rows.Scan(&p.TrackID, &p.UserID, &p.Role,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt); err != nil {
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		p.User = &u
@@ -496,7 +496,7 @@ func (q *Queries) ListComments(ctx context.Context, trackID uuid.UUID) ([]models
 	rows, err := q.pool.Query(ctx, `
 		SELECT c.id, c.track_id, c.user_id, c.parent_id, c.body, c.timestamp_ms,
 		       c.created_at, c.updated_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.created_at
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
 		FROM comments c JOIN users u ON c.user_id = u.id
 		WHERE c.track_id = $1
 		ORDER BY c.timestamp_ms ASC NULLS LAST, c.created_at ASC
@@ -512,7 +512,7 @@ func (q *Queries) ListComments(ctx context.Context, trackID uuid.UUID) ([]models
 		var u models.User
 		if err := rows.Scan(&c.ID, &c.TrackID, &c.UserID, &c.ParentID, &c.Body, &c.TimestampMS,
 			&c.CreatedAt, &c.UpdatedAt,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt); err != nil {
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		c.User = &u

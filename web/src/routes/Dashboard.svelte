@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { api, apiPost } from "../lib/api";
   import { navigate } from "../lib/stores/router";
+  import { user } from "../lib/stores/auth";
 
   interface Band {
     id: string;
@@ -50,16 +51,18 @@
   <!-- Section header -->
   <div class="flex items-center justify-between mb-8">
     <h2 class="label text-text-secondary font-display">bands</h2>
-    <button
-      onclick={() => (showCreate = !showCreate)}
-      class="label text-accent hover:text-accent-hover transition-colors flex items-center gap-2"
-    >
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-        <line x1="12" y1="5" x2="12" y2="19"/>
-        <line x1="5" y1="12" x2="19" y2="12"/>
-      </svg>
-      new band
-    </button>
+    {#if $user?.is_admin}
+      <button
+        onclick={() => (showCreate = !showCreate)}
+        class="label text-accent hover:text-accent-hover transition-colors flex items-center gap-2"
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        new band
+      </button>
+    {/if}
   </div>
 
   {#if showCreate}

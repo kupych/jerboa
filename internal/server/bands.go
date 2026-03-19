@@ -46,6 +46,11 @@ func (h *BandHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *BandHandler) Create(w http.ResponseWriter, r *http.Request) {
 	user := UserFrom(r.Context())
 
+	if !user.IsAdmin {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
 	var body struct {
 		Name string `json:"name"`
 	}
@@ -132,7 +137,7 @@ func (h *BandHandler) Invite(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"invite_url": h.baseURL + "/#/invite/" + invite.Token,
+		"invite_url": h.baseURL + "/invite/" + invite.Token,
 	})
 }
 
