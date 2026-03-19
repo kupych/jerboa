@@ -50,38 +50,38 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="border border-dashed p-10 text-center transition-colors
+  class="border border-dashed p-12 text-center transition-colors
     {isDragging ? 'border-accent bg-accent-muted' : 'border-border hover:border-text-muted'}"
   ondragover={(e) => { e.preventDefault(); isDragging = true; }}
   ondragleave={() => (isDragging = false)}
   ondrop={handleDrop}
 >
   {#if uploading}
-    <div class="space-y-4">
-      <div class="text-sm tracking-[0.2em] uppercase text-text-secondary">uploading</div>
+    <div class="space-y-5">
+      <div class="label text-text-secondary">uploading</div>
       <div class="w-full bg-bg-primary h-1">
         <div
           class="bg-accent h-1 transition-all duration-300"
           style="width: {progress}%"
         ></div>
       </div>
-      <div class="text-xs font-mono text-text-muted">{progress}%</div>
+      <div class="label-sm font-mono text-text-muted">{progress}%</div>
     </div>
   {:else}
-    <div class="space-y-3">
+    <div class="space-y-4">
       <svg class="mx-auto text-text-muted" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
         <polyline points="17 8 12 3 7 8"/>
         <line x1="12" y1="3" x2="12" y2="15"/>
       </svg>
-      <div class="text-sm text-text-secondary tracking-wider">
+      <div class="text-base text-text-secondary tracking-wider font-semibold">
         drop audio or
         <button
           onclick={() => fileInput?.click()}
-          class="text-accent hover:text-accent-hover underline underline-offset-2"
+          class="text-accent hover:text-accent-hover underline underline-offset-4"
         >browse</button>
       </div>
-      <div class="text-[10px] tracking-[0.2em] uppercase text-text-muted">
+      <div class="label-sm text-text-muted">
         mp3 / wav / flac / ogg / aac / m4a / aiff / opus
       </div>
     </div>
@@ -95,6 +95,6 @@
   {/if}
 
   {#if error}
-    <div class="mt-3 text-xs text-danger tracking-wider">{error}</div>
+    <div class="mt-4 label-sm text-danger">{error}</div>
   {/if}
 </div>

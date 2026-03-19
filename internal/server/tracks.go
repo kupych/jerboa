@@ -234,6 +234,108 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, track.FilePath, track.CreatedAt, f)
 }
 
+func (h *TrackHandler) UpdateMeta(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	trackID, err := uuid.Parse(chi.URLParam(r, "trackID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid track id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || !isMember {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	track, err := h.queries.GetTrack(r.Context(), trackID)
+	if err != nil || track == nil || track.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Notes       string `json:"notes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Title == "" {
+		req.Title = track.Title
+	}
+
+	if err := h.queries.UpdateTrackMeta(r.Context(), trackID, req.Title, req.Description, req.Notes); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	track.Title = req.Title
+	track.Description = req.Description
+	track.Notes = req.Notes
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(track)
+}
+
+func (h *TrackHandler) UpdateTags(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	trackID, err := uuid.Parse(chi.URLParam(r, "trackID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid track id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || !isMember {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	track, err := h.queries.GetTrack(r.Context(), trackID)
+	if err != nil || track == nil || track.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Tags []string `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Tags == nil {
+		req.Tags = []string{}
+	}
+
+	if err := h.queries.UpdateTrackTags(r.Context(), trackID, req.Tags); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	track.Tags = req.Tags
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(track)
+}
+
 func (h *TrackHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	user := UserFrom(r.Context())
 	slug := chi.URLParam(r, "slug")
@@ -278,6 +380,104 @@ func (h *TrackHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *TrackHandler) ListPersonnel(w http.ResponseWriter, r *http.Request) {
+	track, err := h.verifyTrackAccess(r)
+	if err != nil || track == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	personnel, err := h.queries.ListTrackPersonnel(r.Context(), track.ID)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	if personnel == nil {
+		personnel = []models.TrackPersonnel{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(personnel)
+}
+
+func (h *TrackHandler) AddPersonnel(w http.ResponseWriter, r *http.Request) {
+	track, err := h.verifyTrackAccess(r)
+	if err != nil || track == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		UserID string `json:"user_id"`
+		Role   string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+
+	userID, err := uuid.Parse(req.UserID)
+	if err != nil {
+		http.Error(w, `{"error":"invalid user_id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.queries.AddTrackPersonnel(r.Context(), track.ID, userID, req.Role); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *TrackHandler) RemovePersonnel(w http.ResponseWriter, r *http.Request) {
+	track, err := h.verifyTrackAccess(r)
+	if err != nil || track == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	userID, err := uuid.Parse(chi.URLParam(r, "userID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid user_id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.queries.RemoveTrackPersonnel(r.Context(), track.ID, userID); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// verifyTrackAccess checks band membership and returns the track if accessible.
+func (h *TrackHandler) verifyTrackAccess(r *http.Request) (*models.Track, error) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	trackID, err := uuid.Parse(chi.URLParam(r, "trackID"))
+	if err != nil {
+		return nil, err
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		return nil, err
+	}
+
+	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || !isMember {
+		return nil, err
+	}
+
+	track, err := h.queries.GetTrack(r.Context(), trackID)
+	if err != nil || track == nil || track.BandID != band.ID {
+		return nil, err
+	}
+
+	return track, nil
 }
 
 func fileExt(name string) string {

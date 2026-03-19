@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api } from "../lib/api";
+  import { api, apiPost, apiPatch, apiDelete } from "../lib/api";
   import { ws } from "../lib/ws";
   import TrackCard from "../lib/components/TrackCard.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
@@ -12,6 +12,11 @@
     members: Array<{ user: { display_name: string; email: string }; role: string }>;
   }
 
+  interface Song {
+    id: string;
+    name: string;
+  }
+
   interface Track {
     id: string;
     title: string;
@@ -20,15 +25,48 @@
     format: string;
     file_size: number;
     status: string;
+    tags: string[];
+    song_id?: string;
+    song?: { id: string; name: string };
+    source_url?: string;
     created_at: string;
     uploader?: { display_name: string; email: string };
   }
 
   let band = $state<BandDetail | null>(null);
   let tracks = $state<Track[]>([]);
+  let songs = $state<Song[]>([]);
   let loading = $state(true);
   let showInviteUrl = $state("");
   let generatingInvite = $state(false);
+  let viewMode = $state<"all" | "songs">("all");
+  let newSongName = $state("");
+  let creatingSong = $state(false);
+  let showImport = $state(false);
+  let importUrl = $state("");
+  let importTitle = $state("");
+  let importing = $state(false);
+
+  // Group tracks by song
+  let tracksBySong = $derived(() => {
+    const grouped = new Map<string, { song: Song; tracks: Track[] }>();
+    const ungrouped: Track[] = [];
+
+    for (const track of tracks) {
+      if (track.song_id && track.song) {
+        const existing = grouped.get(track.song_id);
+        if (existing) {
+          existing.tracks.push(track);
+        } else {
+          grouped.set(track.song_id, { song: track.song, tracks: [track] });
+        }
+      } else {
+        ungrouped.push(track);
+      }
+    }
+
+    return { grouped: Array.from(grouped.values()), ungrouped };
+  });
 
   onMount(() => {
     loadData();
@@ -48,9 +86,10 @@
   async function loadData() {
     loading = true;
     try {
-      [band, tracks] = await Promise.all([
+      [band, tracks, songs] = await Promise.all([
         api<BandDetail>(`/api/bands/${slug}`),
         api<Track[]>(`/api/bands/${slug}/tracks`),
+        api<Song[]>(`/api/bands/${slug}/songs`),
       ]);
     } finally {
       loading = false;
@@ -59,6 +98,10 @@
 
   async function loadTracks() {
     tracks = await api<Track[]>(`/api/bands/${slug}/tracks`);
+  }
+
+  async function loadSongs() {
+    songs = await api<Song[]>(`/api/bands/${slug}/songs`);
   }
 
   async function generateInvite() {
@@ -74,19 +117,48 @@
   async function copyInvite() {
     await navigator.clipboard.writeText(showInviteUrl);
   }
+
+  async function createSong() {
+    if (!newSongName.trim()) return;
+    creatingSong = true;
+    try {
+      await apiPost(`/api/bands/${slug}/songs`, { name: newSongName.trim() });
+      newSongName = "";
+      await loadSongs();
+    } finally {
+      creatingSong = false;
+    }
+  }
+
+  async function importFromUrl() {
+    if (!importUrl.trim()) return;
+    importing = true;
+    try {
+      await apiPost(`/api/bands/${slug}/tracks/import`, {
+        url: importUrl.trim(),
+        title: importTitle.trim() || undefined,
+      });
+      importUrl = "";
+      importTitle = "";
+      showImport = false;
+      await loadTracks();
+    } finally {
+      importing = false;
+    }
+  }
 </script>
 
 {#if loading}
-  <div class="text-center py-16 text-text-muted text-xs tracking-[0.3em] uppercase">loading</div>
+  <div class="text-center py-20 label text-text-muted">loading</div>
 {:else if band}
   <div>
     <!-- Band header -->
-    <div class="flex items-start justify-between mb-8">
+    <div class="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8 md:mb-10">
       <div>
-        <h2 class="text-xl font-bold tracking-wider">{band.band.name}</h2>
-        <div class="flex items-center gap-2 mt-2">
+        <h2 class="text-xl md:text-2xl font-bold tracking-wider font-display">{band.band.name}</h2>
+        <div class="flex items-center gap-2 md:gap-3 mt-3 md:mt-4 flex-wrap">
           {#each band.members as member}
-            <span class="text-[10px] tracking-[0.15em] uppercase text-text-muted px-2 py-1 bg-bg-surface border border-border">
+            <span class="label-sm text-text-muted px-3 py-1.5 bg-bg-surface border border-border">
               {member.user.display_name || member.user.email}
               {#if member.role === "admin"}
                 <span class="text-accent">*</span>
@@ -96,61 +168,177 @@
         </div>
       </div>
 
-      <button
-        onclick={generateInvite}
-        disabled={generatingInvite}
-        class="text-xs tracking-[0.2em] uppercase text-text-muted hover:text-accent transition-colors flex items-center gap-2"
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-          <circle cx="8.5" cy="7" r="4"/>
-          <line x1="20" y1="8" x2="20" y2="14"/>
-          <line x1="23" y1="11" x2="17" y2="11"/>
-        </svg>
-        invite
-      </button>
+      <div class="flex items-center gap-4">
+        <button
+          onclick={() => (showImport = !showImport)}
+          class="label text-text-muted hover:text-accent transition-colors flex items-center gap-2"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          import url
+        </button>
+        <button
+          onclick={generateInvite}
+          disabled={generatingInvite}
+          class="label text-text-muted hover:text-accent transition-colors flex items-center gap-2"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="8.5" cy="7" r="4"/>
+            <line x1="20" y1="8" x2="20" y2="14"/>
+            <line x1="23" y1="11" x2="17" y2="11"/>
+          </svg>
+          invite
+        </button>
+      </div>
     </div>
 
     <!-- Invite URL -->
     {#if showInviteUrl}
-      <div class="mb-6 bg-bg-surface border border-accent/30 p-4 flex items-center gap-4">
+      <div class="mb-8 bg-bg-surface border border-accent/30 p-5 flex items-center gap-4">
         <input
           type="text"
           value={showInviteUrl}
           readonly
-          class="flex-1 bg-transparent text-xs text-text-secondary font-mono outline-none tracking-wider"
+          class="flex-1 bg-transparent label-sm text-text-secondary font-mono outline-none"
         />
         <button
           onclick={copyInvite}
-          class="text-xs tracking-[0.2em] uppercase text-accent hover:text-accent-hover shrink-0 transition-colors"
+          class="label text-accent hover:text-accent-hover shrink-0 transition-colors"
         >
           copy
         </button>
         <button
           onclick={() => (showInviteUrl = "")}
-          class="text-xs tracking-[0.2em] uppercase text-text-muted hover:text-text-secondary shrink-0 transition-colors"
+          class="label text-text-muted hover:text-text-secondary shrink-0 transition-colors"
         >
           dismiss
         </button>
       </div>
     {/if}
 
+    <!-- YouTube Import -->
+    {#if showImport}
+      <form
+        onsubmit={(e) => { e.preventDefault(); importFromUrl(); }}
+        class="mb-8 bg-bg-surface border border-border p-6 space-y-4"
+      >
+        <div>
+          <span class="label text-text-muted block mb-2">youtube url</span>
+          <input
+            bind:value={importUrl}
+            type="url"
+            placeholder="https://www.youtube.com/watch?v=..."
+            class="w-full bg-bg-primary border border-border px-4 py-3 text-base text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+          />
+        </div>
+        <div>
+          <span class="label text-text-muted block mb-2">title (optional, auto-detected)</span>
+          <input
+            bind:value={importTitle}
+            type="text"
+            placeholder="Leave blank to use video title"
+            class="w-full bg-bg-primary border border-border px-4 py-3 text-base text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+          />
+        </div>
+        <div class="flex gap-4">
+          <button
+            type="submit"
+            disabled={importing || !importUrl.trim()}
+            class="px-6 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors"
+          >
+            {importing ? "importing..." : "import"}
+          </button>
+          <button
+            type="button"
+            onclick={() => (showImport = false)}
+            class="px-6 py-3 label text-text-muted hover:text-text-secondary transition-colors"
+          >
+            cancel
+          </button>
+        </div>
+      </form>
+    {/if}
+
     <!-- Upload -->
-    <div class="mb-6">
+    <div class="mb-8">
       <TrackUpload bandSlug={slug} onUploaded={loadTracks} />
     </div>
 
-    <!-- Tracks -->
-    <div class="space-y-2">
-      {#each tracks as track}
-        <TrackCard {track} bandSlug={slug} />
+    <!-- View toggle + Songs -->
+    <div class="flex items-center justify-between mb-6">
+      <div class="flex gap-4">
+        <button
+          onclick={() => (viewMode = "all")}
+          class="label transition-colors {viewMode === 'all' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+        >
+          all tracks
+        </button>
+        <button
+          onclick={() => (viewMode = "songs")}
+          class="label transition-colors {viewMode === 'songs' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+        >
+          by song
+        </button>
+      </div>
+
+      {#if viewMode === "songs"}
+        <form onsubmit={(e) => { e.preventDefault(); createSong(); }} class="flex gap-2">
+          <input
+            bind:value={newSongName}
+            type="text"
+            placeholder="+ new song"
+            disabled={creatingSong}
+            class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40"
+          />
+        </form>
+      {/if}
+    </div>
+
+    <!-- Track list -->
+    {#if viewMode === "all"}
+      <div class="space-y-3">
+        {#each tracks as track}
+          <TrackCard {track} bandSlug={slug} />
+        {/each}
+
+        {#if tracks.length === 0}
+          <div class="text-center py-20 label text-text-muted">
+            no tracks yet
+          </div>
+        {/if}
+      </div>
+    {:else}
+      <!-- Grouped by song -->
+      {#each tracksBySong().grouped as { song, tracks: songTracks }}
+        <div class="mb-8">
+          <h3 class="label text-text-secondary mb-4 font-display">{song.name}</h3>
+          <div class="space-y-3">
+            {#each songTracks as track}
+              <TrackCard {track} bandSlug={slug} />
+            {/each}
+          </div>
+        </div>
       {/each}
 
+      {#if tracksBySong().ungrouped.length > 0}
+        <div class="mb-8">
+          <h3 class="label text-text-muted mb-4">ungrouped</h3>
+          <div class="space-y-3">
+            {#each tracksBySong().ungrouped as track}
+              <TrackCard {track} bandSlug={slug} />
+            {/each}
+          </div>
+        </div>
+      {/if}
+
       {#if tracks.length === 0}
-        <div class="text-center py-16 text-text-muted text-xs tracking-[0.3em] uppercase">
+        <div class="text-center py-20 label text-text-muted">
           no tracks yet
         </div>
       {/if}
-    </div>
+    {/if}
   </div>
 {/if}

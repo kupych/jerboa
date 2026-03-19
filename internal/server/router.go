@@ -28,6 +28,9 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	bandH := NewBandHandler(queries, cfg.BaseURL)
 	trackH := NewTrackHandler(queries, store, processor, hub, cfg.MaxUploadMB)
 	commentH := NewCommentHandler(queries, hub)
+	songH := NewSongHandler(queries)
+	importH := NewImportHandler(queries, store, processor, hub)
+	chatH := NewChatHandler(queries, hub)
 
 	// Auth routes (no auth middleware)
 	r.Get("/auth/login", authH.Login)
@@ -47,12 +50,28 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Post("/api/bands/{slug}/invite", bandH.Invite)
 		r.Post("/api/invite/{token}", bandH.AcceptInvite)
 
+		// Songs
+		r.Get("/api/bands/{slug}/songs", songH.List)
+		r.Post("/api/bands/{slug}/songs", songH.Create)
+		r.Delete("/api/bands/{slug}/songs/{songID}", songH.Delete)
+		r.Patch("/api/bands/{slug}/tracks/{trackID}/song", songH.AssignTrack)
+
 		// Tracks
 		r.Get("/api/bands/{slug}/tracks", trackH.List)
 		r.Post("/api/bands/{slug}/tracks", trackH.Upload)
+		r.Post("/api/bands/{slug}/tracks/import", importH.ImportURL)
 		r.Get("/api/bands/{slug}/tracks/{trackID}", trackH.Get)
 		r.Get("/api/bands/{slug}/tracks/{trackID}/stream", trackH.Stream)
+		r.Patch("/api/bands/{slug}/tracks/{trackID}", trackH.UpdateMeta)
+		r.Patch("/api/bands/{slug}/tracks/{trackID}/tags", trackH.UpdateTags)
+		r.Get("/api/bands/{slug}/tracks/{trackID}/personnel", trackH.ListPersonnel)
+		r.Post("/api/bands/{slug}/tracks/{trackID}/personnel", trackH.AddPersonnel)
+		r.Delete("/api/bands/{slug}/tracks/{trackID}/personnel/{userID}", trackH.RemovePersonnel)
 		r.Delete("/api/bands/{slug}/tracks/{trackID}", trackH.Delete)
+
+		// Chat
+		r.Get("/api/bands/{slug}/chat", chatH.List)
+		r.Post("/api/bands/{slug}/chat", chatH.Send)
 
 		// Comments
 		r.Get("/api/tracks/{trackID}/comments", commentH.List)

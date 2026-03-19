@@ -1,0 +1,3 @@
+ALTER TABLE tracks ADD COLUMN tags TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE tracks ADD COLUMN notes TEXT NOT NULL DEFAULT '';
+CREATE INDEX idx_tracks_tags ON tracks USING GIN(tags);

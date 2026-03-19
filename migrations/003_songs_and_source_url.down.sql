@@ -1,0 +1,4 @@
+DROP INDEX IF EXISTS idx_tracks_song_id;
+ALTER TABLE tracks DROP COLUMN IF EXISTS source_url;
+ALTER TABLE tracks DROP COLUMN IF EXISTS song_id;
+DROP TABLE IF EXISTS songs;

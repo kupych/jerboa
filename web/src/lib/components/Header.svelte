@@ -1,45 +1,59 @@
 <script lang="ts">
   import { user, logout } from "../stores/auth";
-  import { navigate } from "../stores/router";
+  import { navigate, route } from "../stores/router";
   import ThemeToggle from "./ThemeToggle.svelte";
   import { initials } from "../utils/format";
+
+  let { onChatToggle, chatOpen }: { onChatToggle: () => void; chatOpen: boolean } = $props();
 </script>
 
 <header class="border-b border-border bg-bg-secondary">
-  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+  <nav class="flex items-center justify-between h-16 md:h-20 mx-5 md:mx-12">
     <button
       onclick={() => navigate("/")}
-      class="text-base font-bold tracking-[0.35em] uppercase text-accent hover:text-accent-hover transition-colors"
+      class="text-lg font-bold tracking-[0.25em] uppercase text-accent hover:text-accent-hover transition-colors font-display"
     >
       jerboa
     </button>
 
-    <div class="flex items-center gap-4">
+    <div class="flex items-center gap-4 md:gap-6">
+      {#if $route.bandSlug}
+        <button
+          onclick={onChatToggle}
+          class="label transition-colors {chatOpen ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+          title="Chat"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+      {/if}
+
       <ThemeToggle />
 
       {#if $user}
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 md:gap-4">
           {#if $user.avatar_url}
             <img
               src={$user.avatar_url}
               alt=""
-              class="w-7 h-7 rounded-sm"
+              class="w-7 h-7 md:w-8 md:h-8"
             />
           {:else}
             <div
-              class="w-7 h-7 rounded-sm bg-accent/20 text-accent text-[11px] flex items-center justify-center font-bold tracking-wider"
+              class="w-7 h-7 md:w-8 md:h-8 bg-accent/15 text-accent text-[10px] md:text-[11px] flex items-center justify-center font-bold tracking-wider"
             >
               {initials($user.display_name || $user.email)}
             </div>
           {/if}
           <button
             onclick={() => logout()}
-            class="text-xs tracking-widest uppercase text-text-muted hover:text-text-secondary transition-colors"
+            class="label text-text-muted hover:text-text-secondary transition-colors"
           >
             out
           </button>
         </div>
       {/if}
     </div>
-  </div>
+  </nav>
 </header>

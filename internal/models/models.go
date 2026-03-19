@@ -47,6 +47,20 @@ type BandInvite struct {
 	CreatedAt time.Time  `json:"created_at"`
 }
 
+type Song struct {
+	ID        uuid.UUID `json:"id"`
+	BandID    uuid.UUID `json:"band_id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type TrackPersonnel struct {
+	TrackID uuid.UUID `json:"track_id"`
+	UserID  uuid.UUID `json:"user_id"`
+	Role    string    `json:"role"`
+	User    *User     `json:"user,omitempty"`
+}
+
 type Track struct {
 	ID           uuid.UUID       `json:"id"`
 	BandID       uuid.UUID       `json:"band_id"`
@@ -60,8 +74,23 @@ type Track struct {
 	SampleRate   int             `json:"sample_rate"`
 	FileSize     int64           `json:"file_size"`
 	Status       string          `json:"status"`
+	Tags         []string        `json:"tags"`
+	Notes        string          `json:"notes,omitempty"`
+	SongID       *uuid.UUID      `json:"song_id,omitempty"`
+	SourceURL    string          `json:"source_url,omitempty"`
 	CreatedAt    time.Time       `json:"created_at"`
-	Uploader     *User           `json:"uploader,omitempty"`
+	Uploader     *User             `json:"uploader,omitempty"`
+	Song         *Song             `json:"song,omitempty"`
+	Personnel    []TrackPersonnel  `json:"personnel,omitempty"`
+}
+
+type ChatMessage struct {
+	ID        uuid.UUID `json:"id"`
+	BandID    uuid.UUID `json:"band_id"`
+	UserID    uuid.UUID `json:"user_id"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	User      *User     `json:"user,omitempty"`
 }
 
 type Comment struct {

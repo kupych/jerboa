@@ -24,7 +24,7 @@
 
 {#if $authLoading}
   <div class="flex items-center justify-center min-h-screen">
-    <div class="text-text-muted text-sm tracking-widest uppercase">loading</div>
+    <div class="label text-text-muted">loading</div>
   </div>
 {:else if !$user}
   <Login />

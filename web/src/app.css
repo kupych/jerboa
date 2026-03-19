@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-primary: #101010;
-  --color-bg-secondary: #181818;
-  --color-bg-surface: #1e1e1e;
-  --color-bg-elevated: #282828;
-  --color-text-primary: #e8e8e8;
-  --color-text-secondary: #909090;
-  --color-text-muted: #505050;
-  --color-border: #2a2a2a;
+  --color-bg-primary: #0a0a0a;
+  --color-bg-secondary: #111111;
+  --color-bg-surface: #161616;
+  --color-bg-elevated: #1e1e1e;
+  --color-text-primary: #efefef;
+  --color-text-secondary: #a0a0a0;
+  --color-text-muted: #666666;
+  --color-border: #222222;
   --color-accent: #2ec4b6;
   --color-accent-hover: #4ad4c8;
   --color-accent-muted: #2ec4b622;
@@ -19,8 +19,8 @@
   --color-danger: #d42b2b;
   --color-success: #2baa5a;
 
-  --font-sans: "Rajdhani", system-ui, sans-serif;
-  --font-display: "Chakra Petch", "Rajdhani", system-ui, sans-serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Chakra Petch", "Inter", system-ui, sans-serif;
   --font-mono: "SF Mono", "Cascadia Code", ui-monospace, monospace;
 }
 
@@ -41,15 +41,11 @@
   --color-waveform-progress: #3dbdb2;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
 html {
   font-family: var(--font-sans);
+  font-size: 16px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
@@ -78,3 +74,31 @@ body {
   color: var(--color-accent);
 }
 
+/* Vectorheart utility: all small text gets weight */
+.label {
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.label-sm {
+  font-weight: 600;
+  font-size: 0.6rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+/* Small text needs weight on HiDPI */
+.text-sm {
+  font-weight: 500;
+}
+.text-xs {
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+/* Vectorheart dividers */
+.vr-divider {
+  color: var(--color-border);
+}

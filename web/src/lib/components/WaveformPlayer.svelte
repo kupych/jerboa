@@ -39,7 +39,7 @@
       barWidth: 2,
       barGap: 1,
       barRadius: 0,
-      height: 140,
+      height: 160,
       normalize: true,
       backend: "MediaElement",
     });
@@ -84,26 +84,26 @@
   }
 </script>
 
-<div class="bg-bg-surface border border-border p-5">
+<div class="bg-bg-surface border border-border p-6">
   <!-- Transport -->
-  <div class="flex items-center gap-4 mb-4">
+  <div class="flex items-center gap-5 mb-5">
     <button
       onclick={togglePlay}
-      class="w-9 h-9 flex items-center justify-center bg-accent hover:bg-accent-hover text-bg-primary transition-colors"
+      class="w-10 h-10 flex items-center justify-center bg-accent hover:bg-accent-hover text-bg-primary transition-colors"
     >
       {#if isPlaying}
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
           <rect x="1" y="1" width="3.5" height="10"/>
           <rect x="7.5" y="1" width="3.5" height="10"/>
         </svg>
       {:else}
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
           <polygon points="2,0 12,6 2,12"/>
         </svg>
       {/if}
     </button>
 
-    <div class="text-xs text-text-secondary font-mono tabular-nums tracking-wider">
+    <div class="label-sm text-text-secondary font-mono tabular-nums">
       {formatTimestamp(currentTime * 1000)}
       <span class="text-text-muted mx-1">/</span>
       {formatDuration(totalDuration * 1000)}
@@ -112,10 +112,10 @@
     {#if onTimestampClick}
       <button
         onclick={() => onTimestampClick!(Math.round(currentTime * 1000))}
-        class="ml-auto text-xs tracking-[0.15em] uppercase text-marker hover:text-marker-hover transition-colors flex items-center gap-1.5"
+        class="ml-auto label text-marker hover:text-marker-hover transition-colors flex items-center gap-2"
         title="Add comment at current position"
       >
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>
         comment
@@ -142,10 +142,10 @@
         <div class="absolute -top-1 -left-[3px] w-2 h-2 bg-marker"></div>
 
         {#if hoveredComment === comment.id}
-          <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-3 py-2 bg-bg-elevated border border-border text-xs whitespace-nowrap z-10">
-            <div class="text-text-secondary tracking-wider">{comment.user_name}</div>
-            <div class="text-text-primary mt-1 max-w-48 truncate">{comment.body}</div>
-            <div class="text-text-muted text-[10px] font-mono mt-1">{formatTimestamp(comment.timestamp_ms)}</div>
+          <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-4 py-3 bg-bg-elevated border border-border whitespace-nowrap z-10">
+            <div class="label-sm text-text-secondary">{comment.user_name}</div>
+            <div class="text-sm font-medium text-text-primary mt-1 max-w-48 truncate">{comment.body}</div>
+            <div class="text-text-muted label-sm font-mono mt-1">{formatTimestamp(comment.timestamp_ms)}</div>
           </div>
         {/if}
       </div>

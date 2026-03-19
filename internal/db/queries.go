@@ -253,6 +253,53 @@ func (q *Queries) AcceptInviteReturningBand(ctx context.Context, token string, u
 	return &b, tx.Commit(ctx)
 }
 
+// Songs
+
+func (q *Queries) CreateSong(ctx context.Context, bandID uuid.UUID, name string) (*models.Song, error) {
+	var s models.Song
+	err := q.pool.QueryRow(ctx, `
+		INSERT INTO songs (band_id, name) VALUES ($1, $2)
+		RETURNING id, band_id, name, created_at
+	`, bandID, name).Scan(&s.ID, &s.BandID, &s.Name, &s.CreatedAt)
+	return &s, err
+}
+
+func (q *Queries) ListSongs(ctx context.Context, bandID uuid.UUID) ([]models.Song, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, band_id, name, created_at FROM songs
+		WHERE band_id = $1 ORDER BY name
+	`, bandID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var songs []models.Song
+	for rows.Next() {
+		var s models.Song
+		if err := rows.Scan(&s.ID, &s.BandID, &s.Name, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		songs = append(songs, s)
+	}
+	return songs, nil
+}
+
+func (q *Queries) UpdateSong(ctx context.Context, id uuid.UUID, name string) error {
+	_, err := q.pool.Exec(ctx, `UPDATE songs SET name = $2 WHERE id = $1`, id, name)
+	return err
+}
+
+func (q *Queries) DeleteSong(ctx context.Context, id uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, `DELETE FROM songs WHERE id = $1`, id)
+	return err
+}
+
+func (q *Queries) SetTrackSong(ctx context.Context, trackID uuid.UUID, songID *uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, `UPDATE tracks SET song_id = $2 WHERE id = $1`, trackID, songID)
+	return err
+}
+
 // Tracks
 
 func (q *Queries) CreateTrack(ctx context.Context, t *models.Track) error {
@@ -261,6 +308,11 @@ func (q *Queries) CreateTrack(ctx context.Context, t *models.Track) error {
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at
 	`, t.BandID, t.Title, t.Description, t.UploadedBy, t.FilePath, t.FileSize, t.Status).Scan(&t.ID, &t.CreatedAt)
+}
+
+func (q *Queries) UpdateTrackFile(ctx context.Context, id uuid.UUID, filePath string, fileSize int64) error {
+	_, err := q.pool.Exec(ctx, `UPDATE tracks SET file_path = $2, file_size = $3 WHERE id = $1`, id, filePath, fileSize)
+	return err
 }
 
 func (q *Queries) UpdateTrackProcessed(ctx context.Context, id uuid.UUID, waveform []byte, durationMS int64, format string, sampleRate int) error {
@@ -280,21 +332,31 @@ func (q *Queries) UpdateTrackError(ctx context.Context, id uuid.UUID) error {
 func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, error) {
 	var t models.Track
 	var u models.User
+	var songID *uuid.UUID
+	var songName *string
 	err := q.pool.QueryRow(ctx, `
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
-		       t.status, t.created_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.created_at
-		FROM tracks t JOIN users u ON t.uploaded_by = u.id
+		       t.status, t.tags, t.notes, t.song_id, t.source_url, t.created_at,
+		       u.id, u.email, u.display_name, u.avatar_url, u.created_at,
+		       s.name
+		FROM tracks t
+		JOIN users u ON t.uploaded_by = u.id
+		LEFT JOIN songs s ON t.song_id = s.id
 		WHERE t.id = $1
 	`, id).Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
 		&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
-		&t.Status, &t.CreatedAt,
-		&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt)
+		&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL, &t.CreatedAt,
+		&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt,
+		&songName)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
 	t.Uploader = &u
+	t.SongID = songID
+	if songID != nil && songName != nil {
+		t.Song = &models.Song{ID: *songID, Name: *songName}
+	}
 	return &t, err
 }
 
@@ -302,9 +364,12 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 	rows, err := q.pool.Query(ctx, `
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
-		       t.status, t.created_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.created_at
-		FROM tracks t JOIN users u ON t.uploaded_by = u.id
+		       t.status, t.tags, t.notes, t.song_id, t.source_url, t.created_at,
+		       u.id, u.email, u.display_name, u.avatar_url, u.created_at,
+		       s.name
+		FROM tracks t
+		JOIN users u ON t.uploaded_by = u.id
+		LEFT JOIN songs s ON t.song_id = s.id
 		WHERE t.band_id = $1
 		ORDER BY t.created_at DESC
 	`, bandID)
@@ -317,16 +382,33 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 	for rows.Next() {
 		var t models.Track
 		var u models.User
+		var songID *uuid.UUID
+		var songName *string
 		if err := rows.Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
 			&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
-			&t.Status, &t.CreatedAt,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt); err != nil {
+			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL, &t.CreatedAt,
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt,
+			&songName); err != nil {
 			return nil, err
 		}
 		t.Uploader = &u
+		t.SongID = songID
+		if songID != nil && songName != nil {
+			t.Song = &models.Song{ID: *songID, Name: *songName}
+		}
 		tracks = append(tracks, t)
 	}
 	return tracks, nil
+}
+
+func (q *Queries) UpdateTrackMeta(ctx context.Context, id uuid.UUID, title, description, notes string) error {
+	_, err := q.pool.Exec(ctx, `UPDATE tracks SET title = $2, description = $3, notes = $4 WHERE id = $1`, id, title, description, notes)
+	return err
+}
+
+func (q *Queries) UpdateTrackTags(ctx context.Context, id uuid.UUID, tags []string) error {
+	_, err := q.pool.Exec(ctx, `UPDATE tracks SET tags = $2 WHERE id = $1`, id, tags)
+	return err
 }
 
 func (q *Queries) DeleteTrack(ctx context.Context, id uuid.UUID) (string, error) {
@@ -336,6 +418,49 @@ func (q *Queries) DeleteTrack(ctx context.Context, id uuid.UUID) (string, error)
 		return "", nil
 	}
 	return filePath, err
+}
+
+// Track Personnel
+
+func (q *Queries) ListTrackPersonnel(ctx context.Context, trackID uuid.UUID) ([]models.TrackPersonnel, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT tp.track_id, tp.user_id, tp.role,
+		       u.id, u.email, u.display_name, u.avatar_url, u.created_at
+		FROM track_personnel tp JOIN users u ON tp.user_id = u.id
+		WHERE tp.track_id = $1
+		ORDER BY tp.role, u.display_name
+	`, trackID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var personnel []models.TrackPersonnel
+	for rows.Next() {
+		var p models.TrackPersonnel
+		var u models.User
+		if err := rows.Scan(&p.TrackID, &p.UserID, &p.Role,
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		p.User = &u
+		personnel = append(personnel, p)
+	}
+	return personnel, nil
+}
+
+func (q *Queries) AddTrackPersonnel(ctx context.Context, trackID, userID uuid.UUID, role string) error {
+	_, err := q.pool.Exec(ctx, `
+		INSERT INTO track_personnel (track_id, user_id, role)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (track_id, user_id) DO UPDATE SET role = $3
+	`, trackID, userID, role)
+	return err
+}
+
+func (q *Queries) RemoveTrackPersonnel(ctx context.Context, trackID, userID uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, `DELETE FROM track_personnel WHERE track_id = $1 AND user_id = $2`, trackID, userID)
+	return err
 }
 
 // Comments
@@ -414,4 +539,61 @@ func (q *Queries) DeleteComment(ctx context.Context, id, userID uuid.UUID) error
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+// Chat
+
+func (q *Queries) CreateChatMessage(ctx context.Context, bandID, userID uuid.UUID, body string) (*models.ChatMessage, error) {
+	var m models.ChatMessage
+	m.User = &models.User{}
+	err := q.pool.QueryRow(ctx, `
+		WITH inserted AS (
+			INSERT INTO chat_messages (band_id, user_id, body)
+			VALUES ($1, $2, $3)
+			RETURNING id, band_id, user_id, body, created_at
+		)
+		SELECT i.id, i.band_id, i.user_id, i.body, i.created_at,
+		       u.display_name, u.email, u.avatar_url
+		FROM inserted i
+		JOIN users u ON u.id = i.user_id
+	`, bandID, userID, body).Scan(
+		&m.ID, &m.BandID, &m.UserID, &m.Body, &m.CreatedAt,
+		&m.User.DisplayName, &m.User.Email, &m.User.AvatarURL,
+	)
+	if err != nil {
+		return nil, err
+	}
+	m.User.ID = m.UserID
+	return &m, nil
+}
+
+func (q *Queries) ListChatMessages(ctx context.Context, bandID uuid.UUID, limit int) ([]models.ChatMessage, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT m.id, m.band_id, m.user_id, m.body, m.created_at,
+		       u.display_name, u.email, u.avatar_url
+		FROM chat_messages m
+		JOIN users u ON u.id = m.user_id
+		WHERE m.band_id = $1
+		ORDER BY m.created_at DESC
+		LIMIT $2
+	`, bandID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []models.ChatMessage
+	for rows.Next() {
+		var m models.ChatMessage
+		m.User = &models.User{}
+		if err := rows.Scan(
+			&m.ID, &m.BandID, &m.UserID, &m.Body, &m.CreatedAt,
+			&m.User.DisplayName, &m.User.Email, &m.User.AvatarURL,
+		); err != nil {
+			return nil, err
+		}
+		m.User.ID = m.UserID
+		messages = append(messages, m)
+	}
+	return messages, nil
 }
