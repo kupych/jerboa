@@ -33,19 +33,21 @@
 
       {#if $user}
         <div class="flex items-center gap-3 md:gap-4">
-          {#if $user.avatar_url}
-            <img
-              src={$user.avatar_url}
-              alt=""
-              class="w-7 h-7 md:w-8 md:h-8"
-            />
-          {:else}
-            <div
-              class="w-7 h-7 md:w-8 md:h-8 bg-accent/15 text-accent text-[10px] md:text-[11px] flex items-center justify-center font-bold tracking-wider"
-            >
-              {initials($user.display_name || $user.email)}
-            </div>
-          {/if}
+          <button onclick={() => navigate("/profile")} class="cursor-pointer" title="Profile">
+            {#if $user.avatar_url}
+              <img
+                src={$user.avatar_url}
+                alt=""
+                class="w-7 h-7 md:w-8 md:h-8"
+              />
+            {:else}
+              <div
+                class="w-7 h-7 md:w-8 md:h-8 bg-accent/15 text-accent text-[10px] md:text-[11px] flex items-center justify-center font-bold tracking-wider hover:bg-accent/25 transition-colors"
+              >
+                {initials($user.display_name || $user.email)}
+              </div>
+            {/if}
+          </button>
           <button
             onclick={() => logout()}
             class="label text-text-muted hover:text-text-secondary transition-colors"

@@ -9,6 +9,7 @@
   import BandView from "./routes/BandView.svelte";
   import TrackView from "./routes/TrackView.svelte";
   import InviteView from "./routes/InviteView.svelte";
+  import Profile from "./routes/Profile.svelte";
 
   onMount(() => {
     checkAuth();
@@ -35,7 +36,9 @@
   <Login />
 {:else}
   <Layout>
-    {#if $route.isInvite}
+    {#if $route.isProfile}
+      <Profile />
+    {:else if $route.isInvite}
       <InviteView token={$route.inviteToken!} />
     {:else if $route.isTrack}
       <TrackView slug={$route.bandSlug!} trackId={$route.trackId!} />

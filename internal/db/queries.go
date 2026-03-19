@@ -36,6 +36,16 @@ func (q *Queries) UpsertUser(ctx context.Context, email, displayName, avatarURL 
 	return &u, err
 }
 
+func (q *Queries) UpdateUserProfile(ctx context.Context, id uuid.UUID, displayName string) (*models.User, error) {
+	var u models.User
+	err := q.pool.QueryRow(ctx, `
+		UPDATE users SET display_name = $2
+		WHERE id = $1
+		RETURNING id, email, display_name, avatar_url, is_admin, created_at
+	`, id, displayName).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt)
+	return &u, err
+}
+
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	var u models.User
 	err := q.pool.QueryRow(ctx, `

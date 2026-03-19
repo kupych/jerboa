@@ -165,3 +165,24 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
 }
+
+func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+
+	var req struct {
+		DisplayName string `json:"display_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DisplayName == "" {
+		http.Error(w, `{"error":"display_name is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	updated, err := h.queries.UpdateUserProfile(r.Context(), user.ID, req.DisplayName)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updated)
+}

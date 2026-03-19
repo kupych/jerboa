@@ -42,6 +42,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 
 		r.Post("/auth/logout", authH.Logout)
 		r.Get("/auth/me", authH.Me)
+		r.Patch("/auth/me", authH.UpdateProfile)
 
 		// Bands
 		r.Get("/api/bands", bandH.List)

@@ -26,6 +26,8 @@ export const route = derived(path, ($path) => {
     isTrack: parts[0] === "band" && parts[2] === "track",
     // /invite/:token
     isInvite: parts[0] === "invite",
+    // /profile
+    isProfile: parts[0] === "profile",
     // /no-access
     isNoAccess: parts[0] === "no-access",
     bandSlug: parts[0] === "band" ? parts[1] : null,

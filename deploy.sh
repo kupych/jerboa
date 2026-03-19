@@ -14,7 +14,7 @@ echo ":: deploying binary..."
 scp bin/jerboa "$HOST:$REMOTE_DIR/bin/jerboa"
 
 echo ":: syncing migrations..."
-scp -r migrations/ "$HOST:$REMOTE_DIR/migrations/"
+scp migrations/*.sql "$HOST:$REMOTE_DIR/migrations/"
 
 echo ":: starting service..."
 ssh "$HOST" "sudo systemctl start jerboa"
