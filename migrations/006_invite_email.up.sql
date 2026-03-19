@@ -1,0 +1,1 @@
+ALTER TABLE band_invites ADD COLUMN email TEXT NOT NULL DEFAULT '';

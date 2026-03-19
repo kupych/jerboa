@@ -39,6 +39,8 @@
   let loading = $state(true);
   let showInviteUrl = $state("");
   let generatingInvite = $state(false);
+  let inviteEmail = $state("");
+  let showInviteForm = $state(false);
   let viewMode = $state<"all" | "songs">("all");
   let newSongName = $state("");
   let creatingSong = $state(false);
@@ -105,10 +107,15 @@
   }
 
   async function generateInvite() {
+    if (!inviteEmail.trim()) return;
     generatingInvite = true;
     try {
-      const res = await api<{ invite_url: string }>(`/api/bands/${slug}/invite`, { method: "POST" });
+      const res = await apiPost<{ invite_url: string }>(`/api/bands/${slug}/invite`, {
+        email: inviteEmail.trim(),
+      });
       showInviteUrl = res.invite_url;
+      inviteEmail = "";
+      showInviteForm = false;
     } finally {
       generatingInvite = false;
     }
@@ -180,8 +187,7 @@
           import url
         </button>
         <button
-          onclick={generateInvite}
-          disabled={generatingInvite}
+          onclick={() => (showInviteForm = !showInviteForm)}
           class="label text-text-muted hover:text-accent transition-colors flex items-center gap-2"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -217,6 +223,33 @@
           dismiss
         </button>
       </div>
+    {/if}
+
+    <!-- Invite form -->
+    {#if showInviteForm}
+      <form
+        onsubmit={(e) => { e.preventDefault(); generateInvite(); }}
+        class="mb-8 bg-bg-surface border border-border p-6 flex items-center gap-4"
+      >
+        <input
+          bind:value={inviteEmail}
+          type="email"
+          placeholder="email@example.com"
+          class="flex-1 bg-bg-primary border border-border px-4 py-3 text-base text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+        />
+        <button
+          type="submit"
+          disabled={generatingInvite || !inviteEmail.trim()}
+          class="px-6 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors"
+        >
+          {generatingInvite ? "..." : "send invite"}
+        </button>
+        <button
+          type="button"
+          onclick={() => (showInviteForm = false)}
+          class="label text-text-muted hover:text-text-secondary transition-colors"
+        >cancel</button>
+      </form>
     {/if}
 
     <!-- YouTube Import -->

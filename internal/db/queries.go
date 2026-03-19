@@ -170,7 +170,7 @@ func (q *Queries) GetBandMembers(ctx context.Context, bandID uuid.UUID) ([]model
 	return members, nil
 }
 
-func (q *Queries) CreateInvite(ctx context.Context, bandID, createdBy uuid.UUID, ttl time.Duration) (*models.BandInvite, error) {
+func (q *Queries) CreateInvite(ctx context.Context, bandID, createdBy uuid.UUID, email string, ttl time.Duration) (*models.BandInvite, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return nil, err
@@ -179,12 +179,31 @@ func (q *Queries) CreateInvite(ctx context.Context, bandID, createdBy uuid.UUID,
 
 	var inv models.BandInvite
 	err := q.pool.QueryRow(ctx, `
-		INSERT INTO band_invites (band_id, token, created_by, expires_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO band_invites (band_id, token, created_by, email, expires_at)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, band_id, token, created_by, expires_at, created_at
-	`, bandID, token, createdBy, time.Now().Add(ttl)).Scan(
+	`, bandID, token, createdBy, email, time.Now().Add(ttl)).Scan(
 		&inv.ID, &inv.BandID, &inv.Token, &inv.CreatedBy, &inv.ExpiresAt, &inv.CreatedAt)
 	return &inv, err
+}
+
+func (q *Queries) HasPendingInvite(ctx context.Context, email string) (bool, error) {
+	var exists bool
+	err := q.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM band_invites
+			WHERE email = $1 AND expires_at > now() AND used_by IS NULL
+		)
+	`, email).Scan(&exists)
+	return exists, err
+}
+
+func (q *Queries) UserExists(ctx context.Context, email string) (bool, error) {
+	var exists bool
+	err := q.pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)
+	`, email).Scan(&exists)
+	return exists, err
 }
 
 func (q *Queries) AcceptInvite(ctx context.Context, token string, userID uuid.UUID) (*models.Band, error) {

@@ -2,7 +2,7 @@
 set -e
 
 HOST="jerboa@jerboa.dad"
-REMOTE_DIR="/home/jerboa/jamily"
+REMOTE_DIR="/var/www/jerboa"
 
 echo ":: building..."
 make build

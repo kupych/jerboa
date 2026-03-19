@@ -98,6 +98,24 @@ func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if user already exists — if not, require a pending invite
+	exists, err := h.queries.UserExists(r.Context(), info.Email)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if !exists {
+		hasInvite, err := h.queries.HasPendingInvite(r.Context(), info.Email)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if !hasInvite {
+			http.Redirect(w, r, h.baseURL+"/#/no-access", http.StatusFound)
+			return
+		}
+	}
+
 	user, err := h.queries.UpsertUser(r.Context(), info.Email, info.Name, info.Picture)
 	if err != nil {
 		http.Error(w, "failed to create user", http.StatusInternalServerError)

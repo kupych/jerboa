@@ -116,7 +116,15 @@ func (h *BandHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	invite, err := h.queries.CreateInvite(r.Context(), band.ID, user.ID, 7*24*time.Hour)
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" {
+		http.Error(w, `{"error":"email is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	invite, err := h.queries.CreateInvite(r.Context(), band.ID, user.ID, req.Email, 7*24*time.Hour)
 	if err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
