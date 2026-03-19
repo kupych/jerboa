@@ -1,0 +1,33 @@
+# Go
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Frontend
+web/node_modules/
+web/dist/
+!web/dist/.keep
+
+# Environment
+.env
+*.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Audio uploads (dev)
+data/
+
+# Test
+coverage.out
+*.test

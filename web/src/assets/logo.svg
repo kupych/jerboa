@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120">
+  <g fill="currentColor">
+    <!-- Ears (oversized, the whole point) -->
+    <ellipse cx="150" cy="24" rx="7" ry="22" transform="rotate(-10, 150, 24)"/>
+    <ellipse cx="168" cy="22" rx="7" ry="24" transform="rotate(8, 168, 22)"/>
+
+    <!-- Head -->
+    <circle cx="159" cy="50" r="14"/>
+
+    <!-- Body -->
+    <ellipse cx="146" cy="68" rx="22" ry="16"/>
+
+    <!-- Haunch -->
+    <ellipse cx="134" cy="80" rx="12" ry="10" transform="rotate(20, 134, 80)"/>
+
+    <!-- Hind foot (big, like a real jerboa) -->
+    <ellipse cx="124" cy="96" rx="15" ry="4" transform="rotate(-5, 124, 96)"/>
+
+    <!-- Front paw -->
+    <ellipse cx="167" cy="84" rx="3.5" ry="5"/>
+
+    <!-- Eye (negative space) -->
+    <circle cx="164" cy="46" r="3" fill="var(--bg, #1a1a1a)"/>
+
+    <!-- Tail → patch cable -->
+    <path d="M 128 74 C 105 66, 85 80, 65 72 C 50 66, 40 74, 34 72"
+          fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- Jack plug: sleeve -->
+    <rect x="10" y="66" width="24" height="12" rx="2.5"/>
+
+    <!-- Jack plug: ring groove -->
+    <rect x="8" y="68.5" width="4" height="7" rx="1" fill="var(--bg, #1a1a1a)"/>
+
+    <!-- Jack plug: tip -->
+    <path d="M 10 68.5 L 3 72 L 10 75.5 Z"/>
+  </g>
+</svg>
