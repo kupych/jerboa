@@ -12,6 +12,7 @@ import (
 	"jerboa/internal/audio"
 	"jerboa/internal/config"
 	"jerboa/internal/db"
+	"jerboa/internal/email"
 	"jerboa/internal/storage"
 )
 
@@ -24,8 +25,9 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	r.Use(CORSMiddleware(cfg.BaseURL))
 
 	hub := NewHub(queries)
+	mailer := email.NewMailer(cfg)
 	authH := NewAuthHandler(authProvider, queries, cfg.BaseURL)
-	bandH := NewBandHandler(queries, cfg.BaseURL)
+	bandH := NewBandHandler(queries, cfg.BaseURL, mailer)
 	trackH := NewTrackHandler(queries, store, processor, hub, cfg.MaxUploadMB)
 	commentH := NewCommentHandler(queries, hub)
 	songH := NewSongHandler(queries)
@@ -48,8 +50,11 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/bands", bandH.List)
 		r.Post("/api/bands", bandH.Create)
 		r.Get("/api/bands/{slug}", bandH.Get)
+		r.Patch("/api/bands/{slug}", bandH.UpdateBand)
 		r.Post("/api/bands/{slug}/invite", bandH.Invite)
 		r.Post("/api/invite/{token}", bandH.AcceptInvite)
+		r.Delete("/api/bands/{slug}/members/{userID}", bandH.RemoveMember)
+		r.Patch("/api/bands/{slug}/members/{userID}", bandH.UpdateMemberRole)
 
 		// Songs
 		r.Get("/api/bands/{slug}/songs", songH.List)

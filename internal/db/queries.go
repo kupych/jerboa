@@ -180,6 +180,29 @@ func (q *Queries) GetBandMembers(ctx context.Context, bandID uuid.UUID) ([]model
 	return members, nil
 }
 
+func (q *Queries) RemoveBandMember(ctx context.Context, bandID, userID uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, `
+		DELETE FROM band_members WHERE band_id = $1 AND user_id = $2
+	`, bandID, userID)
+	return err
+}
+
+func (q *Queries) UpdateBandMemberRole(ctx context.Context, bandID, userID uuid.UUID, role string) error {
+	_, err := q.pool.Exec(ctx, `
+		UPDATE band_members SET role = $3 WHERE band_id = $1 AND user_id = $2
+	`, bandID, userID, role)
+	return err
+}
+
+func (q *Queries) UpdateBandName(ctx context.Context, bandID uuid.UUID, name, slug string) (*models.Band, error) {
+	var b models.Band
+	err := q.pool.QueryRow(ctx, `
+		UPDATE bands SET name = $2, slug = $3 WHERE id = $1
+		RETURNING id, name, slug, created_by, created_at
+	`, bandID, name, slug).Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.CreatedAt)
+	return &b, err
+}
+
 func (q *Queries) CreateInvite(ctx context.Context, bandID, createdBy uuid.UUID, email string, ttl time.Duration) (*models.BandInvite, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

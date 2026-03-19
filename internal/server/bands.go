@@ -8,18 +8,21 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"jerboa/internal/db"
+	"jerboa/internal/email"
 	"jerboa/internal/models"
 )
 
 type BandHandler struct {
 	queries *db.Queries
 	baseURL string
+	mailer  *email.Mailer
 }
 
-func NewBandHandler(queries *db.Queries, baseURL string) *BandHandler {
-	return &BandHandler{queries: queries, baseURL: baseURL}
+func NewBandHandler(queries *db.Queries, baseURL string, mailer *email.Mailer) *BandHandler {
+	return &BandHandler{queries: queries, baseURL: baseURL, mailer: mailer}
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -135,9 +138,13 @@ func (h *BandHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	inviteURL := h.baseURL + "/invite/" + invite.Token
+
+	h.mailer.SendInvite(req.Email, band.Name, inviteURL)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
-		"invite_url": h.baseURL + "/invite/" + invite.Token,
+		"invite_url": inviteURL,
 	})
 }
 
@@ -157,5 +164,122 @@ func (h *BandHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(band)
+}
+
+func (h *BandHandler) UpdateBand(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || role != "admin" {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	newSlug := slugify(req.Name)
+	updated, err := h.queries.UpdateBandName(r.Context(), band.ID, req.Name, newSlug)
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate") {
+			http.Error(w, `{"error":"band name already taken"}`, http.StatusConflict)
+			return
+		}
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updated)
+}
+
+func (h *BandHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || role != "admin" {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	memberID, err := uuid.Parse(chi.URLParam(r, "userID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid user_id"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Can't remove yourself
+	if memberID == user.ID {
+		http.Error(w, `{"error":"cannot remove yourself"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.queries.RemoveBandMember(r.Context(), band.ID, memberID); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *BandHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || role != "admin" {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	memberID, err := uuid.Parse(chi.URLParam(r, "userID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid user_id"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Role string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Role != "admin" && req.Role != "member" {
+		http.Error(w, `{"error":"role must be admin or member"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.queries.UpdateBandMemberRole(r.Context(), band.ID, memberID, req.Role); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 

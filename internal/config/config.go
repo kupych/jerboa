@@ -20,10 +20,16 @@ type Config struct {
 	OIDCClientID     string
 	OIDCClientSecret string
 
-	FFmpegPath   string
-	FFprobePath  string
-	MaxUploadMB  int64
+	FFmpegPath    string
+	FFprobePath   string
+	MaxUploadMB   int64
 	WaveformPeaks int
+
+	SMTPHost string
+	SMTPPort string
+	SMTPUser string
+	SMTPPass string
+	SMTPFrom string
 }
 
 func loadDotenv() {
@@ -71,6 +77,12 @@ func Load() (*Config, error) {
 		FFprobePath:   env("JERBOA_FFPROBE_PATH", "ffprobe"),
 		MaxUploadMB:   envInt("JERBOA_MAX_UPLOAD_MB", 500),
 		WaveformPeaks: int(envInt("JERBOA_WAVEFORM_PEAKS", 1800)),
+
+		SMTPHost: env("JERBOA_SMTP_HOST", ""),
+		SMTPPort: env("JERBOA_SMTP_PORT", "587"),
+		SMTPUser: env("JERBOA_SMTP_USER", ""),
+		SMTPPass: env("JERBOA_SMTP_PASS", ""),
+		SMTPFrom: env("JERBOA_SMTP_FROM", ""),
 	}
 
 	if c.Secret == "" {

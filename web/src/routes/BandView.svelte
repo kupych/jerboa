@@ -2,14 +2,21 @@
   import { onMount } from "svelte";
   import { api, apiPost, apiPatch, apiDelete } from "../lib/api";
   import { ws } from "../lib/ws";
+  import { user as currentUser } from "../lib/stores/auth";
+  import { navigate } from "../lib/stores/router";
   import TrackCard from "../lib/components/TrackCard.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
 
   let { slug }: { slug: string } = $props();
 
+  interface BandMember {
+    user: { id: string; display_name: string; email: string };
+    role: string;
+  }
+
   interface BandDetail {
     band: { id: string; name: string; slug: string };
-    members: Array<{ user: { display_name: string; email: string }; role: string }>;
+    members: BandMember[];
   }
 
   interface Song {
@@ -48,6 +55,12 @@
   let importUrl = $state("");
   let importTitle = $state("");
   let importing = $state(false);
+
+  // Band management
+  let showSettings = $state(false);
+  let editBandName = $state("");
+  let savingBandName = $state(false);
+  let isAdmin = $derived(band?.members.some((m) => m.user.id === $currentUser?.id && m.role === "admin") ?? false);
 
   // Group tracks by song
   let tracksBySong = $derived(() => {
@@ -137,6 +150,36 @@
     }
   }
 
+  async function updateBandName() {
+    if (!editBandName.trim() || !band) return;
+    savingBandName = true;
+    try {
+      const updated = await apiPatch<{ name: string; slug: string }>(`/api/bands/${slug}`, {
+        name: editBandName.trim(),
+      });
+      band.band.name = updated.name;
+      if (updated.slug !== slug) {
+        navigate(`/band/${updated.slug}`);
+      }
+    } finally {
+      savingBandName = false;
+    }
+  }
+
+  async function removeMember(userId: string) {
+    if (!band) return;
+    await apiDelete(`/api/bands/${slug}/members/${userId}`);
+    band.members = band.members.filter((m) => m.user.id !== userId);
+  }
+
+  async function toggleRole(member: BandMember) {
+    if (!band) return;
+    const newRole = member.role === "admin" ? "member" : "admin";
+    await apiPatch(`/api/bands/${slug}/members/${member.user.id}`, { role: newRole });
+    member.role = newRole;
+    band.members = [...band.members];
+  }
+
   async function importFromUrl() {
     if (!importUrl.trim()) return;
     importing = true;
@@ -198,6 +241,18 @@
           </svg>
           invite
         </button>
+        {#if isAdmin}
+          <button
+            onclick={() => { showSettings = !showSettings; if (showSettings && band) editBandName = band.band.name; }}
+            class="label transition-colors flex items-center gap-2 {showSettings ? 'text-accent' : 'text-text-muted hover:text-accent'}"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            settings
+          </button>
+        {/if}
       </div>
     </div>
 
@@ -250,6 +305,64 @@
           class="label text-text-muted hover:text-text-secondary transition-colors"
         >cancel</button>
       </form>
+    {/if}
+
+    <!-- Settings panel -->
+    {#if showSettings && isAdmin && band}
+      <div class="mb-8 bg-bg-surface border border-border p-6 space-y-6">
+        <div>
+          <span class="label text-text-muted block mb-2">band name</span>
+          <form onsubmit={(e) => { e.preventDefault(); updateBandName(); }} class="flex gap-3">
+            <input
+              bind:value={editBandName}
+              type="text"
+              class="flex-1 bg-bg-primary border border-border px-4 py-3 text-base text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+            />
+            <button
+              type="submit"
+              disabled={savingBandName || !editBandName.trim() || editBandName.trim() === band.band.name}
+              class="px-6 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors"
+            >
+              {savingBandName ? "..." : "save"}
+            </button>
+          </form>
+        </div>
+
+        <div>
+          <span class="label text-text-muted block mb-3">members</span>
+          <div class="space-y-2">
+            {#each band.members as member}
+              <div class="flex items-center justify-between gap-4 py-2 px-3 bg-bg-primary border border-border">
+                <div class="flex items-center gap-3 min-w-0">
+                  <span class="label-sm text-text-primary truncate">{member.user.display_name || member.user.email}</span>
+                  <span class="label-sm text-text-muted shrink-0">{member.role}</span>
+                </div>
+                {#if member.user.id !== $currentUser?.id}
+                  <div class="flex items-center gap-3 shrink-0">
+                    <button
+                      onclick={() => toggleRole(member)}
+                      class="label-sm text-text-muted hover:text-accent transition-colors"
+                    >
+                      {member.role === "admin" ? "make member" : "make admin"}
+                    </button>
+                    <button
+                      onclick={() => removeMember(member.user.id)}
+                      class="label-sm text-red-400 hover:text-red-300 transition-colors"
+                    >
+                      remove
+                    </button>
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        <button
+          onclick={() => (showSettings = false)}
+          class="label text-text-muted hover:text-text-secondary transition-colors"
+        >close</button>
+      </div>
     {/if}
 
     <!-- YouTube Import -->
