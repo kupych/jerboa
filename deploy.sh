@@ -7,16 +7,13 @@ REMOTE_DIR="/var/www/jerboa"
 echo ":: building..."
 make build
 
-echo ":: stopping service..."
-ssh "$HOST" "sudo systemctl stop jerboa"
-
-echo ":: deploying binary..."
-scp bin/jerboa "$HOST:$REMOTE_DIR/bin/jerboa"
+echo ":: staging binary..."
+scp bin/jerboa "$HOST:$REMOTE_DIR/bin/jerboa.new"
 
 echo ":: syncing migrations..."
 scp migrations/*.sql "$HOST:$REMOTE_DIR/migrations/"
 
-echo ":: starting service..."
-ssh "$HOST" "sudo systemctl start jerboa"
+echo ":: swapping (stop → rename → start)..."
+ssh "$HOST" "sudo systemctl stop jerboa && mv $REMOTE_DIR/bin/jerboa.new $REMOTE_DIR/bin/jerboa && sudo systemctl start jerboa"
 
 echo ":: done"
