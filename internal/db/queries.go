@@ -381,6 +381,11 @@ func (q *Queries) UpdateTrackError(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+func (q *Queries) ResetTrackStatus(ctx context.Context, id uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, "UPDATE tracks SET status = 'processing' WHERE id = $1", id)
+	return err
+}
+
 func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, error) {
 	var t models.Track
 	var u models.User

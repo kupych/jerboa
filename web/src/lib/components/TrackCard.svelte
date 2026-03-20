@@ -1,8 +1,9 @@
 <script lang="ts">
   import { navigate } from "../stores/router";
+  import { apiPost, apiDelete } from "../api";
   import { formatDuration, formatRelativeTime, formatFileSize } from "../utils/format";
 
-  let { track, bandSlug }: {
+  let { track, bandSlug, onRetry, onDelete }: {
     track: {
       id: string;
       title: string;
@@ -12,21 +13,51 @@
       file_size: number;
       status: string;
       tags: string[];
+      source_url?: string;
       created_at: string;
       uploader?: { display_name: string; email: string };
     };
     bandSlug: string;
+    onRetry?: () => void;
+    onDelete?: () => void;
   } = $props();
 
+  let retrying = $state(false);
+  let deleting = $state(false);
+
   function open() {
+    if (track.status === "error") return;
     navigate(`/band/${bandSlug}/track/${track.id}`);
+  }
+
+  async function retry(e: Event) {
+    e.stopPropagation();
+    retrying = true;
+    try {
+      await apiPost(`/api/bands/${bandSlug}/tracks/${track.id}/retry`, {});
+      track.status = "processing";
+      onRetry?.();
+    } finally {
+      retrying = false;
+    }
+  }
+
+  async function remove(e: Event) {
+    e.stopPropagation();
+    deleting = true;
+    try {
+      await apiDelete(`/api/bands/${bandSlug}/tracks/${track.id}`);
+      onDelete?.();
+    } finally {
+      deleting = false;
+    }
   }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="bg-bg-surface border border-border p-6 hover:border-accent/40 transition-colors cursor-pointer group"
+  class="bg-bg-surface border border-border p-6 transition-colors {track.status === 'error' ? '' : 'hover:border-accent/40 cursor-pointer'} group"
   onclick={open}
 >
   <div class="flex items-start justify-between gap-4">
@@ -54,7 +85,21 @@
         processing
       </div>
     {:else if track.status === "error"}
-      <div class="label-sm text-danger">error</div>
+      <div class="flex items-center gap-3">
+        <span class="label-sm text-danger">error</span>
+        {#if track.source_url}
+          <button
+            onclick={retry}
+            disabled={retrying}
+            class="label-sm text-text-muted hover:text-accent transition-colors"
+          >{retrying ? "..." : "retry"}</button>
+        {/if}
+        <button
+          onclick={remove}
+          disabled={deleting}
+          class="label-sm text-text-muted hover:text-red-400 transition-colors"
+        >{deleting ? "..." : "delete"}</button>
+      </div>
     {/if}
   </div>
 

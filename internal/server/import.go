@@ -118,6 +118,54 @@ func (h *ImportHandler) ImportURL(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(track)
 }
 
+func (h *ImportHandler) RetryImport(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	trackID, err := uuid.Parse(chi.URLParam(r, "trackID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid track id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || !isMember {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	track, err := h.queries.GetTrack(r.Context(), trackID)
+	if err != nil || track == nil || track.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	if track.SourceURL == "" {
+		http.Error(w, `{"error":"not an imported track"}`, http.StatusBadRequest)
+		return
+	}
+
+	if track.Status != "error" {
+		http.Error(w, `{"error":"track is not in error state"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.queries.ResetTrackStatus(r.Context(), trackID); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	go h.downloadAndProcess(trackID, track.SourceURL, band.ID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "processing"})
+}
+
 func (h *ImportHandler) downloadAndProcess(trackID uuid.UUID, sourceURL string, bandID uuid.UUID) {
 	ctx := context.Background()
 
@@ -127,10 +175,9 @@ func (h *ImportHandler) downloadAndProcess(trackID uuid.UUID, sourceURL string, 
 	outTemplate := filepath.Join(tmpDir, trackID.String()+".%(ext)s")
 
 	args := []string{
-		"-x",                       // extract audio
-		"--audio-format", "opus",   // convert to opus (good quality, small size)
-		"--audio-quality", "0",     // best quality
-		"--no-playlist",            // single video only
+		"-x",              // extract audio
+		"--audio-quality", "0", // best quality
+		"--no-playlist",   // single video only
 		"--no-warnings",
 		"-o", outTemplate,
 	}

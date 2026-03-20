@@ -66,6 +66,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/bands/{slug}/tracks", trackH.List)
 		r.Post("/api/bands/{slug}/tracks", trackH.Upload)
 		r.Post("/api/bands/{slug}/tracks/import", importH.ImportURL)
+		r.Post("/api/bands/{slug}/tracks/{trackID}/retry", importH.RetryImport)
 		r.Get("/api/bands/{slug}/tracks/{trackID}", trackH.Get)
 		r.Get("/api/bands/{slug}/tracks/{trackID}/stream", trackH.Stream)
 		r.Patch("/api/bands/{slug}/tracks/{trackID}", trackH.UpdateMeta)

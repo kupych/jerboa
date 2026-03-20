@@ -447,7 +447,7 @@
     {#if viewMode === "all"}
       <div class="space-y-3">
         {#each tracks as track}
-          <TrackCard {track} bandSlug={slug} />
+          <TrackCard {track} bandSlug={slug} onDelete={loadTracks} />
         {/each}
 
         {#if tracks.length === 0}
@@ -463,7 +463,7 @@
           <h3 class="label text-text-secondary mb-4 font-display">{song.name}</h3>
           <div class="space-y-3">
             {#each songTracks as track}
-              <TrackCard {track} bandSlug={slug} />
+              <TrackCard {track} bandSlug={slug} onDelete={loadTracks} />
             {/each}
           </div>
         </div>
@@ -474,7 +474,7 @@
           <h3 class="label text-text-muted mb-4">ungrouped</h3>
           <div class="space-y-3">
             {#each tracksBySong().ungrouped as track}
-              <TrackCard {track} bandSlug={slug} />
+              <TrackCard {track} bandSlug={slug} onDelete={loadTracks} />
             {/each}
           </div>
         </div>
