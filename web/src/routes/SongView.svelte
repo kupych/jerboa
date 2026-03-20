@@ -30,6 +30,7 @@
     song_id?: string;
     created_at: string;
     uploader?: { display_name: string; email: string };
+    personnel?: Array<{ user: { display_name: string; email: string }; role: string }>;
   };
 
   let song = $state<Song | null>(null);
@@ -254,10 +255,24 @@
 
                 <!-- Track info -->
                 <div class="flex-1 min-w-0">
-                  <button
-                    onclick={() => navigate(`/band/${slug}/track/${track.id}`)}
-                    class="text-sm font-semibold text-text-primary hover:text-accent transition-colors truncate block text-left font-display tracking-wide"
-                  >{track.title}</button>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <button
+                      onclick={() => navigate(`/band/${slug}/track/${track.id}`)}
+                      class="text-sm font-semibold text-text-primary hover:text-accent transition-colors truncate text-left font-display tracking-wide"
+                    >{track.title}</button>
+                    {#if track.tags?.length}
+                      {#each track.tags as tag}
+                        <span class="label-sm text-accent bg-accent/10 px-1.5 py-0.5">{tag}</span>
+                      {/each}
+                    {/if}
+                  </div>
+                  {#if track.personnel?.length}
+                    <div class="flex items-center gap-2 mt-1 flex-wrap">
+                      {#each track.personnel as p}
+                        <span class="label-sm text-text-muted">{p.user.display_name || p.user.email}{#if p.role} · {p.role}{/if}</span>
+                      {/each}
+                    </div>
+                  {/if}
                 </div>
 
                 <!-- Meta -->
