@@ -175,11 +175,9 @@ func (h *ImportHandler) downloadAndProcess(trackID uuid.UUID, sourceURL string, 
 	outTemplate := filepath.Join(tmpDir, trackID.String()+".%(ext)s")
 
 	args := []string{
-		"-f", "bestaudio/best", // best audio stream, fall back to best combined
 		"-x",                   // extract audio
 		"--audio-quality", "0", // best quality
 		"--no-playlist",        // single video only
-		"--no-warnings",
 		"-o", outTemplate,
 	}
 	if h.cookiesFile != "" {
