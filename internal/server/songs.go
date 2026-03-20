@@ -142,27 +142,36 @@ func (h *SongHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name   string `json:"name"`
-		Lyrics string `json:"lyrics"`
-		Tabs   string `json:"tabs"`
+		Name   *string `json:"name"`
+		Lyrics *string `json:"lyrics"`
+		Tabs   *string `json:"tabs"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
 		return
 	}
 
-	if req.Name == "" {
-		req.Name = song.Name
+	name := song.Name
+	if req.Name != nil && *req.Name != "" {
+		name = *req.Name
+	}
+	lyrics := song.Lyrics
+	if req.Lyrics != nil {
+		lyrics = *req.Lyrics
+	}
+	tabs := song.Tabs
+	if req.Tabs != nil {
+		tabs = *req.Tabs
 	}
 
-	if err := h.queries.UpdateSong(r.Context(), songID, req.Name, req.Lyrics, req.Tabs); err != nil {
+	if err := h.queries.UpdateSong(r.Context(), songID, name, lyrics, tabs); err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
 	}
 
-	song.Name = req.Name
-	song.Lyrics = req.Lyrics
-	song.Tabs = req.Tabs
+	song.Name = name
+	song.Lyrics = lyrics
+	song.Tabs = tabs
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(song)
 }
