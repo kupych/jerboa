@@ -11,8 +11,9 @@
   <nav class="flex items-center justify-between h-16 md:h-20 mx-5 md:mx-12">
     <button
       onclick={() => navigate("/")}
-      class="text-lg font-bold tracking-[0.25em] uppercase text-accent hover:text-accent-hover transition-colors font-display"
+      class="flex items-center gap-2.5 text-lg font-bold tracking-[0.25em] uppercase text-accent hover:text-accent-hover transition-colors font-display"
     >
+      <div class="h-7 md:h-8 w-7 md:w-8 bg-current" style="-webkit-mask: url(/logo.svg) center/contain no-repeat; mask: url(/logo.svg) center/contain no-repeat;"></div>
       jerboa
     </button>
 

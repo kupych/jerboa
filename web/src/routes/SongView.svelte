@@ -42,6 +42,23 @@
   let tabsInput = $state("");
   let saving = $state(false);
 
+  let editingTitle = $state(false);
+  let titleInput = $state("");
+  let savingTitle = $state(false);
+
+  async function saveTitle() {
+    if (!song || !titleInput.trim()) return;
+    savingTitle = true;
+    try {
+      song = await apiPatch<Song>(`/api/bands/${slug}/songs/${songId}`, {
+        name: titleInput.trim(),
+      });
+      editingTitle = false;
+    } finally {
+      savingTitle = false;
+    }
+  }
+
   let playingId = $state<string | null>(null);
   let audioEl = $state<HTMLAudioElement | null>(null);
   let currentTime = $state(0);
@@ -137,7 +154,23 @@
     <!-- Header -->
     <div class="flex items-center gap-4">
       <button onclick={() => navigate(`/band/${slug}`)} class="label text-text-muted hover:text-accent transition-colors">&larr; back</button>
-      <h1 class="text-2xl font-display font-bold tracking-wider text-text-primary">{song.name}</h1>
+      {#if editingTitle}
+        <form onsubmit={(e) => { e.preventDefault(); saveTitle(); }} class="flex items-center gap-3 flex-1">
+          <input
+            bind:value={titleInput}
+            type="text"
+            class="flex-1 bg-bg-primary border border-border px-4 py-2 text-2xl font-display font-bold tracking-wider text-text-primary focus:outline-none focus:border-accent transition-colors"
+          />
+          <button type="submit" disabled={savingTitle || !titleInput.trim()} class="label text-accent hover:text-accent-hover disabled:opacity-50 transition-colors">{savingTitle ? "..." : "save"}</button>
+          <button type="button" onclick={() => (editingTitle = false)} class="label text-text-muted hover:text-text-secondary transition-colors">cancel</button>
+        </form>
+      {:else}
+        <h1
+          class="text-2xl font-display font-bold tracking-wider text-text-primary cursor-pointer hover:text-accent transition-colors"
+          onclick={() => { editingTitle = true; titleInput = song!.name; }}
+          title="click to edit"
+        >{song.name}</h1>
+      {/if}
     </div>
 
     <!-- Lyrics -->

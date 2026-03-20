@@ -32,31 +32,36 @@
     <ThemeToggle />
   </div>
 
-  <div class="w-full max-w-md">
-    <!-- Title block: left-aligned -->
+  <div class="w-full max-w-sm -mt-16">
+    <!-- Logo -->
+    <div class="flex justify-center mb-6">
+      <div class="w-24 h-24 md:w-28 md:h-28 text-accent" style="-webkit-mask: url(/logo.svg) center/contain no-repeat; mask: url(/logo.svg) center/contain no-repeat; background: currentColor;"></div>
+    </div>
+
+    <!-- Title block -->
     <div class="flex items-baseline justify-between">
-      <h1 class="text-3xl font-bold tracking-[0.2em] uppercase text-accent font-display">
+      <h1 class="text-2xl font-bold tracking-[0.2em] uppercase text-accent font-display">
         jerboa
       </h1>
-      <p class="text-xs font-semibold text-accent tracking-[0.25em] uppercase" style="margin-right: -0.25em;">all ears.</p>
+      <p class="text-xs font-semibold text-accent/60 tracking-[0.25em] uppercase" style="margin-right: -0.25em;">all ears.</p>
     </div>
 
     <!-- LED spectrum analyzer -->
-    <div class="flex gap-[3px] mt-6 mb-8 w-full">
+    <div class="flex gap-[2px] mt-5 mb-6 w-full">
       {#each levels as level, col}
-        <div class="flex-1 flex flex-col-reverse gap-[3px]">
+        <div class="flex-1 flex flex-col-reverse gap-[2px]">
           {#each Array(ROWS) as _, row}
             <div
-              class="h-2"
-              style="opacity: {row < Math.ceil(level) ? 0.8 : 0.06}; background: var(--color-accent);"
+              class="h-1.5"
+              style="opacity: {row < Math.ceil(level) ? 0.6 : 0.04}; background: var(--color-accent);"
             ></div>
           {/each}
         </div>
       {/each}
     </div>
 
-    <!-- Sign in: flush right -->
-    <div class="border-t border-accent/40 flex justify-end" style="margin-top: 3px; padding-top: 0.25rem;">
+    <!-- Sign in -->
+    <div class="border-t border-accent/30 flex justify-end" style="margin-top: 2px; padding-top: 0.25rem;">
       <button
         onclick={login}
         style="margin-right: -0.25em;"
