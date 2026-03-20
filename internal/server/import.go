@@ -63,12 +63,15 @@ func (h *ImportHandler) ImportURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate URL
+	// Validate URL and strip query params
 	parsed, err := url.Parse(req.URL)
 	if err != nil || (parsed.Host != "www.youtube.com" && parsed.Host != "youtube.com" && parsed.Host != "youtu.be" && parsed.Host != "m.youtube.com") {
 		http.Error(w, `{"error":"only YouTube URLs are supported"}`, http.StatusBadRequest)
 		return
 	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	req.URL = parsed.String()
 
 	// Check yt-dlp is available
 	if _, err := exec.LookPath("yt-dlp"); err != nil {
