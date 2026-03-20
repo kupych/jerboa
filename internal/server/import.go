@@ -21,18 +21,20 @@ import (
 )
 
 type ImportHandler struct {
-	queries   *db.Queries
-	store     *storage.Store
-	processor *audio.Processor
-	hub       *Hub
+	queries     *db.Queries
+	store       *storage.Store
+	processor   *audio.Processor
+	hub         *Hub
+	cookiesFile string
 }
 
-func NewImportHandler(queries *db.Queries, store *storage.Store, processor *audio.Processor, hub *Hub) *ImportHandler {
+func NewImportHandler(queries *db.Queries, store *storage.Store, processor *audio.Processor, hub *Hub, cookiesFile string) *ImportHandler {
 	return &ImportHandler{
-		queries:   queries,
-		store:     store,
-		processor: processor,
-		hub:       hub,
+		queries:     queries,
+		store:       store,
+		processor:   processor,
+		hub:         hub,
+		cookiesFile: cookiesFile,
 	}
 }
 
@@ -77,7 +79,12 @@ func (h *ImportHandler) ImportURL(w http.ResponseWriter, r *http.Request) {
 	// Get video title if no title provided
 	title := req.Title
 	if title == "" {
-		out, err := exec.CommandContext(r.Context(), "yt-dlp", "--get-title", "--no-warnings", req.URL).Output()
+		args := []string{"--get-title", "--no-warnings"}
+		if h.cookiesFile != "" {
+			args = append(args, "--cookies", h.cookiesFile)
+		}
+		args = append(args, req.URL)
+		out, err := exec.CommandContext(r.Context(), "yt-dlp", args...).Output()
 		if err == nil {
 			title = strings.TrimSpace(string(out))
 		}
@@ -119,15 +126,19 @@ func (h *ImportHandler) downloadAndProcess(trackID uuid.UUID, sourceURL string, 
 	os.MkdirAll(tmpDir, 0750)
 	outTemplate := filepath.Join(tmpDir, trackID.String()+".%(ext)s")
 
-	cmd := exec.CommandContext(ctx, "yt-dlp",
+	args := []string{
 		"-x",                       // extract audio
 		"--audio-format", "opus",   // convert to opus (good quality, small size)
 		"--audio-quality", "0",     // best quality
 		"--no-playlist",            // single video only
 		"--no-warnings",
 		"-o", outTemplate,
-		sourceURL,
-	)
+	}
+	if h.cookiesFile != "" {
+		args = append(args, "--cookies", h.cookiesFile)
+	}
+	args = append(args, sourceURL)
+	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

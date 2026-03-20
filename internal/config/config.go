@@ -30,6 +30,8 @@ type Config struct {
 	SMTPUser string
 	SMTPPass string
 	SMTPFrom string
+
+	YTDLPCookies string
 }
 
 func loadDotenv() {
@@ -83,6 +85,8 @@ func Load() (*Config, error) {
 		SMTPUser: env("JERBOA_SMTP_USER", ""),
 		SMTPPass: env("JERBOA_SMTP_PASS", ""),
 		SMTPFrom: env("JERBOA_SMTP_FROM", ""),
+
+		YTDLPCookies: env("JERBOA_YTDLP_COOKIES", ""),
 	}
 
 	if c.Secret == "" {
