@@ -98,6 +98,50 @@ body {
   color: var(--color-text-secondary);
 }
 
+/* Markdown prose */
+.prose {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+}
+.prose h1, .prose h2, .prose h3 {
+  color: var(--color-text-primary);
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+.prose h1 { font-size: 1.4rem; }
+.prose h2 { font-size: 1.15rem; }
+.prose h3 { font-size: 1rem; }
+.prose p { margin-bottom: 0.75em; }
+.prose strong { color: var(--color-text-primary); font-weight: 600; }
+.prose em { font-style: italic; }
+.prose ul, .prose ol { padding-left: 1.5em; margin-bottom: 0.75em; }
+.prose li { margin-bottom: 0.25em; }
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-bg-elevated);
+  padding: 0.15em 0.4em;
+}
+.prose pre {
+  background: var(--color-bg-elevated);
+  padding: 1em;
+  overflow-x: auto;
+  margin-bottom: 0.75em;
+}
+.prose pre code { background: none; padding: 0; }
+.prose blockquote {
+  border-left: 2px solid var(--color-accent);
+  padding-left: 1em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.75em;
+}
+.prose a { color: var(--color-accent); text-decoration: underline; }
+.prose hr { border-color: var(--color-border); margin: 1.5em 0; }
+
 /* Vectorheart dividers */
 .vr-divider {
   color: var(--color-border);

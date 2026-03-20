@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { marked } from "marked";
   import { api, apiPatch } from "../lib/api";
   import { navigate } from "../lib/stores/router";
-  import TrackCard from "../lib/components/TrackCard.svelte";
+  import { formatDuration, formatRelativeTime } from "../lib/utils/format";
+
+  marked.setOptions({ breaks: true, gfm: true });
 
   let { slug, songId }: { slug: string; songId: string } = $props();
 
@@ -37,6 +40,53 @@
   let lyricsInput = $state("");
   let tabsInput = $state("");
   let saving = $state(false);
+
+  let playingId = $state<string | null>(null);
+  let audioEl = $state<HTMLAudioElement | null>(null);
+  let currentTime = $state(0);
+  let audioDuration = $state(0);
+
+  function togglePlay(trackId: string) {
+    if (playingId === trackId) {
+      if (audioEl?.paused) {
+        audioEl.play();
+      } else {
+        audioEl?.pause();
+      }
+      return;
+    }
+    audioEl?.pause();
+    playingId = trackId;
+    currentTime = 0;
+    audioDuration = 0;
+  }
+
+  function onTimeUpdate(e: Event) {
+    const el = e.target as HTMLAudioElement;
+    currentTime = el.currentTime;
+    audioDuration = el.duration || 0;
+  }
+
+  function onEnded() {
+    playingId = null;
+    currentTime = 0;
+  }
+
+  function seek(e: MouseEvent, track: Track) {
+    const bar = e.currentTarget as HTMLElement;
+    const rect = bar.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    const dur = track.duration_ms / 1000;
+    if (audioEl && playingId === track.id) {
+      audioEl.currentTime = pct * dur;
+    }
+  }
+
+  function formatSecs(s: number): string {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  }
 
   onMount(() => {
     loadSong();
@@ -106,8 +156,8 @@
           <textarea
             bind:value={lyricsInput}
             rows="16"
-            class="w-full bg-bg-primary border border-border px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors font-mono resize-y"
-            placeholder="paste lyrics here..."
+            class="w-full bg-bg-primary border border-border px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors resize-y"
+            placeholder="supports markdown..."
           ></textarea>
           <div class="flex gap-3">
             <button
@@ -122,7 +172,7 @@
           </div>
         </div>
       {:else if song.lyrics}
-        <pre class="text-sm text-text-secondary whitespace-pre-wrap font-mono leading-relaxed bg-bg-surface border border-border p-5">{song.lyrics}</pre>
+        <div class="prose bg-bg-surface border border-border p-5">{@html marked.parse(song.lyrics)}</div>
       {:else}
         <p class="text-sm text-text-muted italic">no lyrics yet</p>
       {/if}
@@ -167,16 +217,88 @@
       {/if}
     </section>
 
-    <!-- Tracks / Takes -->
+    <!-- Takes -->
     {#if tracks.length > 0}
       <section>
         <h2 class="label text-text-muted mb-3">takes</h2>
-        <div class="space-y-3">
+        <div class="space-y-2">
           {#each tracks as track}
-            <TrackCard {track} bandSlug={slug} onDelete={loadTracks} />
+            <div class="bg-bg-surface border border-border">
+              <div class="flex items-center gap-4 p-4">
+                <!-- Play button -->
+                {#if track.status === "ready"}
+                  <button
+                    onclick={() => togglePlay(track.id)}
+                    class="w-8 h-8 flex items-center justify-center text-text-muted hover:text-accent transition-colors shrink-0"
+                  >
+                    {#if playingId === track.id && audioEl && !audioEl.paused}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="6" y="4" width="4" height="16"/>
+                        <rect x="14" y="4" width="4" height="16"/>
+                      </svg>
+                    {:else}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5,3 19,12 5,21"/>
+                      </svg>
+                    {/if}
+                  </button>
+                {:else}
+                  <div class="w-8 h-8 flex items-center justify-center shrink-0">
+                    {#if track.status === "processing"}
+                      <div class="w-2 h-2 bg-accent animate-pulse"></div>
+                    {:else}
+                      <span class="label-sm text-danger">!</span>
+                    {/if}
+                  </div>
+                {/if}
+
+                <!-- Track info -->
+                <div class="flex-1 min-w-0">
+                  <button
+                    onclick={() => navigate(`/band/${slug}/track/${track.id}`)}
+                    class="text-sm font-semibold text-text-primary hover:text-accent transition-colors truncate block text-left font-display tracking-wide"
+                  >{track.title}</button>
+                </div>
+
+                <!-- Meta -->
+                <div class="flex items-center gap-3 label-sm text-text-muted shrink-0">
+                  {#if track.status === "ready"}
+                    <span class="font-mono">{formatDuration(track.duration_ms)}</span>
+                  {/if}
+                  <span>{track.uploader?.display_name || track.uploader?.email || ""}</span>
+                  <span>{formatRelativeTime(track.created_at)}</span>
+                </div>
+              </div>
+
+              <!-- Progress bar -->
+              {#if playingId === track.id && track.status === "ready"}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                  class="h-1 bg-bg-primary cursor-pointer"
+                  onclick={(e) => seek(e, track)}
+                >
+                  <div
+                    class="h-full bg-accent transition-[width] duration-100"
+                    style="width: {audioDuration > 0 ? (currentTime / audioDuration) * 100 : 0}%"
+                  ></div>
+                </div>
+              {/if}
+            </div>
           {/each}
         </div>
       </section>
+    {/if}
+
+    <!-- Hidden audio element -->
+    {#if playingId}
+      <audio
+        bind:this={audioEl}
+        src={`/api/bands/${slug}/tracks/${playingId}/stream`}
+        autoplay
+        ontimeupdate={onTimeUpdate}
+        onended={onEnded}
+      ></audio>
     {/if}
   </div>
 {:else}

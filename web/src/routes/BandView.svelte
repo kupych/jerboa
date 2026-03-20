@@ -48,7 +48,6 @@
   let generatingInvite = $state(false);
   let inviteEmail = $state("");
   let showInviteForm = $state(false);
-  let viewMode = $state<"all" | "songs">("all");
   let newSongName = $state("");
   let creatingSong = $state(false);
   let showImport = $state(false);
@@ -62,26 +61,18 @@
   let savingBandName = $state(false);
   let isAdmin = $derived(band?.members.some((m) => m.user.id === $currentUser?.id && m.role === "admin") ?? false);
 
-  // Group tracks by song
-  let tracksBySong = $derived(() => {
-    const grouped = new Map<string, { song: Song; tracks: Track[] }>();
-    const ungrouped: Track[] = [];
-
+  // Count takes per song
+  let takeCounts = $derived(() => {
+    const counts = new Map<string, number>();
     for (const track of tracks) {
-      if (track.song_id && track.song) {
-        const existing = grouped.get(track.song_id);
-        if (existing) {
-          existing.tracks.push(track);
-        } else {
-          grouped.set(track.song_id, { song: track.song, tracks: [track] });
-        }
-      } else {
-        ungrouped.push(track);
+      if (track.song_id) {
+        counts.set(track.song_id, (counts.get(track.song_id) || 0) + 1);
       }
     }
-
-    return { grouped: Array.from(grouped.values()), ungrouped };
+    return counts;
   });
+
+  let ungroupedTracks = $derived(tracks.filter((t) => !t.song_id));
 
   onMount(() => {
     loadData();
@@ -413,80 +404,50 @@
       <TrackUpload bandSlug={slug} onUploaded={loadTracks} />
     </div>
 
-    <!-- View toggle + Songs -->
+    <!-- Songs -->
     <div class="flex items-center justify-between mb-6">
-      <div class="flex gap-4">
-        <button
-          onclick={() => (viewMode = "all")}
-          class="label transition-colors {viewMode === 'all' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
-        >
-          all tracks
-        </button>
-        <button
-          onclick={() => (viewMode = "songs")}
-          class="label transition-colors {viewMode === 'songs' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
-        >
-          by song
-        </button>
-      </div>
-
-      {#if viewMode === "songs"}
-        <form onsubmit={(e) => { e.preventDefault(); createSong(); }} class="flex gap-2">
-          <input
-            bind:value={newSongName}
-            type="text"
-            placeholder="+ new song"
-            disabled={creatingSong}
-            class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40"
-          />
-        </form>
-      {/if}
+      <h3 class="label text-text-muted">songs</h3>
+      <form onsubmit={(e) => { e.preventDefault(); createSong(); }} class="flex gap-2">
+        <input
+          bind:value={newSongName}
+          type="text"
+          placeholder="+ new song"
+          disabled={creatingSong}
+          class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40"
+        />
+      </form>
     </div>
 
-    <!-- Track list -->
-    {#if viewMode === "all"}
-      <div class="space-y-3">
-        {#each tracks as track}
-          <TrackCard {track} bandSlug={slug} onDelete={loadTracks} />
+    {#if songs.length > 0}
+      <div class="space-y-2 mb-10">
+        {#each songs as song}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="bg-bg-surface border border-border p-5 hover:border-accent/40 transition-colors cursor-pointer group flex items-center justify-between"
+            onclick={() => navigate(`/band/${slug}/song/${song.id}`)}
+          >
+            <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors">{song.name}</h4>
+            <span class="label-sm text-text-muted">{takeCounts().get(song.id) || 0} {(takeCounts().get(song.id) || 0) === 1 ? 'take' : 'takes'}</span>
+          </div>
         {/each}
-
-        {#if tracks.length === 0}
-          <div class="text-center py-20 label text-text-muted">
-            no tracks yet
-          </div>
-        {/if}
       </div>
-    {:else}
-      <!-- Grouped by song -->
-      {#each tracksBySong().grouped as { song, tracks: songTracks }}
-        <div class="mb-8">
-          <h3 class="label text-text-secondary mb-4 font-display">
-            <button onclick={() => navigate(`/band/${slug}/song/${song.id}`)} class="hover:text-accent transition-colors">{song.name}</button>
-          </h3>
-          <div class="space-y-3">
-            {#each songTracks as track}
-              <TrackCard {track} bandSlug={slug} onDelete={loadTracks} />
-            {/each}
-          </div>
-        </div>
-      {/each}
+    {:else if tracks.length === 0}
+      <div class="text-center py-20 label text-text-muted mb-10">
+        no songs yet
+      </div>
+    {/if}
 
-      {#if tracksBySong().ungrouped.length > 0}
-        <div class="mb-8">
-          <h3 class="label text-text-muted mb-4">ungrouped</h3>
-          <div class="space-y-3">
-            {#each tracksBySong().ungrouped as track}
-              <TrackCard {track} bandSlug={slug} onDelete={loadTracks} />
-            {/each}
-          </div>
+    <!-- Ungrouped tracks -->
+    {#if ungroupedTracks.length > 0}
+      <div>
+        <h3 class="label text-text-muted mb-4">unassigned takes</h3>
+        <div class="space-y-3">
+          {#each ungroupedTracks as track}
+            <TrackCard {track} bandSlug={slug} onDelete={loadTracks} />
+          {/each}
         </div>
-      {/if}
-
-      {#if tracks.length === 0}
-        <div class="text-center py-20 label text-text-muted">
-          no tracks yet
-        </div>
-      {/if}
+      </div>
     {/if}
   </div>
 {/if}
