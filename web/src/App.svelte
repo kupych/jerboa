@@ -8,6 +8,7 @@
   import Dashboard from "./routes/Dashboard.svelte";
   import BandView from "./routes/BandView.svelte";
   import TrackView from "./routes/TrackView.svelte";
+  import SongView from "./routes/SongView.svelte";
   import InviteView from "./routes/InviteView.svelte";
   import Profile from "./routes/Profile.svelte";
 
@@ -42,6 +43,8 @@
       <InviteView token={$route.inviteToken!} />
     {:else if $route.isTrack}
       <TrackView slug={$route.bandSlug!} trackId={$route.trackId!} />
+    {:else if $route.isSong}
+      <SongView slug={$route.bandSlug!} songId={$route.songId!} />
     {:else if $route.bandSlug}
       <BandView slug={$route.bandSlug} />
     {:else}

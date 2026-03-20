@@ -311,14 +311,14 @@ func (q *Queries) CreateSong(ctx context.Context, bandID uuid.UUID, name string)
 	var s models.Song
 	err := q.pool.QueryRow(ctx, `
 		INSERT INTO songs (band_id, name) VALUES ($1, $2)
-		RETURNING id, band_id, name, created_at
-	`, bandID, name).Scan(&s.ID, &s.BandID, &s.Name, &s.CreatedAt)
+		RETURNING id, band_id, name, lyrics, tabs, created_at
+	`, bandID, name).Scan(&s.ID, &s.BandID, &s.Name, &s.Lyrics, &s.Tabs, &s.CreatedAt)
 	return &s, err
 }
 
 func (q *Queries) ListSongs(ctx context.Context, bandID uuid.UUID) ([]models.Song, error) {
 	rows, err := q.pool.Query(ctx, `
-		SELECT id, band_id, name, created_at FROM songs
+		SELECT id, band_id, name, lyrics, tabs, created_at FROM songs
 		WHERE band_id = $1 ORDER BY name
 	`, bandID)
 	if err != nil {
@@ -329,7 +329,7 @@ func (q *Queries) ListSongs(ctx context.Context, bandID uuid.UUID) ([]models.Son
 	var songs []models.Song
 	for rows.Next() {
 		var s models.Song
-		if err := rows.Scan(&s.ID, &s.BandID, &s.Name, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.BandID, &s.Name, &s.Lyrics, &s.Tabs, &s.CreatedAt); err != nil {
 			return nil, err
 		}
 		songs = append(songs, s)
@@ -337,9 +337,20 @@ func (q *Queries) ListSongs(ctx context.Context, bandID uuid.UUID) ([]models.Son
 	return songs, nil
 }
 
-func (q *Queries) UpdateSong(ctx context.Context, id uuid.UUID, name string) error {
-	_, err := q.pool.Exec(ctx, `UPDATE songs SET name = $2 WHERE id = $1`, id, name)
+func (q *Queries) UpdateSong(ctx context.Context, id uuid.UUID, name, lyrics, tabs string) error {
+	_, err := q.pool.Exec(ctx, `UPDATE songs SET name = $2, lyrics = $3, tabs = $4 WHERE id = $1`, id, name, lyrics, tabs)
 	return err
+}
+
+func (q *Queries) GetSong(ctx context.Context, id uuid.UUID) (*models.Song, error) {
+	var s models.Song
+	err := q.pool.QueryRow(ctx, `
+		SELECT id, band_id, name, lyrics, tabs, created_at FROM songs WHERE id = $1
+	`, id).Scan(&s.ID, &s.BandID, &s.Name, &s.Lyrics, &s.Tabs, &s.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
 }
 
 func (q *Queries) DeleteSong(ctx context.Context, id uuid.UUID) error {

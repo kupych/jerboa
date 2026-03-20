@@ -460,7 +460,9 @@
       <!-- Grouped by song -->
       {#each tracksBySong().grouped as { song, tracks: songTracks }}
         <div class="mb-8">
-          <h3 class="label text-text-secondary mb-4 font-display">{song.name}</h3>
+          <h3 class="label text-text-secondary mb-4 font-display">
+            <button onclick={() => navigate(`/band/${slug}/song/${song.id}`)} class="hover:text-accent transition-colors">{song.name}</button>
+          </h3>
           <div class="space-y-3">
             {#each songTracks as track}
               <TrackCard {track} bandSlug={slug} onDelete={loadTracks} />

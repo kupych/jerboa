@@ -52,6 +52,8 @@ type Song struct {
 	ID        uuid.UUID `json:"id"`
 	BandID    uuid.UUID `json:"band_id"`
 	Name      string    `json:"name"`
+	Lyrics    string    `json:"lyrics"`
+	Tabs      string    `json:"tabs"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

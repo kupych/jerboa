@@ -24,6 +24,8 @@ export const route = derived(path, ($path) => {
     isBand: parts[0] === "band" && parts.length === 2,
     // /band/:slug/track/:id
     isTrack: parts[0] === "band" && parts[2] === "track",
+    // /band/:slug/song/:id
+    isSong: parts[0] === "band" && parts[2] === "song",
     // /invite/:token
     isInvite: parts[0] === "invite",
     // /profile
@@ -32,6 +34,7 @@ export const route = derived(path, ($path) => {
     isNoAccess: parts[0] === "no-access",
     bandSlug: parts[0] === "band" ? parts[1] : null,
     trackId: parts[0] === "band" && parts[2] === "track" ? parts[3] : null,
+    songId: parts[0] === "band" && parts[2] === "song" ? parts[3] : null,
     inviteToken: parts[0] === "invite" ? parts[1] : null,
   };
 });

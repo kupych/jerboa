@@ -59,6 +59,8 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		// Songs
 		r.Get("/api/bands/{slug}/songs", songH.List)
 		r.Post("/api/bands/{slug}/songs", songH.Create)
+		r.Get("/api/bands/{slug}/songs/{songID}", songH.Get)
+		r.Patch("/api/bands/{slug}/songs/{songID}", songH.Update)
 		r.Delete("/api/bands/{slug}/songs/{songID}", songH.Delete)
 		r.Patch("/api/bands/{slug}/tracks/{trackID}/song", songH.AssignTrack)
 

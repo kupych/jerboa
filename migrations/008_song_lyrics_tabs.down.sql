@@ -1,0 +1,2 @@
+ALTER TABLE songs DROP COLUMN lyrics;
+ALTER TABLE songs DROP COLUMN tabs;

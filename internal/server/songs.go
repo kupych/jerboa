@@ -83,6 +83,90 @@ func (h *SongHandler) Create(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(song)
 }
 
+func (h *SongHandler) Get(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	songID, err := uuid.Parse(chi.URLParam(r, "songID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid song id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || !isMember {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	song, err := h.queries.GetSong(r.Context(), songID)
+	if err != nil || song.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(song)
+}
+
+func (h *SongHandler) Update(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	songID, err := uuid.Parse(chi.URLParam(r, "songID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid song id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || !isMember {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	song, err := h.queries.GetSong(r.Context(), songID)
+	if err != nil || song.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Name   string `json:"name"`
+		Lyrics string `json:"lyrics"`
+		Tabs   string `json:"tabs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		req.Name = song.Name
+	}
+
+	if err := h.queries.UpdateSong(r.Context(), songID, req.Name, req.Lyrics, req.Tabs); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	song.Name = req.Name
+	song.Lyrics = req.Lyrics
+	song.Tabs = req.Tabs
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(song)
+}
+
 func (h *SongHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	user := UserFrom(r.Context())
 	slug := chi.URLParam(r, "slug")
