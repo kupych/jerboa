@@ -54,6 +54,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Patch("/api/bands/{slug}", bandH.UpdateBand)
 		r.Post("/api/bands/{slug}/invite", bandH.Invite)
 		r.Post("/api/invite/{token}", bandH.AcceptInvite)
+		r.Post("/api/bands/{slug}/members", bandH.AddMember)
 		r.Delete("/api/bands/{slug}/members/{userID}", bandH.RemoveMember)
 		r.Patch("/api/bands/{slug}/members/{userID}", bandH.UpdateMemberRole)
 

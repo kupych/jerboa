@@ -244,6 +244,26 @@ func (q *Queries) UserExists(ctx context.Context, email string) (bool, error) {
 	return exists, err
 }
 
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
+	var u models.User
+	err := q.pool.QueryRow(ctx, `
+		SELECT id, email, display_name, avatar_url, is_admin, created_at FROM users WHERE email = $1
+	`, email).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &u, err
+}
+
+func (q *Queries) AddBandMember(ctx context.Context, bandID, userID uuid.UUID, role string) error {
+	_, err := q.pool.Exec(ctx, `
+		INSERT INTO band_members (band_id, user_id, role)
+		VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING
+	`, bandID, userID, role)
+	return err
+}
+
 func (q *Queries) AcceptInvite(ctx context.Context, token string, userID uuid.UUID) (*models.Band, error) {
 	var bandID uuid.UUID
 	err := q.pool.QueryRow(ctx, `

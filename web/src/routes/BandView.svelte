@@ -79,6 +79,9 @@
   let showSettings = $state(false);
   let editBandName = $state("");
   let savingBandName = $state(false);
+  let addMemberEmail = $state("");
+  let addingMember = $state(false);
+  let addMemberError = $state("");
   let isAdmin = $derived(band?.members.some((m) => m.user.id === $currentUser?.id && m.role === "admin") ?? false);
 
 
@@ -210,6 +213,26 @@
     await apiPatch(`/api/bands/${slug}/members/${member.user.id}`, { role: newRole });
     member.role = newRole;
     band.members = [...band.members];
+  }
+
+  async function addMember() {
+    if (!addMemberEmail.trim() || !band) return;
+    addingMember = true;
+    addMemberError = "";
+    try {
+      await apiPost(`/api/bands/${slug}/members`, { email: addMemberEmail.trim() });
+      addMemberEmail = "";
+      await loadData();
+    } catch (e: any) {
+      const msg = e?.message || "";
+      if (msg.includes("not found")) {
+        addMemberError = "no user with that email";
+      } else {
+        addMemberError = "failed to add member";
+      }
+    } finally {
+      addingMember = false;
+    }
   }
 
   async function importFromUrl() {
@@ -402,6 +425,24 @@
               </div>
             {/each}
           </div>
+          <form onsubmit={(e) => { e.preventDefault(); addMember(); }} class="flex gap-3 mt-3">
+            <input
+              bind:value={addMemberEmail}
+              type="email"
+              placeholder="add by email"
+              class="flex-1 bg-bg-primary border border-border px-4 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+            />
+            <button
+              type="submit"
+              disabled={addingMember || !addMemberEmail.trim()}
+              class="px-4 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors"
+            >
+              {addingMember ? "..." : "add"}
+            </button>
+          </form>
+          {#if addMemberError}
+            <div class="label-sm text-danger mt-2">{addMemberError}</div>
+          {/if}
         </div>
 
         <button

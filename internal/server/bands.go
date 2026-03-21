@@ -306,3 +306,46 @@ func (h *BandHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *BandHandler) AddMember(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || role != "admin" {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" {
+		http.Error(w, `{"error":"email is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	target, err := h.queries.GetUserByEmail(r.Context(), req.Email)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	if target == nil {
+		http.Error(w, `{"error":"user not found"}`, http.StatusNotFound)
+		return
+	}
+
+	if err := h.queries.AddBandMember(r.Context(), band.ID, target.ID, "member"); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "added"})
+}
+
