@@ -23,6 +23,7 @@
   interface Song {
     id: string;
     name: string;
+    take_count: number;
   }
 
   interface SetSummary {
@@ -78,16 +79,6 @@
   let savingBandName = $state(false);
   let isAdmin = $derived(band?.members.some((m) => m.user.id === $currentUser?.id && m.role === "admin") ?? false);
 
-  // Count takes per song
-  let takeCounts = $derived(() => {
-    const counts = new Map<string, number>();
-    for (const track of tracks) {
-      if (track.song_id) {
-        counts.set(track.song_id, (counts.get(track.song_id) || 0) + 1);
-      }
-    }
-    return counts;
-  });
 
   let ungroupedTracks = $derived(tracks.filter((t) => !t.song_id && !t.set_id));
 
@@ -496,7 +487,7 @@
               onclick={() => navigate(`/band/${slug}/song/${song.id}`)}
             >
               <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors">{song.name}</h4>
-              <span class="label-sm text-text-muted">{takeCounts().get(song.id) || 0} {(takeCounts().get(song.id) || 0) === 1 ? 'take' : 'takes'}</span>
+              <span class="label-sm text-text-muted">{song.take_count} {song.take_count === 1 ? 'take' : 'takes'}</span>
             </div>
           {/each}
         </div>

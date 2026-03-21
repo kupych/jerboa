@@ -55,6 +55,7 @@ type Song struct {
 	Lyrics    string    `json:"lyrics"`
 	Tabs      string    `json:"tabs"`
 	CreatedAt time.Time `json:"created_at"`
+	TakeCount int       `json:"take_count"`
 }
 
 type TrackPersonnel struct {

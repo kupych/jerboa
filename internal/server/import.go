@@ -69,7 +69,16 @@ func (h *ImportHandler) ImportURL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"only YouTube URLs are supported"}`, http.StatusBadRequest)
 		return
 	}
-	parsed.RawQuery = ""
+	// Strip tracking params but keep essential ones (v= for video ID)
+	q := parsed.Query()
+	clean := url.Values{}
+	if v := q.Get("v"); v != "" {
+		clean.Set("v", v)
+	}
+	if list := q.Get("list"); list != "" {
+		clean.Set("list", list)
+	}
+	parsed.RawQuery = clean.Encode()
 	parsed.Fragment = ""
 	req.URL = parsed.String()
 
