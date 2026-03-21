@@ -14,6 +14,12 @@
     name: string;
   }
 
+  interface SetSummary {
+    id: string;
+    name: string;
+    set_type: string;
+  }
+
   interface Track {
     id: string;
     band_id: string;
@@ -30,6 +36,8 @@
     song_id?: string;
     song?: Song;
     source_url?: string;
+    recorded_at?: string;
+    set_id?: string;
     created_at: string;
     uploader?: { display_name: string; email: string };
   }
@@ -64,6 +72,7 @@
   let savingTags = $state(false);
 
   let songs = $state<Song[]>([]);
+  let allSets = $state<SetSummary[]>([]);
   let members = $state<Member[]>([]);
   let personnel = $state<Personnel[]>([]);
   let addPersonnelId = $state("");
@@ -74,7 +83,9 @@
   let editTitle = $state("");
   let editDesc = $state("");
   let editNotes = $state("");
+  let editRecordedAt = $state("");
   let savingMeta = $state(false);
+  let assigningSet = $state(false);
 
   // Song combobox
   let songInput = $state("");
@@ -122,10 +133,11 @@
     loading = true;
     try {
       const bandDetail = api<{ band: any; members: Member[] }>(`/api/bands/${slug}`);
-      [track, songs, personnel] = await Promise.all([
+      [track, songs, personnel, allSets] = await Promise.all([
         api<Track>(`/api/bands/${slug}/tracks/${trackId}`),
         api<Song[]>(`/api/bands/${slug}/songs`),
         api<Personnel[]>(`/api/bands/${slug}/tracks/${trackId}/personnel`),
+        api<SetSummary[]>(`/api/bands/${slug}/sets`),
       ]);
       const bd = await bandDetail;
       members = bd.members;
@@ -229,6 +241,7 @@
     editTitle = track.title;
     editDesc = track.description || "";
     editNotes = track.notes || "";
+    editRecordedAt = track.recorded_at ? track.recorded_at.slice(0, 10) : "";
     editing = true;
   }
 
@@ -240,13 +253,28 @@
         title: editTitle.trim(),
         description: editDesc.trim(),
         notes: editNotes,
+        recorded_at: editRecordedAt || "",
       });
       track.title = updated.title;
       track.description = updated.description;
       track.notes = updated.notes;
+      track.recorded_at = updated.recorded_at;
       editing = false;
     } finally {
       savingMeta = false;
+    }
+  }
+
+  async function assignSet(setId: string | null) {
+    if (!track) return;
+    assigningSet = true;
+    try {
+      await apiPatch(`/api/bands/${slug}/tracks/${trackId}/set`, {
+        set_id: setId || null,
+      });
+      track.set_id = setId || undefined;
+    } finally {
+      assigningSet = false;
     }
   }
 
@@ -341,19 +369,17 @@
 </script>
 
 {#if loading}
-  <div class="text-center py-20 label text-text-muted">loading</div>
+  <div class="flex items-center justify-center gap-2 py-20 label text-text-muted"><span class="w-1.5 h-1.5 bg-accent/40 animate-pulse"></span><span class="tracking-[0.2em] font-mono">SYS.LOAD</span></div>
 {:else if track}
   <div>
-    <!-- Back -->
-    <button
-      onclick={() => navigate(`/band/${slug}`)}
-      class="label text-text-muted hover:text-text-secondary transition-colors mb-8 flex items-center gap-2"
-    >
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-        <polyline points="15 18 9 12 15 6"/>
-      </svg>
-      back
-    </button>
+    <!-- Breadcrumb -->
+    <div class="text-[11px] font-mono font-semibold tracking-[0.2em] text-text-muted/30 uppercase select-none flex items-center gap-1.5 mb-8">
+      <button onclick={() => navigate("/")} class="hover:text-accent/60 transition-colors py-1">JRB</button>
+      <span>/</span>
+      <button onclick={() => navigate(`/band/${slug}`)} class="hover:text-accent/60 transition-colors py-1">{slug.toUpperCase()}</button>
+      <span>/</span>
+      <span class="text-text-muted/50">T:{track.title.replace(/\s+/g, "").toUpperCase()}</span>
+    </div>
 
     <!-- Track info -->
     <div class="mb-8">
@@ -382,6 +408,14 @@
               placeholder="Paste lyrics, chord charts, tabs, session notes..."
               class="w-full bg-bg-primary border border-border px-4 py-3 text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors resize-y"
             ></textarea>
+          </div>
+          <div>
+            <span class="label text-text-muted block mb-2">recording date</span>
+            <input
+              bind:value={editRecordedAt}
+              type="date"
+              class="bg-bg-primary border border-border px-4 py-3 text-base text-text-primary focus:outline-none focus:border-accent transition-colors"
+            />
           </div>
           <div class="flex gap-4">
             <button
@@ -500,6 +534,47 @@
             >{track.source_url}</a>
           </div>
         {/if}
+
+        <!-- Recording date display -->
+        {#if track.recorded_at}
+          <div class="flex items-center gap-2 mt-4">
+            <span class="label-sm text-text-muted">recorded:</span>
+            <span class="label-sm text-text-secondary">{new Date(track.recorded_at.slice(0, 10) + 'T00:00:00').toLocaleDateString()}</span>
+          </div>
+        {/if}
+
+        <!-- Set assignment -->
+        <div class="flex items-center gap-3 mt-4">
+          <span class="label-sm text-text-muted">set:</span>
+          {#if track.set_id}
+            {@const currentSet = allSets.find(s => s.id === track!.set_id)}
+            {#if currentSet}
+              <button
+                onclick={() => navigate(`/band/${slug}/set/${currentSet.id}`)}
+                class="label-sm text-accent bg-accent/10 px-3 py-1 hover:bg-accent/20 transition-colors"
+              >{currentSet.name}</button>
+            {/if}
+            <button
+              onclick={() => assignSet(null)}
+              disabled={assigningSet}
+              class="label-sm text-text-muted hover:text-danger transition-colors"
+            >x</button>
+          {:else}
+            <select
+              onchange={(e) => {
+                const val = (e.target as HTMLSelectElement).value;
+                if (val) assignSet(val);
+              }}
+              disabled={assigningSet}
+              class="bg-bg-surface border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors"
+            >
+              <option value="">assign to set...</option>
+              {#each allSets as set}
+                <option value={set.id}>{set.name}</option>
+              {/each}
+            </select>
+          {/if}
+        </div>
 
         <!-- Personnel -->
         <div class="mt-5">

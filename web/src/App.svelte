@@ -9,6 +9,7 @@
   import BandView from "./routes/BandView.svelte";
   import TrackView from "./routes/TrackView.svelte";
   import SongView from "./routes/SongView.svelte";
+  import SetView from "./routes/SetView.svelte";
   import InviteView from "./routes/InviteView.svelte";
   import Profile from "./routes/Profile.svelte";
 
@@ -26,7 +27,7 @@
 
 {#if $authLoading}
   <div class="flex items-center justify-center min-h-screen">
-    <div class="label text-text-muted">loading</div>
+    <div class="flex items-center gap-2 label text-text-muted"><span class="w-1.5 h-1.5 bg-accent/40 animate-pulse"></span><span class="tracking-[0.2em] font-mono">SYS.LOAD</span></div>
   </div>
 {:else if $route.isNoAccess}
   <div class="flex flex-col items-center justify-center min-h-screen gap-4">
@@ -43,6 +44,8 @@
       <InviteView token={$route.inviteToken!} />
     {:else if $route.isTrack}
       <TrackView slug={$route.bandSlug!} trackId={$route.trackId!} />
+    {:else if $route.isSet}
+      <SetView slug={$route.bandSlug!} setId={$route.setId!} />
     {:else if $route.isSong}
       <SongView slug={$route.bandSlug!} songId={$route.songId!} />
     {:else if $route.bandSlug}

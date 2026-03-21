@@ -81,10 +81,56 @@ type Track struct {
 	Notes        string          `json:"notes,omitempty"`
 	SongID       *uuid.UUID      `json:"song_id,omitempty"`
 	SourceURL    string          `json:"source_url,omitempty"`
+	RecordedAt   *time.Time      `json:"recorded_at,omitempty"`
+	SetID        *uuid.UUID      `json:"set_id,omitempty"`
 	CreatedAt    time.Time       `json:"created_at"`
 	Uploader     *User             `json:"uploader,omitempty"`
 	Song         *Song             `json:"song,omitempty"`
 	Personnel    []TrackPersonnel  `json:"personnel,omitempty"`
+}
+
+type Set struct {
+	ID         uuid.UUID  `json:"id"`
+	BandID     uuid.UUID  `json:"band_id"`
+	Name       string     `json:"name"`
+	SetType    string     `json:"set_type"`
+	RecordedAt *time.Time `json:"recorded_at,omitempty"`
+	Notes      string     `json:"notes,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ItemCount  int        `json:"item_count,omitempty"`
+	Items      []SetItem  `json:"items"`
+	Tracks     []Track    `json:"tracks"`
+}
+
+type SetItem struct {
+	ID         uuid.UUID  `json:"id"`
+	SetID      uuid.UUID  `json:"set_id"`
+	Position   int        `json:"position"`
+	SongID     *uuid.UUID `json:"song_id,omitempty"`
+	CustomName string     `json:"custom_name,omitempty"`
+	StartMS    *int64     `json:"start_ms,omitempty"`
+	EndMS      *int64     `json:"end_ms,omitempty"`
+	Notes      string     `json:"notes,omitempty"`
+	SongName   string     `json:"song_name,omitempty"`
+}
+
+type SetTake struct {
+	SetItemID    uuid.UUID       `json:"set_item_id"`
+	SetID        uuid.UUID       `json:"set_id"`
+	SetName      string          `json:"set_name"`
+	SetType      string          `json:"set_type"`
+	StartMS      int64           `json:"start_ms"`
+	EndMS        int64           `json:"end_ms"`
+	TrackID      uuid.UUID       `json:"track_id"`
+	TrackTitle   string          `json:"track_title"`
+	WaveformData json.RawMessage `json:"waveform_data,omitempty"`
+	DurationMS   int64           `json:"duration_ms"`
+	Format       string          `json:"format"`
+	FileSize     int64           `json:"file_size"`
+	Tags         []string        `json:"tags"`
+	RecordedAt   *time.Time      `json:"recorded_at,omitempty"`
+	CreatedAt    time.Time       `json:"created_at"`
+	Uploader     *User           `json:"uploader,omitempty"`
 }
 
 type ChatMessage struct {

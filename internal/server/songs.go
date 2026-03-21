@@ -205,6 +205,74 @@ func (h *SongHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *SongHandler) ListSetTakes(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	songID, err := uuid.Parse(chi.URLParam(r, "songID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid song id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || !isMember {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	takes, err := h.queries.ListSetTakesBySong(r.Context(), band.ID, songID)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	if takes == nil {
+		takes = []models.SetTake{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(takes)
+}
+
+func (h *SongHandler) ListSets(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	songID, err := uuid.Parse(chi.URLParam(r, "songID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid song id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || !isMember {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	sets, err := h.queries.ListSetsBySong(r.Context(), band.ID, songID)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	if sets == nil {
+		sets = []models.Set{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(sets)
+}
+
 func (h *SongHandler) AssignTrack(w http.ResponseWriter, r *http.Request) {
 	user := UserFrom(r.Context())
 	slug := chi.URLParam(r, "slug")

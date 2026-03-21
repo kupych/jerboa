@@ -22,7 +22,7 @@
 
 <div class="text-center py-20">
   {#if status === "loading"}
-    <div class="label text-text-muted">joining band...</div>
+    <div class="flex items-center justify-center gap-2 label text-text-muted"><span class="w-1.5 h-1.5 bg-accent/40 animate-pulse"></span><span class="tracking-[0.2em] font-mono">SYS.JOIN</span></div>
   {:else if status === "success"}
     <div class="label text-success">joined! redirecting...</div>
   {:else}

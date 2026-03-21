@@ -6,6 +6,7 @@
   import { navigate } from "../lib/stores/router";
   import TrackCard from "../lib/components/TrackCard.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
+  import { setTypeCode } from "../lib/utils/format";
 
   let { slug }: { slug: string } = $props();
 
@@ -24,6 +25,16 @@
     name: string;
   }
 
+  interface SetSummary {
+    id: string;
+    name: string;
+    set_type: string;
+    recorded_at?: string;
+    notes?: string;
+    item_count: number;
+    created_at: string;
+  }
+
   interface Track {
     id: string;
     title: string;
@@ -34,6 +45,7 @@
     status: string;
     tags: string[];
     song_id?: string;
+    set_id?: string;
     song?: { id: string; name: string };
     source_url?: string;
     created_at: string;
@@ -43,13 +55,18 @@
   let band = $state<BandDetail | null>(null);
   let tracks = $state<Track[]>([]);
   let songs = $state<Song[]>([]);
+  let sets = $state<SetSummary[]>([]);
   let loading = $state(true);
+  let viewTab = $state<"songs" | "sets">("songs");
   let showInviteUrl = $state("");
   let generatingInvite = $state(false);
   let inviteEmail = $state("");
   let showInviteForm = $state(false);
   let newSongName = $state("");
   let creatingSong = $state(false);
+  let newSetName = $state("");
+  let newSetType = $state("rehearsal");
+  let creatingSet = $state(false);
   let showImport = $state(false);
   let importUrl = $state("");
   let importTitle = $state("");
@@ -72,7 +89,7 @@
     return counts;
   });
 
-  let ungroupedTracks = $derived(tracks.filter((t) => !t.song_id));
+  let ungroupedTracks = $derived(tracks.filter((t) => !t.song_id && !t.set_id));
 
   onMount(() => {
     loadData();
@@ -92,10 +109,11 @@
   async function loadData() {
     loading = true;
     try {
-      [band, tracks, songs] = await Promise.all([
+      [band, tracks, songs, sets] = await Promise.all([
         api<BandDetail>(`/api/bands/${slug}`),
         api<Track[]>(`/api/bands/${slug}/tracks`),
         api<Song[]>(`/api/bands/${slug}/songs`),
+        api<SetSummary[]>(`/api/bands/${slug}/sets`),
       ]);
     } finally {
       loading = false;
@@ -138,6 +156,26 @@
       await loadSongs();
     } finally {
       creatingSong = false;
+    }
+  }
+
+  async function loadSets() {
+    sets = await api<SetSummary[]>(`/api/bands/${slug}/sets`);
+  }
+
+  async function createSet() {
+    if (!newSetName.trim()) return;
+    creatingSet = true;
+    try {
+      const set = await apiPost<SetSummary>(`/api/bands/${slug}/sets`, {
+        name: newSetName.trim(),
+        set_type: newSetType,
+      });
+      newSetName = "";
+      newSetType = "rehearsal";
+      navigate(`/band/${slug}/set/${set.id}`);
+    } finally {
+      creatingSet = false;
     }
   }
 
@@ -190,7 +228,7 @@
 </script>
 
 {#if loading}
-  <div class="text-center py-20 label text-text-muted">loading</div>
+  <div class="flex items-center justify-center gap-2 py-20 label text-text-muted"><span class="w-1.5 h-1.5 bg-accent/40 animate-pulse"></span><span class="tracking-[0.2em] font-mono">SYS.LOAD</span></div>
 {:else if band}
   <div>
     <!-- Band header -->
@@ -404,38 +442,97 @@
       <TrackUpload bandSlug={slug} onUploaded={loadTracks} />
     </div>
 
-    <!-- Songs -->
-    <div class="flex items-center justify-between mb-6">
-      <h3 class="label text-text-muted">songs</h3>
-      <form onsubmit={(e) => { e.preventDefault(); createSong(); }} class="flex gap-2">
-        <input
-          bind:value={newSongName}
-          type="text"
-          placeholder="+ new song"
-          disabled={creatingSong}
-          class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40"
-        />
-      </form>
+    <!-- Tab toggle -->
+    <div class="flex items-center gap-6 mb-6">
+      <button
+        onclick={() => (viewTab = "songs")}
+        class="label transition-colors {viewTab === 'songs' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+      >songs</button>
+      <button
+        onclick={() => (viewTab = "sets")}
+        class="label transition-colors {viewTab === 'sets' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+      >sets</button>
+
+      {#if viewTab === "songs"}
+        <form onsubmit={(e) => { e.preventDefault(); createSong(); }} class="ml-auto flex gap-2">
+          <input
+            bind:value={newSongName}
+            type="text"
+            placeholder="+ new song"
+            disabled={creatingSong}
+            class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40"
+          />
+        </form>
+      {:else}
+        <form onsubmit={(e) => { e.preventDefault(); createSet(); }} class="ml-auto flex gap-2">
+          <select
+            bind:value={newSetType}
+            class="bg-transparent border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors"
+          >
+            <option value="rehearsal">rehearsal</option>
+            <option value="live">live</option>
+            <option value="pre-production">pre-production</option>
+            <option value="other">other</option>
+          </select>
+          <input
+            bind:value={newSetName}
+            type="text"
+            placeholder="+ new set"
+            disabled={creatingSet}
+            class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40"
+          />
+        </form>
+      {/if}
     </div>
 
-    {#if songs.length > 0}
-      <div class="space-y-2 mb-10">
-        {#each songs as song}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="bg-bg-surface border border-border p-5 hover:border-accent/40 transition-colors cursor-pointer group flex items-center justify-between"
-            onclick={() => navigate(`/band/${slug}/song/${song.id}`)}
-          >
-            <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors">{song.name}</h4>
-            <span class="label-sm text-text-muted">{takeCounts().get(song.id) || 0} {(takeCounts().get(song.id) || 0) === 1 ? 'take' : 'takes'}</span>
-          </div>
-        {/each}
-      </div>
-    {:else if tracks.length === 0}
-      <div class="text-center py-20 label text-text-muted mb-10">
-        no songs yet
-      </div>
+    {#if viewTab === "songs"}
+      {#if songs.length > 0}
+        <div class="space-y-2 mb-10">
+          {#each songs as song}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="bg-bg-surface border border-border p-5 hover:border-accent/40 transition-colors cursor-pointer group flex items-center justify-between"
+              onclick={() => navigate(`/band/${slug}/song/${song.id}`)}
+            >
+              <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors">{song.name}</h4>
+              <span class="label-sm text-text-muted">{takeCounts().get(song.id) || 0} {(takeCounts().get(song.id) || 0) === 1 ? 'take' : 'takes'}</span>
+            </div>
+          {/each}
+        </div>
+      {:else if tracks.length === 0}
+        <div class="text-center py-20 label text-text-muted mb-10">
+          no songs yet
+        </div>
+      {/if}
+    {:else}
+      {#if sets.length > 0}
+        <div class="space-y-2 mb-10">
+          {#each sets as set}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="bg-bg-surface border border-border p-5 hover:border-accent/40 transition-colors cursor-pointer group flex items-center justify-between"
+              onclick={() => navigate(`/band/${slug}/set/${set.id}`)}
+            >
+              <div class="flex items-center gap-3 min-w-0">
+                <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors truncate">{set.name}</h4>
+                <span class="label-sm text-accent bg-accent/10 px-2 py-0.5 shrink-0 font-mono">{setTypeCode(set.set_type)}</span>
+              </div>
+              <div class="flex items-center gap-4 label-sm text-text-muted shrink-0">
+                <span>{set.item_count} {set.item_count === 1 ? 'song' : 'songs'}</span>
+                {#if set.recorded_at}
+                  <span>{new Date(set.recorded_at.slice(0, 10) + 'T00:00:00').toLocaleDateString()}</span>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <div class="text-center py-20 label text-text-muted mb-10">
+          no sets yet
+        </div>
+      {/if}
     {/if}
 
     <!-- Ungrouped tracks -->

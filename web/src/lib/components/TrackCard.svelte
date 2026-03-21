@@ -14,6 +14,8 @@
       status: string;
       tags: string[];
       source_url?: string;
+      sample_rate?: number;
+      recorded_at?: string;
       created_at: string;
       uploader?: { display_name: string; email: string };
     };
@@ -108,11 +110,15 @@
       <span class="font-mono">{formatDuration(track.duration_ms)}</span>
       <span class="vr-divider">/</span>
     {/if}
-    <span>{track.format}</span>
+    <span>{track.format}{#if track.sample_rate} · {track.sample_rate >= 1000 ? `${(track.sample_rate / 1000).toFixed(track.sample_rate % 1000 ? 1 : 0)}kHz` : `${track.sample_rate}Hz`}{/if}</span>
     <span class="vr-divider">/</span>
     <span>{formatFileSize(track.file_size)}</span>
     <span class="vr-divider">/</span>
     <span>{track.uploader?.display_name || track.uploader?.email || "unknown"}</span>
+    {#if track.recorded_at}
+      <span class="vr-divider">/</span>
+      <span>rec {new Date(track.recorded_at.slice(0, 10) + 'T00:00:00').toLocaleDateString()}</span>
+    {/if}
     <span class="ml-auto">{formatRelativeTime(track.created_at)}</span>
   </div>
 </div>

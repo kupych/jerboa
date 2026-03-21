@@ -99,7 +99,7 @@
   {/if}
 
   {#if loading}
-    <div class="text-center py-20 label text-text-muted">loading</div>
+    <div class="flex items-center justify-center gap-2 py-20 label text-text-muted"><span class="w-1.5 h-1.5 bg-accent/40 animate-pulse"></span><span class="tracking-[0.2em] font-mono">SYS.LOAD</span></div>
   {:else if bands.length === 0}
     <div class="text-center py-20 space-y-3">
       <div class="text-text-muted text-base tracking-wider">no bands yet</div>

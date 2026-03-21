@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -262,9 +263,10 @@ func (h *TrackHandler) UpdateMeta(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		Notes       string `json:"notes"`
+		Title       string  `json:"title"`
+		Description string  `json:"description"`
+		Notes       string  `json:"notes"`
+		RecordedAt  *string `json:"recorded_at"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
@@ -275,7 +277,23 @@ func (h *TrackHandler) UpdateMeta(w http.ResponseWriter, r *http.Request) {
 		req.Title = track.Title
 	}
 
-	if err := h.queries.UpdateTrackMeta(r.Context(), trackID, req.Title, req.Description, req.Notes); err != nil {
+	var recordedAt *time.Time
+	if req.RecordedAt != nil {
+		if *req.RecordedAt == "" {
+			recordedAt = nil
+		} else {
+			t, err := time.Parse("2006-01-02", *req.RecordedAt)
+			if err != nil {
+				http.Error(w, `{"error":"invalid recorded_at date"}`, http.StatusBadRequest)
+				return
+			}
+			recordedAt = &t
+		}
+	} else {
+		recordedAt = track.RecordedAt
+	}
+
+	if err := h.queries.UpdateTrackMeta(r.Context(), trackID, req.Title, req.Description, req.Notes, recordedAt); err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
 	}
@@ -283,6 +301,7 @@ func (h *TrackHandler) UpdateMeta(w http.ResponseWriter, r *http.Request) {
 	track.Title = req.Title
 	track.Description = req.Description
 	track.Notes = req.Notes
+	track.RecordedAt = recordedAt
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(track)
 }

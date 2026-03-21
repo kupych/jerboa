@@ -32,6 +32,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	commentH := NewCommentHandler(queries, hub)
 	songH := NewSongHandler(queries)
 	importH := NewImportHandler(queries, store, processor, hub, cfg.YTDLPCookies)
+	setH := NewSetHandler(queries)
 	chatH := NewChatHandler(queries, hub)
 
 	// Auth routes (no auth middleware)
@@ -62,6 +63,8 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/bands/{slug}/songs/{songID}", songH.Get)
 		r.Patch("/api/bands/{slug}/songs/{songID}", songH.Update)
 		r.Delete("/api/bands/{slug}/songs/{songID}", songH.Delete)
+		r.Get("/api/bands/{slug}/songs/{songID}/sets", songH.ListSets)
+		r.Get("/api/bands/{slug}/songs/{songID}/takes", songH.ListSetTakes)
 		r.Patch("/api/bands/{slug}/tracks/{trackID}/song", songH.AssignTrack)
 
 		// Tracks
@@ -77,6 +80,15 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Post("/api/bands/{slug}/tracks/{trackID}/personnel", trackH.AddPersonnel)
 		r.Delete("/api/bands/{slug}/tracks/{trackID}/personnel/{userID}", trackH.RemovePersonnel)
 		r.Delete("/api/bands/{slug}/tracks/{trackID}", trackH.Delete)
+
+		// Sets
+		r.Get("/api/bands/{slug}/sets", setH.List)
+		r.Post("/api/bands/{slug}/sets", setH.Create)
+		r.Get("/api/bands/{slug}/sets/{setID}", setH.Get)
+		r.Patch("/api/bands/{slug}/sets/{setID}", setH.Update)
+		r.Delete("/api/bands/{slug}/sets/{setID}", setH.Delete)
+		r.Put("/api/bands/{slug}/sets/{setID}/items", setH.ReplaceItems)
+		r.Patch("/api/bands/{slug}/tracks/{trackID}/set", setH.AssignTrack)
 
 		// Chat
 		r.Get("/api/bands/{slug}/chat", chatH.List)

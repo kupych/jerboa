@@ -2,18 +2,23 @@
   import { onMount, onDestroy } from "svelte";
   import WaveSurfer from "wavesurfer.js";
   import { formatTimestamp, formatDuration } from "../utils/format";
+  import { player } from "../stores/player";
 
   let {
     src,
     peaks = undefined,
     duration = 0,
     comments = [],
+    regions = [],
+    clickToTag = false,
     onTimestampClick = undefined,
   }: {
     src: string;
     peaks?: number[];
     duration?: number;
     comments?: Array<{ id: string; timestamp_ms: number; body: string; user_name: string }>;
+    regions?: Array<{ start_ms: number; end_ms: number; label: string; color?: string }>;
+    clickToTag?: boolean;
     onTimestampClick?: (ms: number) => void;
   } = $props();
 
@@ -54,9 +59,13 @@
     wavesurfer.on("pause", () => (isPlaying = false));
     wavesurfer.on("timeupdate", (t) => (currentTime = t));
     wavesurfer.on("decode", (d) => (totalDuration = d));
+
+    // Register media element for global keyboard shortcuts
+    player.setMediaElement(wavesurfer.getMediaElement());
   });
 
   onDestroy(() => {
+    player.setMediaElement(null);
     wavesurfer?.destroy();
   });
 
@@ -65,22 +74,56 @@
   }
 
   function handleWaveformClick(e: MouseEvent) {
-    if (!onTimestampClick || !wavesurfer) return;
-    if (e.altKey) {
-      const ms = Math.round(currentTime * 1000);
+    if (!onTimestampClick || !wavesurfer || totalDuration <= 0) return;
+    // Calculate position from click coordinates
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, x / rect.width));
+    const ms = Math.round(ratio * totalDuration * 1000);
+    if (clickToTag || e.altKey) {
       onTimestampClick(ms);
     }
   }
 
-  function seekToComment(ms: number) {
+  export function seekTo(ms: number) {
     if (wavesurfer && totalDuration > 0) {
       wavesurfer.seekTo(ms / 1000 / totalDuration);
     }
   }
 
+  function seekToComment(ms: number) {
+    seekTo(ms);
+  }
+
   function commentPosition(ms: number): number {
     if (totalDuration <= 0) return 0;
     return (ms / 1000 / totalDuration) * 100;
+  }
+
+  function regionLeft(ms: number): number {
+    if (totalDuration <= 0) return 0;
+    return (ms / 1000 / totalDuration) * 100;
+  }
+
+  function regionWidth(startMs: number, endMs: number): number {
+    if (totalDuration <= 0) return 0;
+    return ((endMs - startMs) / 1000 / totalDuration) * 100;
+  }
+
+  let hoveredRegion = $state<number | null>(null);
+  let hoverX = $state<number | null>(null);
+  let hoverMs = $state(0);
+
+  function handleWaveformMouseMove(e: MouseEvent) {
+    if (!clickToTag || totalDuration <= 0) { hoverX = null; return; }
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    hoverX = (x / rect.width) * 100;
+    hoverMs = Math.round((x / rect.width) * totalDuration * 1000);
+  }
+
+  function handleWaveformMouseLeave() {
+    hoverX = null;
   }
 </script>
 
@@ -109,7 +152,7 @@
       {formatDuration(totalDuration * 1000)}
     </div>
 
-    {#if onTimestampClick}
+    {#if onTimestampClick && !clickToTag}
       <button
         onclick={() => onTimestampClick!(Math.round(currentTime * 1000))}
         class="ml-auto label text-marker hover:text-marker-hover transition-colors flex items-center gap-2"
@@ -126,8 +169,45 @@
   <!-- Waveform -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="relative" onclick={handleWaveformClick}>
+  <div
+    class="relative {clickToTag ? 'cursor-crosshair' : ''}"
+    onclick={handleWaveformClick}
+    onmousemove={handleWaveformMouseMove}
+    onmouseleave={handleWaveformMouseLeave}
+  >
     <div bind:this={container} class="w-full"></div>
+
+    <!-- Hover cursor line for tagging -->
+    {#if hoverX != null && clickToTag}
+      <div
+        class="absolute top-0 h-full w-0.5 bg-orange-400 pointer-events-none z-20"
+        style="left: {hoverX}%"
+      >
+        <div class="absolute -top-5 left-1/2 -translate-x-1/2 label-sm font-mono text-orange-400 whitespace-nowrap" style="font-size: 10px;">
+          {formatDuration(hoverMs)}
+        </div>
+      </div>
+    {/if}
+
+    {#each regions as region, ri}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div
+        class="absolute top-0 h-full cursor-pointer transition-opacity"
+        style="left: {regionLeft(region.start_ms)}%; width: {regionWidth(region.start_ms, region.end_ms)}%; background: {region.color || 'rgba(99,102,241,0.25)'};"
+        onmouseenter={() => (hoveredRegion = ri)}
+        onmouseleave={() => (hoveredRegion = null)}
+        onclick={(e) => { e.stopPropagation(); seekToComment(region.start_ms); }}
+      >
+        <div class="absolute -top-5 left-1 label-sm text-text-secondary truncate max-w-full" style="font-size: 10px;">{region.label}</div>
+        {#if hoveredRegion === ri}
+          <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-3 py-2 bg-bg-elevated border border-border whitespace-nowrap z-10">
+            <div class="label-sm text-text-primary">{region.label}</div>
+            <div class="text-text-muted label-sm font-mono mt-1">{formatDuration(region.start_ms)} &mdash; {formatDuration(region.end_ms)}</div>
+          </div>
+        {/if}
+      </div>
+    {/each}
 
     {#each comments as comment}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -150,5 +230,11 @@
         {/if}
       </div>
     {/each}
+  </div>
+
+  <!-- Axis labels -->
+  <div class="flex justify-between mt-1 select-none">
+    <span class="text-[8px] font-mono font-semibold text-text-muted/30 tracking-wider">0:00</span>
+    <span class="text-[8px] font-mono font-semibold text-text-muted/30 tracking-wider">{formatDuration(totalDuration * 1000)}</span>
   </div>
 </div>

@@ -405,7 +405,8 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 	err := q.pool.QueryRow(ctx, `
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
-		       t.status, t.tags, t.notes, t.song_id, t.source_url, t.created_at,
+		       t.status, t.tags, t.notes, t.song_id, t.source_url,
+		       t.recorded_at, t.set_id, t.created_at,
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
 		       s.name
 		FROM tracks t
@@ -414,7 +415,8 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 		WHERE t.id = $1
 	`, id).Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
 		&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
-		&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL, &t.CreatedAt,
+		&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
+		&t.RecordedAt, &t.SetID, &t.CreatedAt,
 		&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
 		&songName)
 	if err == pgx.ErrNoRows {
@@ -432,7 +434,8 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 	rows, err := q.pool.Query(ctx, `
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
-		       t.status, t.tags, t.notes, t.song_id, t.source_url, t.created_at,
+		       t.status, t.tags, t.notes, t.song_id, t.source_url,
+		       t.recorded_at, t.set_id, t.created_at,
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
 		       s.name
 		FROM tracks t
@@ -454,7 +457,8 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 		var songName *string
 		if err := rows.Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
 			&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
-			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL, &t.CreatedAt,
+			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
+			&t.RecordedAt, &t.SetID, &t.CreatedAt,
 			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
 			&songName); err != nil {
 			return nil, err
@@ -469,8 +473,13 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 	return tracks, nil
 }
 
-func (q *Queries) UpdateTrackMeta(ctx context.Context, id uuid.UUID, title, description, notes string) error {
-	_, err := q.pool.Exec(ctx, `UPDATE tracks SET title = $2, description = $3, notes = $4 WHERE id = $1`, id, title, description, notes)
+func (q *Queries) UpdateTrackMeta(ctx context.Context, id uuid.UUID, title, description, notes string, recordedAt *time.Time) error {
+	_, err := q.pool.Exec(ctx, `UPDATE tracks SET title = $2, description = $3, notes = $4, recorded_at = $5 WHERE id = $1`, id, title, description, notes, recordedAt)
+	return err
+}
+
+func (q *Queries) UpdateTrackSet(ctx context.Context, trackID uuid.UUID, setID *uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, `UPDATE tracks SET set_id = $2 WHERE id = $1`, trackID, setID)
 	return err
 }
 
@@ -633,6 +642,224 @@ func (q *Queries) CreateChatMessage(ctx context.Context, bandID, userID uuid.UUI
 	}
 	m.User.ID = m.UserID
 	return &m, nil
+}
+
+// Sets
+
+func (q *Queries) CreateSet(ctx context.Context, s *models.Set) error {
+	return q.pool.QueryRow(ctx, `
+		INSERT INTO sets (band_id, name, set_type, recorded_at, notes)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, created_at
+	`, s.BandID, s.Name, s.SetType, s.RecordedAt, s.Notes).Scan(&s.ID, &s.CreatedAt)
+}
+
+func (q *Queries) ListSets(ctx context.Context, bandID uuid.UUID) ([]models.Set, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT s.id, s.band_id, s.name, s.set_type, s.recorded_at, s.notes, s.created_at,
+		       (SELECT count(*) FROM set_items WHERE set_id = s.id)
+		FROM sets s
+		WHERE s.band_id = $1
+		ORDER BY COALESCE(s.recorded_at, s.created_at::date) DESC, s.created_at DESC
+	`, bandID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sets []models.Set
+	for rows.Next() {
+		var s models.Set
+		if err := rows.Scan(&s.ID, &s.BandID, &s.Name, &s.SetType, &s.RecordedAt, &s.Notes, &s.CreatedAt, &s.ItemCount); err != nil {
+			return nil, err
+		}
+		sets = append(sets, s)
+	}
+	return sets, nil
+}
+
+func (q *Queries) GetSet(ctx context.Context, id uuid.UUID) (*models.Set, error) {
+	var s models.Set
+	err := q.pool.QueryRow(ctx, `
+		SELECT id, band_id, name, set_type, recorded_at, notes, created_at
+		FROM sets WHERE id = $1
+	`, id).Scan(&s.ID, &s.BandID, &s.Name, &s.SetType, &s.RecordedAt, &s.Notes, &s.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &s, err
+}
+
+func (q *Queries) UpdateSet(ctx context.Context, id uuid.UUID, name, setType string, recordedAt *time.Time, notes string) error {
+	_, err := q.pool.Exec(ctx, `
+		UPDATE sets SET name = $2, set_type = $3, recorded_at = $4, notes = $5
+		WHERE id = $1
+	`, id, name, setType, recordedAt, notes)
+	return err
+}
+
+func (q *Queries) DeleteSet(ctx context.Context, id uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, `DELETE FROM sets WHERE id = $1`, id)
+	return err
+}
+
+func (q *Queries) ListSetItems(ctx context.Context, setID uuid.UUID) ([]models.SetItem, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT si.id, si.set_id, si.position, si.song_id, si.custom_name,
+		       si.start_ms, si.end_ms, si.notes, COALESCE(s.name, '')
+		FROM set_items si
+		LEFT JOIN songs s ON si.song_id = s.id
+		WHERE si.set_id = $1
+		ORDER BY si.position
+	`, setID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []models.SetItem
+	for rows.Next() {
+		var si models.SetItem
+		if err := rows.Scan(&si.ID, &si.SetID, &si.Position, &si.SongID, &si.CustomName,
+			&si.StartMS, &si.EndMS, &si.Notes, &si.SongName); err != nil {
+			return nil, err
+		}
+		items = append(items, si)
+	}
+	return items, nil
+}
+
+func (q *Queries) ReplaceSetItems(ctx context.Context, setID uuid.UUID, items []models.SetItem) ([]models.SetItem, error) {
+	tx, err := q.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `DELETE FROM set_items WHERE set_id = $1`, setID)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []models.SetItem
+	for i, item := range items {
+		var si models.SetItem
+		err := tx.QueryRow(ctx, `
+			INSERT INTO set_items (set_id, position, song_id, custom_name, start_ms, end_ms, notes)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			RETURNING id, set_id, position, song_id, custom_name, start_ms, end_ms, notes
+		`, setID, i, item.SongID, item.CustomName, item.StartMS, item.EndMS, item.Notes).Scan(
+			&si.ID, &si.SetID, &si.Position, &si.SongID, &si.CustomName, &si.StartMS, &si.EndMS, &si.Notes)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, si)
+	}
+
+	return result, tx.Commit(ctx)
+}
+
+func (q *Queries) ListSetTracks(ctx context.Context, setID uuid.UUID) ([]models.Track, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
+		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
+		       t.status, t.tags, t.notes, t.song_id, t.source_url,
+		       t.recorded_at, t.set_id, t.created_at,
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
+		       s.name
+		FROM tracks t
+		JOIN users u ON t.uploaded_by = u.id
+		LEFT JOIN songs s ON t.song_id = s.id
+		WHERE t.set_id = $1
+		ORDER BY t.created_at DESC
+	`, setID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tracks []models.Track
+	for rows.Next() {
+		var t models.Track
+		var u models.User
+		var songID *uuid.UUID
+		var songName *string
+		if err := rows.Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
+			&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
+			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
+			&t.RecordedAt, &t.SetID, &t.CreatedAt,
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
+			&songName); err != nil {
+			return nil, err
+		}
+		t.Uploader = &u
+		t.SongID = songID
+		if songID != nil && songName != nil {
+			t.Song = &models.Song{ID: *songID, Name: *songName}
+		}
+		tracks = append(tracks, t)
+	}
+	return tracks, nil
+}
+
+func (q *Queries) ListSetTakesBySong(ctx context.Context, bandID, songID uuid.UUID) ([]models.SetTake, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT si.id, s.id, s.name, s.set_type, si.start_ms, si.end_ms,
+		       t.id, t.title, t.waveform_data, t.duration_ms, t.format, t.file_size,
+		       t.tags, t.recorded_at, t.created_at,
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
+		FROM set_items si
+		JOIN sets s ON si.set_id = s.id
+		JOIN tracks t ON t.set_id = s.id AND t.status = 'ready'
+		JOIN users u ON t.uploaded_by = u.id
+		WHERE si.song_id = $1 AND s.band_id = $2
+		  AND si.start_ms IS NOT NULL AND si.end_ms IS NOT NULL
+		ORDER BY COALESCE(s.recorded_at, s.created_at::date) DESC
+	`, songID, bandID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var takes []models.SetTake
+	for rows.Next() {
+		var st models.SetTake
+		var u models.User
+		if err := rows.Scan(&st.SetItemID, &st.SetID, &st.SetName, &st.SetType, &st.StartMS, &st.EndMS,
+			&st.TrackID, &st.TrackTitle, &st.WaveformData, &st.DurationMS, &st.Format, &st.FileSize,
+			&st.Tags, &st.RecordedAt, &st.CreatedAt,
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		st.Uploader = &u
+		takes = append(takes, st)
+	}
+	return takes, nil
+}
+
+func (q *Queries) ListSetsBySong(ctx context.Context, bandID, songID uuid.UUID) ([]models.Set, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT DISTINCT s.id, s.band_id, s.name, s.set_type, s.recorded_at, s.notes, s.created_at,
+		       (SELECT count(*) FROM set_items WHERE set_id = s.id)
+		FROM sets s
+		JOIN set_items si ON si.set_id = s.id
+		WHERE s.band_id = $1 AND si.song_id = $2
+		ORDER BY COALESCE(s.recorded_at, s.created_at::date) DESC
+	`, bandID, songID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sets []models.Set
+	for rows.Next() {
+		var s models.Set
+		if err := rows.Scan(&s.ID, &s.BandID, &s.Name, &s.SetType, &s.RecordedAt, &s.Notes, &s.CreatedAt, &s.ItemCount); err != nil {
+			return nil, err
+		}
+		sets = append(sets, s)
+	}
+	return sets, nil
 }
 
 func (q *Queries) ListChatMessages(ctx context.Context, bandID uuid.UUID, limit int) ([]models.ChatMessage, error) {

@@ -34,6 +34,17 @@ export function formatRelativeTime(date: string | Date): string {
   return d.toLocaleDateString();
 }
 
+const SET_TYPE_CODES: Record<string, string> = {
+  rehearsal: "RH",
+  live: "LV",
+  "pre-production": "PP",
+  other: "OT",
+};
+
+export function setTypeCode(type: string): string {
+  return SET_TYPE_CODES[type] || type.slice(0, 2).toUpperCase();
+}
+
 export function initials(name: string): string {
   return name
     .split(/\s+/)

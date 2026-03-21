@@ -24,15 +24,12 @@
 </script>
 
 <div>
-  <button
-    onclick={() => navigate("/")}
-    class="label text-text-muted hover:text-text-secondary transition-colors mb-8 flex items-center gap-2"
-  >
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-      <polyline points="15 18 9 12 15 6"/>
-    </svg>
-    back
-  </button>
+  <!-- Breadcrumb -->
+  <div class="text-[11px] font-mono font-semibold tracking-[0.2em] text-text-muted/30 uppercase select-none flex items-center gap-1.5 mb-8">
+    <button onclick={() => navigate("/")} class="hover:text-accent/60 transition-colors py-1">JRB</button>
+    <span>/</span>
+    <span class="text-text-muted/50">PROFILE</span>
+  </div>
 
   <h2 class="text-xl font-bold tracking-wider font-display mb-8">profile</h2>
 
