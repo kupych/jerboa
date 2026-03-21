@@ -1,0 +1,1 @@
+ALTER TABLE bands ADD COLUMN color_scheme TEXT NOT NULL DEFAULT 'teal';

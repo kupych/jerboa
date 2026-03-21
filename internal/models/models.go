@@ -17,11 +17,12 @@ type User struct {
 }
 
 type Band struct {
-	ID        uuid.UUID `json:"id"`
-	Name      string    `json:"name"`
-	Slug      string    `json:"slug"`
-	CreatedBy uuid.UUID `json:"created_by"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	CreatedBy   uuid.UUID `json:"created_by"`
+	ColorScheme string    `json:"color_scheme"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type BandMember struct {

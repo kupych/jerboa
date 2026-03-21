@@ -183,26 +183,49 @@ func (h *BandHandler) UpdateBand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name string `json:"name"`
+		Name        string `json:"name"`
+		ColorScheme string `json:"color_scheme"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
-		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
 
-	newSlug := slugify(req.Name)
-	updated, err := h.queries.UpdateBandName(r.Context(), band.ID, req.Name, newSlug)
-	if err != nil {
-		if strings.Contains(err.Error(), "duplicate") {
-			http.Error(w, `{"error":"band name already taken"}`, http.StatusConflict)
+	if req.ColorScheme != "" {
+		validSchemes := map[string]bool{
+			"teal": true, "violet": true, "rose": true, "amber": true,
+			"lime": true, "cyan": true, "fuchsia": true, "orange": true,
+		}
+		if !validSchemes[req.ColorScheme] {
+			http.Error(w, `{"error":"invalid color scheme"}`, http.StatusBadRequest)
 			return
 		}
-		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		if err := h.queries.UpdateBandColorScheme(r.Context(), band.ID, req.ColorScheme); err != nil {
+			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if req.Name != "" {
+		newSlug := slugify(req.Name)
+		updated, err := h.queries.UpdateBandName(r.Context(), band.ID, req.Name, newSlug)
+		if err != nil {
+			if strings.Contains(err.Error(), "duplicate") {
+				http.Error(w, `{"error":"band name already taken"}`, http.StatusConflict)
+				return
+			}
+			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(updated)
 		return
 	}
 
+	// Re-fetch band to return updated state
+	band, _ = h.queries.GetBandBySlug(r.Context(), slug)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updated)
+	json.NewEncoder(w).Encode(band)
 }
 
 func (h *BandHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {

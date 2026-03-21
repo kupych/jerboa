@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { user, authLoading, checkAuth } from "./lib/stores/auth";
-  import { route } from "./lib/stores/router";
+  import { route, navigate } from "./lib/stores/router";
+  import { bands, loadBands } from "./lib/stores/bands";
+  import { applyColorScheme, resetColorScheme } from "./lib/colorSchemes";
   import { ws } from "./lib/ws";
   import Layout from "./lib/components/Layout.svelte";
   import Login from "./routes/Login.svelte";
@@ -20,7 +22,21 @@
   $effect(() => {
     if ($user) {
       ws.connect();
+      loadBands();
       return () => ws.disconnect();
+    }
+  });
+
+  // Apply band color scheme when navigating between bands
+  $effect(() => {
+    const slug = $route.bandSlug;
+    if (slug && $bands.length > 0) {
+      const band = $bands.find((b) => b.slug === slug);
+      if (band) {
+        applyColorScheme(band.color_scheme);
+      }
+    } else {
+      resetColorScheme();
     }
   });
 </script>

@@ -2,6 +2,7 @@
   import { user } from "../lib/stores/auth";
   import { apiPatch } from "../lib/api";
   import { navigate } from "../lib/stores/router";
+  import { bands } from "../lib/stores/bands";
 
   let displayName = $state($user?.display_name || "");
   let saving = $state(false);
@@ -26,7 +27,7 @@
 <div>
   <!-- Breadcrumb -->
   <div class="text-[11px] font-mono font-semibold tracking-[0.2em] text-text-muted/30 uppercase select-none flex items-center gap-1.5 mb-8">
-    <button onclick={() => navigate("/")} class="hover:text-accent/60 transition-colors py-1">JRB</button>
+    <button onclick={() => navigate($bands.length === 1 ? `/band/${$bands[0].slug}` : "/")} class="hover:text-accent/60 transition-colors py-1">{$bands.length === 1 ? $bands[0].slug.toUpperCase() : 'JRB'}</button>
     <span>/</span>
     <span class="text-text-muted/50">PROFILE</span>
   </div>

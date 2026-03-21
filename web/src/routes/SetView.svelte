@@ -363,8 +363,6 @@
   <div>
     <!-- Breadcrumb -->
     <div class="text-[11px] font-mono font-semibold tracking-[0.2em] text-text-muted/30 uppercase select-none flex items-center gap-1.5 mb-8">
-      <button onclick={() => navigate("/")} class="hover:text-accent/60 transition-colors py-1">JRB</button>
-      <span>/</span>
       <button onclick={() => navigate(`/band/${slug}`)} class="hover:text-accent/60 transition-colors py-1">{slug.toUpperCase()}</button>
       <span>/</span>
       <span class="text-text-muted/50">SET:{set.name.replace(/\s+/g, "").toUpperCase()}</span>

@@ -97,8 +97,8 @@ func (q *Queries) CreateBand(ctx context.Context, name, slug string, createdBy u
 	var b models.Band
 	err := q.pool.QueryRow(ctx, `
 		INSERT INTO bands (name, slug, created_by) VALUES ($1, $2, $3)
-		RETURNING id, name, slug, created_by, created_at
-	`, name, slug, createdBy).Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.CreatedAt)
+		RETURNING id, name, slug, created_by, color_scheme, created_at
+	`, name, slug, createdBy).Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.ColorScheme, &b.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -111,8 +111,8 @@ func (q *Queries) CreateBand(ctx context.Context, name, slug string, createdBy u
 func (q *Queries) GetBandBySlug(ctx context.Context, slug string) (*models.Band, error) {
 	var b models.Band
 	err := q.pool.QueryRow(ctx, `
-		SELECT id, name, slug, created_by, created_at FROM bands WHERE slug = $1
-	`, slug).Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.CreatedAt)
+		SELECT id, name, slug, created_by, color_scheme, created_at FROM bands WHERE slug = $1
+	`, slug).Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.ColorScheme, &b.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -121,7 +121,7 @@ func (q *Queries) GetBandBySlug(ctx context.Context, slug string) (*models.Band,
 
 func (q *Queries) ListUserBands(ctx context.Context, userID uuid.UUID) ([]models.BandWithRole, error) {
 	rows, err := q.pool.Query(ctx, `
-		SELECT b.id, b.name, b.slug, b.created_by, b.created_at, bm.role
+		SELECT b.id, b.name, b.slug, b.created_by, b.color_scheme, b.created_at, bm.role
 		FROM bands b JOIN band_members bm ON b.id = bm.band_id
 		WHERE bm.user_id = $1
 		ORDER BY b.name
@@ -134,7 +134,7 @@ func (q *Queries) ListUserBands(ctx context.Context, userID uuid.UUID) ([]models
 	var bands []models.BandWithRole
 	for rows.Next() {
 		var b models.BandWithRole
-		if err := rows.Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.CreatedAt, &b.Role); err != nil {
+		if err := rows.Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.ColorScheme, &b.CreatedAt, &b.Role); err != nil {
 			return nil, err
 		}
 		bands = append(bands, b)
@@ -198,9 +198,14 @@ func (q *Queries) UpdateBandName(ctx context.Context, bandID uuid.UUID, name, sl
 	var b models.Band
 	err := q.pool.QueryRow(ctx, `
 		UPDATE bands SET name = $2, slug = $3 WHERE id = $1
-		RETURNING id, name, slug, created_by, created_at
-	`, bandID, name, slug).Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.CreatedAt)
+		RETURNING id, name, slug, created_by, color_scheme, created_at
+	`, bandID, name, slug).Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.ColorScheme, &b.CreatedAt)
 	return &b, err
+}
+
+func (q *Queries) UpdateBandColorScheme(ctx context.Context, bandID uuid.UUID, colorScheme string) error {
+	_, err := q.pool.Exec(ctx, `UPDATE bands SET color_scheme = $2 WHERE id = $1`, bandID, colorScheme)
+	return err
 }
 
 func (q *Queries) CreateInvite(ctx context.Context, bandID, createdBy uuid.UUID, email string, ttl time.Duration) (*models.BandInvite, error) {
@@ -296,8 +301,8 @@ func (q *Queries) AcceptInviteReturningBand(ctx context.Context, token string, u
 
 	var b models.Band
 	err = tx.QueryRow(ctx, `
-		SELECT id, name, slug, created_by, created_at FROM bands WHERE id = $1
-	`, bandID).Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.CreatedAt)
+		SELECT id, name, slug, created_by, color_scheme, created_at FROM bands WHERE id = $1
+	`, bandID).Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.ColorScheme, &b.CreatedAt)
 	if err != nil {
 		return nil, err
 	}

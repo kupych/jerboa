@@ -4,6 +4,8 @@
   import { ws } from "../lib/ws";
   import { user as currentUser } from "../lib/stores/auth";
   import { navigate } from "../lib/stores/router";
+  import { loadBands } from "../lib/stores/bands";
+  import { colorSchemes, applyColorScheme } from "../lib/colorSchemes";
   import TrackCard from "../lib/components/TrackCard.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
   import { setTypeCode } from "../lib/utils/format";
@@ -16,7 +18,7 @@
   }
 
   interface BandDetail {
-    band: { id: string; name: string; slug: string };
+    band: { id: string; name: string; slug: string; color_scheme: string };
     members: BandMember[];
   }
 
@@ -82,7 +84,9 @@
 
   let ungroupedTracks = $derived(tracks.filter((t) => !t.song_id && !t.set_id));
 
-  onMount(() => {
+  // Reload when slug changes (band switching)
+  $effect(() => {
+    slug; // track dependency
     loadData();
   });
 
@@ -168,6 +172,14 @@
     } finally {
       creatingSet = false;
     }
+  }
+
+  async function setColorScheme(scheme: string) {
+    if (!band) return;
+    await apiPatch(`/api/bands/${slug}`, { color_scheme: scheme });
+    band.band.color_scheme = scheme;
+    applyColorScheme(scheme);
+    await loadBands();
   }
 
   async function updateBandName() {
@@ -346,6 +358,20 @@
               {savingBandName ? "..." : "save"}
             </button>
           </form>
+        </div>
+
+        <div>
+          <span class="label text-text-muted block mb-3">color scheme</span>
+          <div class="flex flex-wrap gap-2">
+            {#each Object.entries(colorSchemes) as [key, scheme]}
+              <button
+                onclick={() => setColorScheme(key)}
+                class="w-8 h-8 border-2 transition-all {band.band.color_scheme === key ? 'border-text-primary scale-110' : 'border-transparent hover:border-text-muted/30'}"
+                style="background: {scheme.accent}"
+                title={scheme.name}
+              ></button>
+            {/each}
+          </div>
         </div>
 
         <div>

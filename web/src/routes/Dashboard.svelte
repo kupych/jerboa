@@ -3,6 +3,7 @@
   import { api, apiPost } from "../lib/api";
   import { navigate } from "../lib/stores/router";
   import { user } from "../lib/stores/auth";
+  import { bands as bandsStore, loadBands as refreshBands } from "../lib/stores/bands";
 
   interface Band {
     id: string;
@@ -20,6 +21,10 @@
 
   onMount(async () => {
     await loadBands();
+    // Auto-redirect if user is in exactly one band
+    if (bands.length === 1) {
+      navigate(`/band/${bands[0].slug}`);
+    }
   });
 
   async function loadBands() {
