@@ -51,12 +51,8 @@
   }
 
   function playNext() {
-    if (currentIndex < tracks.length - 1) {
-      currentIndex++;
-      playFromStart();
-    } else {
-      isPlaying = false;
-    }
+    currentIndex = (currentIndex + 1) % tracks.length;
+    playFromStart();
   }
 
   function playPrev() {
