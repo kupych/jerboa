@@ -657,6 +657,7 @@
           regions={regions()}
           clickToTag={tagging}
           onTimestampClick={tagging ? handleTaggingClick : undefined}
+          minPxPerMin={120}
         />
       </div>
     {/if}

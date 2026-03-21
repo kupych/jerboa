@@ -12,6 +12,7 @@
     regions = [],
     clickToTag = false,
     onTimestampClick = undefined,
+    minPxPerMin = 0,
   }: {
     src: string;
     peaks?: number[];
@@ -20,9 +21,11 @@
     regions?: Array<{ start_ms: number; end_ms: number; label: string; color?: string }>;
     clickToTag?: boolean;
     onTimestampClick?: (ms: number) => void;
+    minPxPerMin?: number;
   } = $props();
 
   let container: HTMLDivElement;
+  let scrollContainer: HTMLDivElement;
   let wavesurfer: WaveSurfer | null = null;
   let isPlaying = $state(false);
   let currentTime = $state(0);
@@ -110,6 +113,12 @@
     return ((endMs - startMs) / 1000 / totalDuration) * 100;
   }
 
+  let minWidth = $derived(
+    minPxPerMin > 0 && totalDuration > 0
+      ? Math.ceil((totalDuration / 60) * minPxPerMin)
+      : 0
+  );
+
   let hoveredRegion = $state<number | null>(null);
   let hoverX = $state<number | null>(null);
   let hoverMs = $state(0);
@@ -125,6 +134,45 @@
   function handleWaveformMouseLeave() {
     hoverX = null;
   }
+
+  // Auto-scroll: lerp toward centering the playhead
+  let scrollRaf = 0;
+  $effect(() => {
+    if (!isPlaying || !scrollContainer || !minWidth || totalDuration <= 0) {
+      if (scrollRaf) { cancelAnimationFrame(scrollRaf); scrollRaf = 0; }
+      return;
+    }
+    // Start the scroll loop
+    if (!scrollRaf) scrollLoop();
+  });
+
+  function scrollLoop() {
+    scrollRaf = requestAnimationFrame(() => {
+      if (!isPlaying || !scrollContainer) { scrollRaf = 0; return; }
+      const contentWidth = scrollContainer.scrollWidth;
+      const viewWidth = scrollContainer.clientWidth;
+      if (contentWidth <= viewWidth) { scrollRaf = 0; return; }
+
+      const ratio = currentTime / totalDuration;
+      const playheadX = ratio * contentWidth;
+      const idealLeft = playheadX - viewWidth * 0.5;
+      const target = Math.max(0, Math.min(idealLeft, contentWidth - viewWidth));
+      const current = scrollContainer.scrollLeft;
+      const diff = target - current;
+
+      // Lerp — move a fraction of the distance each frame
+      // Strength scales with how far off-center we are
+      const offset = Math.abs(diff) / viewWidth;
+      const strength = Math.min(0.12, 0.02 + offset * 0.15);
+      if (Math.abs(diff) > 1) {
+        scrollContainer.scrollLeft = current + diff * strength;
+      }
+
+      scrollLoop();
+    });
+  }
+
+  onDestroy(() => { if (scrollRaf) cancelAnimationFrame(scrollRaf); });
 </script>
 
 <div class="bg-bg-surface border border-border p-6">
@@ -167,10 +215,12 @@
   </div>
 
   <!-- Waveform -->
+  <div class="overflow-x-auto overflow-y-visible pt-6" bind:this={scrollContainer}>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="relative {clickToTag ? 'cursor-crosshair' : ''}"
+    style={minWidth > 0 ? `min-width: ${minWidth}px` : ""}
     onclick={handleWaveformClick}
     onmousemove={handleWaveformMouseMove}
     onmouseleave={handleWaveformMouseLeave}
@@ -230,11 +280,12 @@
         {/if}
       </div>
     {/each}
-  </div>
 
-  <!-- Axis labels -->
-  <div class="flex justify-between mt-1 select-none">
-    <span class="text-[8px] font-mono font-semibold text-text-muted/30 tracking-wider">0:00</span>
-    <span class="text-[8px] font-mono font-semibold text-text-muted/30 tracking-wider">{formatDuration(totalDuration * 1000)}</span>
+    <!-- Axis labels -->
+    <div class="flex justify-between mt-1 select-none">
+      <span class="text-[8px] font-mono font-semibold text-text-muted/30 tracking-wider">0:00</span>
+      <span class="text-[8px] font-mono font-semibold text-text-muted/30 tracking-wider">{formatDuration(totalDuration * 1000)}</span>
+    </div>
+  </div>
   </div>
 </div>

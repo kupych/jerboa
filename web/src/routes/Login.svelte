@@ -62,7 +62,7 @@
 
     <!-- Sign in -->
     <div class="border-t border-accent/30 flex justify-between items-start" style="margin-top: 2px; padding-top: 0.25rem;">
-      <span class="text-[9px] font-semibold tracking-[0.15em] text-accent/25 uppercase select-none leading-none" style="margin-top: 1px;">v0.1.0 — JRB·001A</span>
+      <span class="text-[9px] font-semibold tracking-[0.15em] text-accent/25 uppercase select-none leading-none" style="margin-top: 1px;">{version} — JRB·001A</span>
       <button
         onclick={login}
         style="margin-right: -0.25em;"
