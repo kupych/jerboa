@@ -28,6 +28,8 @@ export const route = derived(path, ($path) => {
     isSong: parts[0] === "band" && parts[2] === "song",
     // /band/:slug/set/:id
     isSet: parts[0] === "band" && parts[2] === "set",
+    // /band/:slug/car
+    isCar: parts[0] === "band" && parts[2] === "car",
     // /invite/:token
     isInvite: parts[0] === "invite",
     // /profile

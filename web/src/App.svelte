@@ -13,6 +13,7 @@
   import SongView from "./routes/SongView.svelte";
   import SetView from "./routes/SetView.svelte";
   import InviteView from "./routes/InviteView.svelte";
+  import CarMode from "./routes/CarMode.svelte";
   import Profile from "./routes/Profile.svelte";
 
   onMount(() => {
@@ -60,6 +61,8 @@
       <InviteView token={$route.inviteToken!} />
     {:else if $route.isTrack}
       <TrackView slug={$route.bandSlug!} trackId={$route.trackId!} />
+    {:else if $route.isCar}
+      <CarMode slug={$route.bandSlug!} />
     {:else if $route.isSet}
       <SetView slug={$route.bandSlug!} setId={$route.setId!} />
     {:else if $route.isSong}

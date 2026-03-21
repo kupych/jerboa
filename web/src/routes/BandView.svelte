@@ -275,6 +275,15 @@
 
       <div class="flex items-center gap-4">
         <button
+          onclick={() => navigate(`/band/${slug}/car`)}
+          class="label text-text-muted hover:text-accent transition-colors flex items-center gap-2"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5,3 19,12 5,21"/>
+          </svg>
+          play all
+        </button>
+        <button
           onclick={() => (showImport = !showImport)}
           class="label text-text-muted hover:text-accent transition-colors flex items-center gap-2"
         >
