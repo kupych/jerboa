@@ -100,7 +100,7 @@ func (m *Mailer) SendInvite(to, bandName, inviteURL string) {
     <a href="%s" style="display:inline-block;background:#c8a864;color:#0a0a0a;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;text-decoration:none;padding:12px 28px;margin:0 0 32px;">ACCEPT INVITE</a>
 
     <div style="border-top:1px solid #222;padding-top:16px;margin-top:32px;">
-      <span style="font-size:8px;font-weight:600;letter-spacing:0.25em;color:rgba(255,255,255,0.1);text-transform:uppercase;">jerboa audio systems</span>
+      <span style="font-size:8px;font-weight:600;letter-spacing:0.25em;color:rgba(255,255,255,0.1);text-transform:uppercase;">whether.network</span>
     </div>
   </div>
 </body>

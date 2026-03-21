@@ -15,7 +15,7 @@
     {@render children()}
   </main>
   <div class="px-5 md:px-12 pb-3">
-    <span class="text-[8px] font-semibold tracking-[0.25em] text-text-muted/15 uppercase select-none font-mono">jerboa audio systems</span>
+    <span class="text-[8px] font-semibold tracking-[0.25em] text-text-muted/15 uppercase select-none font-mono">whether.network</span>
   </div>
   <ChatPanel bind:open={chatOpen} />
 </div>
