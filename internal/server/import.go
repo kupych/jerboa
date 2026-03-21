@@ -190,6 +190,7 @@ func (h *ImportHandler) downloadAndProcess(trackID uuid.UUID, sourceURL string, 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
 
 	output, err := cmd.CombinedOutput()
+	slog.Info("yt-dlp output", "id", trackID, "output", string(output))
 	if err != nil {
 		slog.Error("yt-dlp download failed", "id", trackID, "error", err, "output", string(output))
 		h.queries.UpdateTrackError(ctx, trackID)
@@ -199,7 +200,7 @@ func (h *ImportHandler) downloadAndProcess(trackID uuid.UUID, sourceURL string, 
 	// Find the downloaded file
 	downloaded := filepath.Join(tmpDir, trackID.String()+".opus")
 	// yt-dlp might output different extension, try common ones
-	for _, ext := range []string{".opus", ".m4a", ".mp3", ".ogg", ".wav", ".webm"} {
+	for _, ext := range []string{".opus", ".m4a", ".mp3", ".ogg", ".wav", ".webm", ".flac", ".aac", ".wma", ".mp4", ".mkv"} {
 		candidate := filepath.Join(tmpDir, trackID.String()+ext)
 		if fileExists(candidate) {
 			downloaded = candidate
