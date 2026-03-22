@@ -6,6 +6,7 @@
   import { player } from "../lib/stores/player";
   import { formatDuration, formatRelativeTime, formatTimestamp, setTypeCode } from "../lib/utils/format";
   import CommentList from "../lib/components/CommentList.svelte";
+  import Recorder from "../lib/components/Recorder.svelte";
 
   marked.setOptions({ breaks: true, gfm: true });
 
@@ -551,6 +552,8 @@
           {/if}
         </div>
 
+        <Recorder bandSlug={slug} {songId} onRecorded={loadTracks} />
+
         {#if directTracks.length > 0 || setTakes.length > 0}
         <div class="space-y-2">
           <!-- Direct takes -->
@@ -655,7 +658,7 @@
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 flex-wrap">
                     <button
-                      onclick={() => navigate(`/band/${slug}/track/${take.track_id}`)}
+                      onclick={() => navigate(`/band/${slug}/${take.set_id ? "set/" + take.set_id : "take/" + take.track_id}`)}
                       class="text-sm font-semibold text-text-primary hover:text-accent transition-colors truncate text-left font-display tracking-wide"
                     >{take.track_title}</button>
                     <button

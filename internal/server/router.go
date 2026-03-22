@@ -36,6 +36,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	chatH := NewChatHandler(queries, hub)
 	feedbackH := NewFeedbackHandler(queries, store)
 	adminH := NewAdminHandler(queries)
+	overdubH := NewOverdubHandler(queries, store, processor, hub)
 
 	// Auth routes (no auth middleware)
 	r.Get("/auth/login", authH.Login)
@@ -83,6 +84,14 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Post("/api/bands/{slug}/tracks/{trackID}/personnel", trackH.AddPersonnel)
 		r.Delete("/api/bands/{slug}/tracks/{trackID}/personnel/{userID}", trackH.RemovePersonnel)
 		r.Delete("/api/bands/{slug}/tracks/{trackID}", trackH.Delete)
+
+		// Overdubs
+		r.Get("/api/bands/{slug}/tracks/{trackID}/overdubs", overdubH.List)
+		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs", overdubH.Upload)
+		r.Patch("/api/bands/{slug}/tracks/{trackID}/overdubs/{overdubID}/offset", overdubH.UpdateOffset)
+		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs/vote", overdubH.Vote)
+		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs/bounce", overdubH.Bounce)
+		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs/scrub", overdubH.Scrub)
 
 		// Sets
 		r.Get("/api/bands/{slug}/sets", setH.List)

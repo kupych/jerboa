@@ -6,6 +6,7 @@
   import { formatDuration, formatFileSize, formatRelativeTime } from "../lib/utils/format";
   import WaveformPlayer from "../lib/components/WaveformPlayer.svelte";
   import CommentList from "../lib/components/CommentList.svelte";
+  import Recorder from "../lib/components/Recorder.svelte";
 
   let { slug, trackId }: { slug: string; trackId: string } = $props();
 
@@ -38,6 +39,8 @@
     source_url?: string;
     recorded_at?: string;
     set_id?: string;
+    overdub_of?: string;
+    offset_ms: number;
     created_at: string;
     uploader?: { display_name: string; email: string };
   }
@@ -77,6 +80,33 @@
   let personnel = $state<Personnel[]>([]);
   let addPersonnelId = $state("");
   let addPersonnelRole = $state("");
+
+  // Overdubs
+  type Overdub = {
+    id: string;
+    title: string;
+    waveform_data?: number[];
+    duration_ms: number;
+    format: string;
+    file_size: number;
+    status: string;
+    offset_ms: number;
+    created_at: string;
+    vote_count: number;
+    user_voted: boolean;
+    uploader?: { display_name: string; email: string };
+  };
+
+  let overdubs = $state<Overdub[]>([]);
+  let showOverdubRecord = $state(false);
+  let voting = $state(false);
+  let bouncing = $state(false);
+  let scrubbing = $state(false);
+  let isAdmin = $derived(
+    members.some((m) => m.user.id === $currentUser?.id && m.role === "admin")
+  );
+
+  import { user as currentUser } from "../lib/stores/auth";
 
   // Editable meta
   let editing = $state(false);
@@ -141,7 +171,7 @@
       ]);
       const bd = await bandDetail;
       members = bd.members;
-      await loadComments();
+      await Promise.all([loadComments(), loadOverdubs()]);
     } finally {
       loading = false;
     }
@@ -176,6 +206,53 @@
 
   function clearTimestamp() {
     commentTimestamp = null;
+  }
+
+  async function loadOverdubs() {
+    overdubs = await api<Overdub[]>(`/api/bands/${slug}/tracks/${trackId}/overdubs`);
+  }
+
+  async function voteOverdub(overdubId: string | null) {
+    voting = true;
+    try {
+      await apiPost(`/api/bands/${slug}/tracks/${trackId}/overdubs/vote`, {
+        overdub_id: overdubId,
+      });
+      await loadOverdubs();
+    } finally {
+      voting = false;
+    }
+  }
+
+  async function bounceOverdub(overdubId: string) {
+    bouncing = true;
+    try {
+      await apiPost(`/api/bands/${slug}/tracks/${trackId}/overdubs/bounce`, {
+        overdub_id: overdubId,
+      });
+    } finally {
+      bouncing = false;
+    }
+  }
+
+  async function adjustOffset(overdubId: string, offsetMs: number) {
+    await apiPatch(`/api/bands/${slug}/tracks/${trackId}/overdubs/${overdubId}/offset`, {
+      offset_ms: offsetMs,
+    });
+    const od = overdubs.find((o) => o.id === overdubId);
+    if (od) od.offset_ms = offsetMs;
+  }
+
+  async function scrubOverdubs(keepId?: string) {
+    scrubbing = true;
+    try {
+      await apiPost(`/api/bands/${slug}/tracks/${trackId}/overdubs/scrub`, {
+        keep_id: keepId || null,
+      });
+      await loadOverdubs();
+    } finally {
+      scrubbing = false;
+    }
   }
 
   // @mention autocomplete
@@ -455,6 +532,11 @@
           <span>{track.uploader?.display_name || track.uploader?.email}</span>
           <span class="vr-divider">/</span>
           <span>{formatRelativeTime(track.created_at)}</span>
+          <span class="vr-divider">/</span>
+          <a
+            href={`/api/bands/${slug}/tracks/${trackId}/stream?dl=1`}
+            class="text-accent hover:text-accent-hover transition-colors"
+          >download</a>
         </div>
 
         <!-- Tags -->
@@ -642,6 +724,127 @@
     {:else}
       <div class="bg-bg-surface border border-border p-12 text-center mb-10 text-danger label">
         processing failed
+      </div>
+    {/if}
+
+    <!-- Overdubs -->
+    {#if track.status === "ready" && !track.overdub_of}
+      <div class="mb-10">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="label text-text-secondary">overdubs ({overdubs.length})</h3>
+          <button
+            onclick={() => (showOverdubRecord = !showOverdubRecord)}
+            class="label-sm text-text-muted hover:text-accent transition-colors flex items-center gap-1.5"
+          >
+            <div class="w-2 h-2 rounded-full bg-red-400/60"></div>
+            {showOverdubRecord ? "cancel" : "record overdub"}
+          </button>
+        </div>
+
+        {#if showOverdubRecord}
+          <div class="mb-4 bg-bg-surface border border-border p-4">
+            <p class="label-sm text-text-muted mb-3">play the track through headphones while recording your overdub. the offset is captured automatically.</p>
+            <Recorder
+              bandSlug={slug}
+              onRecorded={() => { showOverdubRecord = false; loadOverdubs(); }}
+              overdubParentId={trackId}
+              parentStreamUrl={streamUrl}
+            />
+          </div>
+        {/if}
+
+        {#if overdubs.length > 0}
+          <div class="space-y-3">
+            {#each overdubs as od}
+              {@const offsetPct = track.duration_ms > 0 ? (od.offset_ms / track.duration_ms) * 100 : 0}
+              {@const widthPct = track.duration_ms > 0 ? (od.duration_ms / track.duration_ms) * 100 : 100}
+              <div class="bg-bg-surface border border-border p-4">
+                <div class="flex items-center justify-between gap-4 mb-3">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <span class="text-sm font-semibold text-text-primary font-display tracking-wide truncate">{od.title}</span>
+                    <span class="label-sm text-text-muted">{od.uploader?.display_name || od.uploader?.email}</span>
+                    {#if od.offset_ms > 0}
+                      <span class="label-sm text-text-muted font-mono">+{formatDuration(od.offset_ms)}</span>
+                    {/if}
+                  </div>
+                  <div class="flex items-center gap-3 shrink-0">
+                    <span class="label-sm font-mono text-text-muted">{formatDuration(od.duration_ms)}</span>
+                    <a
+                      href={`/api/bands/${slug}/tracks/${od.id}/stream?dl=1`}
+                      class="label-sm text-accent hover:text-accent-hover transition-colors"
+                    >dl</a>
+                  </div>
+                </div>
+
+                <!-- Offset-aligned mini waveform indicator -->
+                <div class="relative h-2 bg-bg-primary mb-3">
+                  <div
+                    class="absolute top-0 h-full bg-accent/30"
+                    style="left: {offsetPct}%; width: {Math.min(widthPct, 100 - offsetPct)}%"
+                  ></div>
+                </div>
+
+                <!-- Offset adjustment -->
+                <div class="flex items-center gap-3 mb-3">
+                  <span class="label-sm text-text-muted shrink-0">offset</span>
+                  <input
+                    type="range"
+                    min={Math.max(0, od.offset_ms - 500)}
+                    max={od.offset_ms + 500}
+                    step="10"
+                    value={od.offset_ms}
+                    oninput={(e) => {
+                      const val = parseInt((e.target as HTMLInputElement).value);
+                      const o = overdubs.find((x) => x.id === od.id);
+                      if (o) o.offset_ms = val;
+                    }}
+                    onchange={(e) => adjustOffset(od.id, parseInt((e.target as HTMLInputElement).value))}
+                    class="flex-1 h-1 accent-accent cursor-pointer"
+                  />
+                  <span class="label-sm font-mono text-text-muted w-16 text-right">{od.offset_ms}ms</span>
+                </div>
+
+                <!-- Vote + admin controls -->
+                <div class="flex items-center gap-4 flex-wrap">
+                  <button
+                    onclick={() => voteOverdub(od.user_voted ? null : od.id)}
+                    disabled={voting}
+                    class="label-sm transition-colors flex items-center gap-1.5 {od.user_voted ? 'text-accent' : 'text-text-muted hover:text-accent'}"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill={od.user_voted ? "currentColor" : "none"} stroke="currentColor" stroke-width="2">
+                      <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
+                      <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+                    </svg>
+                    {od.vote_count}
+                  </button>
+
+                  {#if isAdmin}
+                    <button
+                      onclick={() => bounceOverdub(od.id)}
+                      disabled={bouncing}
+                      class="label-sm text-text-muted hover:text-accent transition-colors"
+                    >{bouncing ? "bouncing..." : "bounce"}</button>
+                    <button
+                      onclick={() => scrubOverdubs(od.id)}
+                      disabled={scrubbing}
+                      class="label-sm text-text-muted hover:text-red-400 transition-colors"
+                    >scrub others</button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+
+            {#if isAdmin && overdubs.length > 1}
+              <button
+                onclick={() => scrubOverdubs()}
+                disabled={scrubbing}
+                class="label-sm text-red-400/60 hover:text-red-400 transition-colors"
+              >{scrubbing ? "scrubbing..." : "scrub all overdubs"}</button>
+            {/if}
+          </div>
+        {:else if !showOverdubRecord}
+          <p class="text-sm text-text-muted italic">no overdubs yet</p>
+        {/if}
       </div>
     {/if}
 

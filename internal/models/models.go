@@ -85,10 +85,22 @@ type Track struct {
 	SourceURL    string          `json:"source_url,omitempty"`
 	RecordedAt   *time.Time      `json:"recorded_at,omitempty"`
 	SetID        *uuid.UUID      `json:"set_id,omitempty"`
+	OverdubOf    *uuid.UUID      `json:"overdub_of,omitempty"`
+	OffsetMS     int64           `json:"offset_ms"`
 	CreatedAt    time.Time       `json:"created_at"`
 	Uploader     *User             `json:"uploader,omitempty"`
 	Song         *Song             `json:"song,omitempty"`
 	Personnel    []TrackPersonnel  `json:"personnel,omitempty"`
+	Overdubs     []Track           `json:"overdubs,omitempty"`
+	VoteCount    int               `json:"vote_count,omitempty"`
+	UserVoted    bool              `json:"user_voted,omitempty"`
+}
+
+type OverdubVote struct {
+	TrackID   uuid.UUID `json:"track_id"`
+	UserID    uuid.UUID `json:"user_id"`
+	OverdubID uuid.UUID `json:"overdub_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Set struct {

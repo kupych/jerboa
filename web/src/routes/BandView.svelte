@@ -8,6 +8,7 @@
   import { colorSchemes, applyColorScheme } from "../lib/colorSchemes";
   import TrackCard from "../lib/components/TrackCard.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
+  import Recorder from "../lib/components/Recorder.svelte";
   import { setTypeCode } from "../lib/utils/format";
 
   let { slug }: { slug: string } = $props();
@@ -506,9 +507,10 @@
       </form>
     {/if}
 
-    <!-- Upload -->
-    <div class="mb-8">
+    <!-- Upload & Record -->
+    <div class="mb-8 space-y-2">
       <TrackUpload bandSlug={slug} onUploaded={loadTracks} />
+      <Recorder bandSlug={slug} onRecorded={loadTracks} />
     </div>
 
     <!-- Tab toggle -->

@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS overdub_votes;
+ALTER TABLE tracks DROP COLUMN IF EXISTS offset_ms;
+ALTER TABLE tracks DROP COLUMN IF EXISTS overdub_of;

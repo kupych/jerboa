@@ -231,6 +231,16 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
+	// Download mode
+	if r.URL.Query().Get("dl") == "1" {
+		ext := ".audio"
+		if i := strings.LastIndex(track.FilePath, "."); i >= 0 {
+			ext = track.FilePath[i:]
+		}
+		filename := track.Title + ext
+		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	}
+
 	// http.ServeContent handles Range requests, Content-Type, caching
 	http.ServeContent(w, r, track.FilePath, track.CreatedAt, f)
 }
