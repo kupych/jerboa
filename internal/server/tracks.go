@@ -193,6 +193,9 @@ func (h *TrackHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if this track has a pre-bounce version
+	track.PreBounceID = h.queries.GetPreBounceID(r.Context(), trackID)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(track)
 }

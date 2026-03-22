@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { uploadFile } from "../api";
   import { apiPatch } from "../api";
 
@@ -7,20 +8,24 @@
     songId = undefined,
     overdubParentId = undefined,
     parentStreamUrl = undefined,
+    latencyCompensation = 0,
     onRecorded,
   }: {
     bandSlug: string;
     songId?: string;
     overdubParentId?: string;
     parentStreamUrl?: string;
+    latencyCompensation?: number;
     onRecorded: () => void;
   } = $props();
 
   let parentAudio: HTMLAudioElement | null = null;
   let capturedOffsetMs = 0;
 
-  let recState = $state<"idle" | "recording" | "uploading">("idle");
+  let recState = $state<"warming" | "ready" | "recording" | "uploading">("warming");
   let mediaRecorder: MediaRecorder | null = null;
+  let micStream: MediaStream | null = null;
+  let recordStream: MediaStream | null = null; // mono downmixed stream for recording
   let chunks: Blob[] = [];
   let elapsed = $state(0);
   let timerInterval: ReturnType<typeof setInterval> | null = null;
@@ -39,27 +44,64 @@
     return `${m}:${sec.toString().padStart(2, "0")}`;
   }
 
-  async function startRecording() {
-    error = "";
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  // Pre-warm mic on mount so it's ready when user hits record
+  onMount(() => {
+    warmUpMic();
+    return () => cleanup();
+  });
 
-      // Set up level meter
+  async function warmUpMic() {
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 1,
+        },
+      });
+
       audioCtx = new AudioContext();
-      const source = audioCtx.createMediaStreamSource(stream);
+      await audioCtx.resume();
+      const source = audioCtx.createMediaStreamSource(micStream);
+
+      // Force mono downmix through AudioContext
+      const merger = audioCtx.createChannelMerger(1);
+      source.connect(merger);
+
+      // Create a mono stream for recording
+      const dest = audioCtx.createMediaStreamDestination();
+      merger.connect(dest);
+      recordStream = dest.stream;
+
+      // Level meter on the mono output
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
-      source.connect(analyser);
+      merger.connect(analyser);
       meterLoop();
 
-      // Pick best available format
+      recState = "ready";
+    } catch (e: any) {
+      if (e.name === "NotAllowedError") {
+        error = "mic access denied";
+      } else {
+        error = e.message || "Could not access mic";
+      }
+    }
+  }
+
+  async function startRecording() {
+    if (!micStream) return;
+    error = "";
+
+    try {
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
         : MediaRecorder.isTypeSupported("audio/mp4")
           ? "audio/mp4"
           : "";
 
-      mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      mediaRecorder = new MediaRecorder(recordStream!, mimeType ? { mimeType } : {});
       chunks = [];
 
       mediaRecorder.ondataavailable = (e) => {
@@ -67,12 +109,8 @@
       };
 
       mediaRecorder.onstop = async () => {
-        // Stop all tracks to release mic
-        stream.getTracks().forEach((t) => t.stop());
-        stopMeter();
-
         if (chunks.length === 0) {
-          recState = "idle";
+          recState = "ready";
           return;
         }
 
@@ -88,15 +126,14 @@
           const file = new File([blob], filename, { type: blob.type });
 
           if (overdubParentId) {
-            // Upload as overdub with captured offset
+            const adjustedOffset = capturedOffsetMs - latencyCompensation;
             await uploadFile(
               `/api/bands/${bandSlug}/tracks/${overdubParentId}/overdubs`,
               file,
-              { offset_ms: String(capturedOffsetMs) },
+              { offset_ms: String(adjustedOffset) },
               (pct) => (uploadProgress = pct),
             );
           } else {
-            // Normal upload
             const track = await uploadFile<{ id: string }>(
               `/api/bands/${bandSlug}/tracks`,
               file,
@@ -113,38 +150,35 @@
         } catch (e: any) {
           error = e.message || "Upload failed";
         } finally {
-          recState = "idle";
+          recState = "ready";
         }
       };
 
-      mediaRecorder.start(1000); // 1s chunks
+      // Wait for encoder to be active
+      await new Promise<void>((resolve) => {
+        mediaRecorder!.onstart = () => resolve();
+        mediaRecorder!.start();
+      });
+
       recState = "recording";
       elapsed = 0;
       timerInterval = setInterval(() => elapsed++, 1000);
 
-      // Start parent playback for overdub sync
+      // Start parent playback — mic is confirmed active
       if (overdubParentId && parentStreamUrl) {
         parentAudio = new Audio(parentStreamUrl);
         parentAudio.play().then(() => {
           capturedOffsetMs = Math.round((parentAudio?.currentTime ?? 0) * 1000);
         }).catch(() => {
-          // If autoplay blocked, offset stays 0
           capturedOffsetMs = 0;
         });
       }
     } catch (e: any) {
-      if (e.name === "NotAllowedError") {
-        error = "mic access denied";
-      } else {
-        error = e.message || "Could not start recording";
-      }
+      error = e.message || "Could not start recording";
     }
   }
 
   function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state === "recording") {
-      mediaRecorder.stop();
-    }
     if (parentAudio) {
       parentAudio.pause();
       parentAudio = null;
@@ -152,6 +186,25 @@
     if (timerInterval) {
       clearInterval(timerInterval);
       timerInterval = null;
+    }
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      // Request final data chunk then stop after a short flush delay
+      // so the encoder doesn't truncate the tail
+      mediaRecorder.requestData();
+      setTimeout(() => {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+        }
+      }, 200);
+    }
+  }
+
+  function cleanup() {
+    stopRecording();
+    stopMeter();
+    if (micStream) {
+      micStream.getTracks().forEach((t) => t.stop());
+      micStream = null;
     }
   }
 
@@ -176,13 +229,24 @@
   }
 </script>
 
-{#if recState === "idle"}
+{#if recState === "warming"}
+  <div class="border border-dashed border-border p-4 text-center">
+    <span class="text-sm text-text-muted font-semibold">warming up mic...</span>
+  </div>
+{:else if recState === "ready"}
   <button
     onclick={startRecording}
-    class="border border-dashed border-border hover:border-red-400/50 p-4 text-center transition-colors w-full flex items-center justify-center gap-2 group"
+    class="border border-dashed border-border hover:border-red-400/50 p-4 text-center transition-colors w-full flex items-center justify-center gap-3 group"
   >
     <div class="w-3 h-3 rounded-full bg-red-400/60 group-hover:bg-red-400 transition-colors"></div>
     <span class="text-sm text-text-muted font-semibold group-hover:text-red-400 transition-colors">{overdubParentId ? "record overdub" : "record a take"}</span>
+    <!-- Live mic level so you know the mic is working -->
+    <div class="w-16 h-2 bg-bg-primary overflow-hidden">
+      <div
+        class="h-full bg-red-400/40 transition-[width] duration-75"
+        style="width: {Math.min(100, level * 150)}%"
+      ></div>
+    </div>
   </button>
 {:else if recState === "recording"}
   <div class="border border-red-400/40 bg-red-400/5 p-4 text-center">

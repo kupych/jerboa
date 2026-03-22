@@ -87,6 +87,7 @@ type Track struct {
 	SetID        *uuid.UUID      `json:"set_id,omitempty"`
 	OverdubOf    *uuid.UUID      `json:"overdub_of,omitempty"`
 	OffsetMS     int64           `json:"offset_ms"`
+	BouncedTo    *uuid.UUID     `json:"bounced_to,omitempty"`
 	CreatedAt    time.Time       `json:"created_at"`
 	Uploader     *User             `json:"uploader,omitempty"`
 	Song         *Song             `json:"song,omitempty"`
@@ -94,6 +95,7 @@ type Track struct {
 	Overdubs     []Track           `json:"overdubs,omitempty"`
 	VoteCount    int               `json:"vote_count,omitempty"`
 	UserVoted    bool              `json:"user_voted,omitempty"`
+	PreBounceID  *uuid.UUID        `json:"pre_bounce_id,omitempty"`
 }
 
 type OverdubVote struct {

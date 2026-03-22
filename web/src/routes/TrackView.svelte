@@ -41,6 +41,8 @@
     set_id?: string;
     overdub_of?: string;
     offset_ms: number;
+    bounced_to?: string;
+    pre_bounce_id?: string;
     created_at: string;
     uploader?: { display_name: string; email: string };
   }
@@ -102,11 +104,143 @@
   let voting = $state(false);
   let bouncing = $state(false);
   let scrubbing = $state(false);
+  let confirmDeleteOd = $state<string | null>(null);
+  let deletingOd = $state(false);
+  let previewingId = $state<string | null>(null);
+  let previewLoading = $state(false);
+  let previewCtx: AudioContext | null = null;
+  let previewSources: AudioBufferSourceNode[] = [];
+  let previewTimeout: ReturnType<typeof setTimeout> | null = null;
+  let parentGain: GainNode | null = null;
+  let overdubGain: GainNode | null = null;
+  let parentVol = $state(1);
+  let overdubVol = $state(1);
   let isAdmin = $derived(
     members.some((m) => m.user.id === $currentUser?.id && m.role === "admin")
   );
 
   import { user as currentUser } from "../lib/stores/auth";
+
+  // Latency calibration
+  let calibrating = $state(false);
+  let calibrationMsg = $state("");
+  let calibratedLatency = $state<number | null>(
+    (() => {
+      try {
+        const v = localStorage.getItem("overdub-latency-ms");
+        return v ? parseInt(v) : null;
+      } catch { return null; }
+    })()
+  );
+
+  async function calibrate() {
+    calibrating = true;
+    calibrationMsg = "listen for 4 clicks, then clap on beat 5...";
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const actx = new AudioContext();
+
+      // Start recording
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+      const stopped = new Promise<void>((res) => { recorder.onstop = () => res(); });
+      recorder.start();
+
+      // Let recorder settle
+      await new Promise((r) => setTimeout(r, 300));
+
+      // Play 4 clicks at 120BPM (500ms apart)
+      const interval = 0.5;
+      const t0 = actx.currentTime;
+      for (let i = 0; i < 4; i++) {
+        const osc = actx.createOscillator();
+        osc.frequency.value = 1000;
+        const gain = actx.createGain();
+        const t = t0 + i * interval;
+        gain.gain.setValueAtTime(0.5, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        osc.connect(gain);
+        gain.connect(actx.destination);
+        osc.start(t);
+        osc.stop(t + 0.06);
+      }
+
+      // Expected clap: 300ms settle + 4 beats * 500ms = 2300ms from recording start
+      const expectedClapMs = 300 + 4 * interval * 1000;
+
+      // Record for 3.5 seconds total
+      await new Promise((r) => setTimeout(r, 3200));
+      recorder.stop();
+      stream.getTracks().forEach((t) => t.stop());
+      await stopped;
+
+      // Decode and analyze
+      const blob = new Blob(chunks, { type: recorder.mimeType });
+      const arrayBuf = await blob.arrayBuffer();
+      const audioBuf = await actx.decodeAudioData(arrayBuf);
+      const data = audioBuf.getChannelData(0);
+      const sr = audioBuf.sampleRate;
+
+      // Search for clap transient in window around expected time
+      const searchStartSample = Math.floor(((expectedClapMs - 400) / 1000) * sr);
+      const searchEndSample = Math.floor(((expectedClapMs + 1000) / 1000) * sr);
+
+      let maxVal = 0;
+      for (let i = searchStartSample; i < searchEndSample && i < data.length; i++) {
+        const abs = Math.abs(data[i]);
+        if (abs > maxVal) maxVal = abs;
+      }
+
+      if (maxVal < 0.02) {
+        calibrationMsg = "no clap detected — try again louder";
+        return;
+      }
+
+      // Find onset: first sample above 20% of peak in search window
+      const threshold = maxVal * 0.2;
+      let clapSample = -1;
+      for (let i = searchStartSample; i < searchEndSample && i < data.length; i++) {
+        if (Math.abs(data[i]) > threshold) {
+          clapSample = i;
+          break;
+        }
+      }
+
+      if (clapSample === -1) {
+        calibrationMsg = "couldn't detect clap onset — try again";
+        return;
+      }
+
+      const clapMs = (clapSample / sr) * 1000;
+      const latency = Math.round(clapMs - expectedClapMs);
+
+      calibratedLatency = latency;
+      localStorage.setItem("overdub-latency-ms", String(latency));
+      calibrationMsg = `latency: ${latency}ms — will auto-adjust future overdubs`;
+
+      actx.close();
+    } catch (e: any) {
+      calibrationMsg = e.message || "calibration failed";
+    } finally {
+      calibrating = false;
+    }
+  }
+
+  // Delete
+  let confirmDelete = $state(false);
+  let deleting = $state(false);
+
+  async function deleteTrack() {
+    deleting = true;
+    try {
+      await apiDelete(`/api/bands/${slug}/tracks/${trackId}`);
+      navigate(`/band/${slug}`);
+    } finally {
+      deleting = false;
+    }
+  }
 
   // Editable meta
   let editing = $state(false);
@@ -151,10 +285,20 @@
   $effect(() => {
     if (track) {
       ws.subscribe(`track:${track.id}`);
-      const off = ws.on("comment.new", () => loadComments());
+      ws.subscribe(`band:${track.band_id}`);
+      const offComment = ws.on("comment.new", () => loadComments());
+      const offTrack = ws.on("track.ready", (payload: any) => {
+        if (payload.track_id === trackId) {
+          // Our track was updated (e.g. bounce replaced the file)
+          loadData();
+          bouncing = false;
+        }
+      });
       return () => {
         ws.unsubscribe(`track:${track!.id}`);
-        off();
+        ws.unsubscribe(`band:${track!.band_id}`);
+        offComment();
+        offTrack();
       };
     }
   });
@@ -224,6 +368,17 @@
     }
   }
 
+  async function deleteOverdub(overdubId: string) {
+    deletingOd = true;
+    try {
+      await apiDelete(`/api/bands/${slug}/tracks/${overdubId}`);
+      confirmDeleteOd = null;
+      await loadOverdubs();
+    } finally {
+      deletingOd = false;
+    }
+  }
+
   async function bounceOverdub(overdubId: string) {
     bouncing = true;
     try {
@@ -253,6 +408,86 @@
     } finally {
       scrubbing = false;
     }
+  }
+
+  // Cache decoded buffers so re-previewing with different offset is instant
+  let previewBuffers: { parentBuf: AudioBuffer; overdubBuf: AudioBuffer; overdubId: string } | null = null;
+
+  async function previewOverdub(od: Overdub) {
+    stopPreview();
+    previewLoading = true;
+    previewingId = od.id;
+    try {
+      previewCtx = new AudioContext();
+
+      // Reuse cached buffers if same overdub
+      let parentBuf: AudioBuffer, overdubBuf: AudioBuffer;
+      if (previewBuffers && previewBuffers.overdubId === od.id) {
+        parentBuf = previewBuffers.parentBuf;
+        overdubBuf = previewBuffers.overdubBuf;
+      } else {
+        [parentBuf, overdubBuf] = await Promise.all([
+          fetch(streamUrl).then((r) => r.arrayBuffer()).then((b) => previewCtx!.decodeAudioData(b)),
+          fetch(`/api/bands/${slug}/tracks/${od.id}/stream`).then((r) => r.arrayBuffer()).then((b) => previewCtx!.decodeAudioData(b)),
+        ]);
+        previewBuffers = { parentBuf, overdubBuf, overdubId: od.id };
+      }
+
+      const parentSrc = previewCtx.createBufferSource();
+      parentSrc.buffer = parentBuf;
+      parentGain = previewCtx.createGain();
+      parentGain.gain.value = parentVol;
+      parentSrc.connect(parentGain);
+      parentGain.connect(previewCtx.destination);
+
+      const overdubSrc = previewCtx.createBufferSource();
+      overdubSrc.buffer = overdubBuf;
+      overdubGain = previewCtx.createGain();
+      overdubGain.gain.value = overdubVol;
+      overdubSrc.connect(overdubGain);
+      overdubGain.connect(previewCtx.destination);
+
+      previewSources = [parentSrc, overdubSrc];
+      const offsetSec = od.offset_ms / 1000;
+
+      if (offsetSec >= 0) {
+        // Positive: delay the overdub
+        parentSrc.start(0);
+        overdubSrc.start(previewCtx.currentTime + offsetSec);
+      } else {
+        // Negative: delay the parent
+        parentSrc.start(previewCtx.currentTime + Math.abs(offsetSec));
+        overdubSrc.start(0);
+      }
+
+      // Auto-stop when the longer one ends
+      const maxDur = Math.max(parentBuf.duration + Math.max(0, -offsetSec), overdubBuf.duration + Math.max(0, offsetSec));
+      previewTimeout = setTimeout(() => {
+        if (previewingId === od.id) stopPreview();
+      }, maxDur * 1000 + 200);
+    } catch {
+      stopPreview();
+    } finally {
+      previewLoading = false;
+    }
+  }
+
+  function stopPreview() {
+    if (previewTimeout) {
+      clearTimeout(previewTimeout);
+      previewTimeout = null;
+    }
+    for (const src of previewSources) {
+      try { src.stop(); } catch {}
+    }
+    previewSources = [];
+    parentGain = null;
+    overdubGain = null;
+    if (previewCtx) {
+      previewCtx.close();
+      previewCtx = null;
+    }
+    previewingId = null;
   }
 
   // @mention autocomplete
@@ -516,12 +751,35 @@
               <p class="text-base font-medium text-text-secondary mt-3">{track.description}</p>
             {/if}
           </div>
-          <button
-            onclick={startEditing}
-            class="label text-text-muted hover:text-accent transition-colors"
-          >
-            edit
-          </button>
+          <div class="flex items-center gap-4">
+            <button
+              onclick={startEditing}
+              class="label text-text-muted hover:text-accent transition-colors"
+            >
+              edit
+            </button>
+            {#if !confirmDelete}
+              <button
+                onclick={() => (confirmDelete = true)}
+                class="label text-text-muted hover:text-danger transition-colors"
+              >
+                delete
+              </button>
+            {:else}
+              <span class="flex items-center gap-2">
+                <span class="label-sm text-danger">sure?</span>
+                <button
+                  onclick={deleteTrack}
+                  disabled={deleting}
+                  class="label-sm text-danger hover:text-red-300 transition-colors"
+                >{deleting ? "..." : "yes"}</button>
+                <button
+                  onclick={() => (confirmDelete = false)}
+                  class="label-sm text-text-muted hover:text-text-secondary transition-colors"
+                >no</button>
+              </span>
+            {/if}
+          </div>
         </div>
 
         <div class="flex items-center gap-3 mt-4 label-sm text-text-muted flex-wrap">
@@ -612,6 +870,17 @@
               rel="noopener"
               class="label-sm text-accent hover:text-accent-hover transition-colors"
             >{track.source_url}</a>
+          </div>
+        {/if}
+
+        <!-- Pre-bounce rollback link -->
+        {#if track.pre_bounce_id}
+          <div class="flex items-center gap-2 mt-4">
+            <span class="label-sm text-text-muted">bounced —</span>
+            <button
+              onclick={() => navigate(`/band/${slug}/track/${track!.pre_bounce_id}`)}
+              class="label-sm text-accent hover:text-accent-hover transition-colors"
+            >view original</button>
           </div>
         {/if}
 
@@ -732,24 +1001,88 @@
       <div class="mb-10">
         <div class="flex items-center justify-between mb-4">
           <h3 class="label text-text-secondary">overdubs ({overdubs.length})</h3>
-          <button
-            onclick={() => (showOverdubRecord = !showOverdubRecord)}
-            class="label-sm text-text-muted hover:text-accent transition-colors flex items-center gap-1.5"
-          >
-            <div class="w-2 h-2 rounded-full bg-red-400/60"></div>
-            {showOverdubRecord ? "cancel" : "record overdub"}
-          </button>
+          <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+              <button
+                onclick={calibrate}
+                disabled={calibrating}
+                class="label-sm text-text-muted hover:text-accent transition-colors"
+              >
+                {calibrating ? "calibrating..." : "calibrate"}
+              </button>
+              <input
+                type="number"
+                step="1"
+                value={calibratedLatency ?? 0}
+                onchange={(e) => {
+                  const val = parseInt((e.target as HTMLInputElement).value);
+                  if (!isNaN(val)) {
+                    calibratedLatency = val;
+                    localStorage.setItem("overdub-latency-ms", String(val));
+                  }
+                }}
+                class="w-16 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
+              />
+              <span class="label-sm text-text-muted">ms</span>
+            </div>
+            <button
+              onclick={() => (showOverdubRecord = !showOverdubRecord)}
+              class="label-sm text-text-muted hover:text-accent transition-colors flex items-center gap-1.5"
+            >
+              <div class="w-2 h-2 rounded-full bg-red-400/60"></div>
+              {showOverdubRecord ? "cancel" : "record overdub"}
+            </button>
+          </div>
         </div>
+
+        {#if calibrationMsg}
+          <p class="label-sm text-text-muted mb-3">{calibrationMsg}</p>
+        {/if}
 
         {#if showOverdubRecord}
           <div class="mb-4 bg-bg-surface border border-border p-4">
-            <p class="label-sm text-text-muted mb-3">play the track through headphones while recording your overdub. the offset is captured automatically.</p>
+            <p class="label-sm text-text-muted mb-3">play the track through headphones while recording your overdub. offset is auto-adjusted{calibratedLatency != null ? ` (${calibratedLatency}ms compensation)` : " — calibrate first for best results"}.</p>
             <Recorder
               bandSlug={slug}
               onRecorded={() => { showOverdubRecord = false; loadOverdubs(); }}
               overdubParentId={trackId}
               parentStreamUrl={streamUrl}
+              latencyCompensation={calibratedLatency ?? 0}
             />
+          </div>
+        {/if}
+
+        {#if previewingId}
+          <div class="flex items-center gap-4 mb-4 bg-bg-surface border border-border p-3">
+            <span class="label-sm text-text-muted shrink-0">mix</span>
+            <span class="label-sm text-text-muted shrink-0">track</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={parentVol}
+              oninput={(e) => {
+                parentVol = parseFloat((e.target as HTMLInputElement).value);
+                if (parentGain) parentGain.gain.value = parentVol;
+              }}
+              class="flex-1 h-1 accent-accent cursor-pointer"
+            />
+            <span class="label-sm font-mono text-text-muted w-8">{Math.round(parentVol * 100)}%</span>
+            <span class="label-sm text-text-muted shrink-0">overdub</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={overdubVol}
+              oninput={(e) => {
+                overdubVol = parseFloat((e.target as HTMLInputElement).value);
+                if (overdubGain) overdubGain.gain.value = overdubVol;
+              }}
+              class="flex-1 h-1 accent-accent cursor-pointer"
+            />
+            <span class="label-sm font-mono text-text-muted w-8">{Math.round(overdubVol * 100)}%</span>
           </div>
         {/if}
 
@@ -769,6 +1102,18 @@
                   </div>
                   <div class="flex items-center gap-3 shrink-0">
                     <span class="label-sm font-mono text-text-muted">{formatDuration(od.duration_ms)}</span>
+                    {#if previewingId === od.id}
+                      <button
+                        onclick={stopPreview}
+                        class="label-sm text-red-400 hover:text-red-500 transition-colors"
+                      >stop</button>
+                    {:else}
+                      <button
+                        onclick={() => previewOverdub(od)}
+                        disabled={previewLoading}
+                        class="label-sm text-accent hover:text-accent-hover transition-colors"
+                      >{previewLoading && previewingId === od.id ? "..." : "preview"}</button>
+                    {/if}
                     <a
                       href={`/api/bands/${slug}/tracks/${od.id}/stream?dl=1`}
                       class="label-sm text-accent hover:text-accent-hover transition-colors"
@@ -788,20 +1133,21 @@
                 <div class="flex items-center gap-3 mb-3">
                   <span class="label-sm text-text-muted shrink-0">offset</span>
                   <input
-                    type="range"
-                    min={Math.max(0, od.offset_ms - 500)}
-                    max={od.offset_ms + 500}
+                    type="number"
                     step="10"
                     value={od.offset_ms}
-                    oninput={(e) => {
+                    onchange={(e) => {
                       const val = parseInt((e.target as HTMLInputElement).value);
-                      const o = overdubs.find((x) => x.id === od.id);
-                      if (o) o.offset_ms = val;
+                      if (!isNaN(val)) {
+                        const o = overdubs.find((x) => x.id === od.id);
+                        if (o) o.offset_ms = val;
+                        adjustOffset(od.id, val);
+                        if (previewingId === od.id) previewOverdub(od);
+                      }
                     }}
-                    onchange={(e) => adjustOffset(od.id, parseInt((e.target as HTMLInputElement).value))}
-                    class="flex-1 h-1 accent-accent cursor-pointer"
+                    class="w-20 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
                   />
-                  <span class="label-sm font-mono text-text-muted w-16 text-right">{od.offset_ms}ms</span>
+                  <span class="label-sm text-text-muted">ms</span>
                 </div>
 
                 <!-- Vote + admin controls -->
@@ -824,11 +1170,26 @@
                       disabled={bouncing}
                       class="label-sm text-text-muted hover:text-accent transition-colors"
                     >{bouncing ? "bouncing..." : "bounce"}</button>
+                  {/if}
+
+                  {#if confirmDeleteOd === od.id}
+                    <span class="flex items-center gap-2">
+                      <span class="label-sm text-danger">delete?</span>
+                      <button
+                        onclick={() => deleteOverdub(od.id)}
+                        disabled={deletingOd}
+                        class="label-sm text-danger hover:text-red-300 transition-colors"
+                      >{deletingOd ? "..." : "yes"}</button>
+                      <button
+                        onclick={() => (confirmDeleteOd = null)}
+                        class="label-sm text-text-muted hover:text-text-secondary transition-colors"
+                      >no</button>
+                    </span>
+                  {:else}
                     <button
-                      onclick={() => scrubOverdubs(od.id)}
-                      disabled={scrubbing}
-                      class="label-sm text-text-muted hover:text-red-400 transition-colors"
-                    >scrub others</button>
+                      onclick={() => (confirmDeleteOd = od.id)}
+                      class="label-sm text-text-muted hover:text-danger transition-colors"
+                    >delete</button>
                   {/if}
                 </div>
               </div>

@@ -322,20 +322,32 @@ func (h *OverdubHandler) doBounce(parent, overdub *models.Track, band *models.Ba
 	defer os.RemoveAll(tmpDir)
 
 	outPath := filepath.Join(tmpDir, "bounced.wav")
-	delayMs := overdub.OffsetMS
 
 	// ffmpeg: mix parent + overdub at offset
-	// adelay delays the overdub by offset_ms, amix combines them
-	filter := fmt.Sprintf("[1]adelay=%d|%d[ov];[0][ov]amix=inputs=2:duration=longest", delayMs, delayMs)
+	// normalize=0 prevents amix from halving volumes and ducking on silence
+	// Positive offset: delay the overdub. Negative offset: delay the parent. Zero: no delay.
+	var filter string
+	if overdub.OffsetMS > 0 {
+		filter = fmt.Sprintf("[1]adelay=%d|%d[ov];[0][ov]amix=inputs=2:duration=longest:normalize=0", overdub.OffsetMS, overdub.OffsetMS)
+	} else if overdub.OffsetMS < 0 {
+		delay := -overdub.OffsetMS
+		filter = fmt.Sprintf("[0]adelay=%d|%d[par];[par][1]amix=inputs=2:duration=longest:normalize=0", delay, delay)
+	} else {
+		filter = "[0][1]amix=inputs=2:duration=longest:normalize=0"
+	}
+	slog.Info("bounce: ffmpeg filter", "offset_ms", overdub.OffsetMS, "filter", filter)
 
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-i", parent.FilePath,
 		"-i", overdub.FilePath,
 		"-filter_complex", filter,
+		"-ac", "2",
+		"-ar", "48000",
 		"-y", outPath,
 	)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		slog.Error("bounce: ffmpeg", "error", err, "output", string(output))
+	output, err := cmd.CombinedOutput()
+	slog.Info("bounce: ffmpeg done", "exit_err", err, "output", string(output))
+	if err != nil {
 		return
 	}
 
@@ -346,47 +358,66 @@ func (h *OverdubHandler) doBounce(parent, overdub *models.Track, band *models.Ba
 		return
 	}
 
-	// Create a new track for the bounced result
-	bouncedTrack := &models.Track{
+	// Save the parent's current file as a snapshot (pre-bounce version) for rollback
+	snapshot := &models.Track{
 		BandID:     band.ID,
-		Title:      parent.Title + " (bounced)",
-		UploadedBy: user.ID,
-		FilePath:   storedPath,
-		FileSize:   fileSize,
-		Status:     "processing",
-		SongID:     parent.SongID,
-		SetID:      parent.SetID,
+		Title:      parent.Title + " (pre-bounce)",
+		UploadedBy: parent.UploadedBy,
+		FilePath:   parent.FilePath,
+		FileSize:   parent.FileSize,
+		Status:     "ready",
 	}
 
-	if err := h.queries.CreateTrack(ctx, bouncedTrack); err != nil {
+	if err := h.queries.CreateTrack(ctx, snapshot); err != nil {
 		h.store.Delete(storedPath)
-		slog.Error("bounce: create track", "error", err)
+		slog.Error("bounce: create snapshot", "error", err)
 		return
 	}
 
-	// Process the bounced audio
+	// Copy over the old waveform/metadata so the snapshot is immediately playable
+	if err := h.queries.UpdateTrackProcessed(ctx, snapshot.ID, parent.WaveformData, parent.DurationMS, parent.Format, parent.SampleRate); err != nil {
+		slog.Error("bounce: update snapshot", "error", err)
+	}
+
+	// Replace the parent track's file with the bounced version
+	if err := h.queries.UpdateTrackFile(ctx, parent.ID, storedPath, fileSize); err != nil {
+		slog.Error("bounce: update parent file", "error", err)
+		return
+	}
+
+	// Mark snapshot and overdub as bounced into the parent
+	if err := h.queries.UpdateBouncedTo(ctx, snapshot.ID, &parent.ID); err != nil {
+		slog.Error("bounce: update snapshot bounced_to", "error", err)
+	}
+	if err := h.queries.UpdateBouncedTo(ctx, overdub.ID, &parent.ID); err != nil {
+		slog.Error("bounce: update overdub bounced_to", "error", err)
+	}
+
+	// Reprocess the parent with the new file
 	meta, err := h.processor.Probe(ctx, storedPath)
 	if err != nil {
 		slog.Error("bounce: probe", "error", err)
-		h.queries.UpdateTrackError(ctx, bouncedTrack.ID)
+		h.queries.UpdateTrackError(ctx, parent.ID)
 		return
 	}
 
 	peaks, err := h.processor.GeneratePeaks(ctx, storedPath)
 	if err != nil {
 		slog.Error("bounce: peaks", "error", err)
-		h.queries.UpdateTrackError(ctx, bouncedTrack.ID)
+		h.queries.UpdateTrackError(ctx, parent.ID)
 		return
 	}
 
-	if err := h.queries.UpdateTrackProcessed(ctx, bouncedTrack.ID, peaks, meta.DurationMS, meta.Format, meta.SampleRate); err != nil {
-		slog.Error("bounce: update", "error", err)
+	if err := h.queries.UpdateTrackProcessed(ctx, parent.ID, peaks, meta.DurationMS, meta.Format, meta.SampleRate); err != nil {
+		slog.Error("bounce: update parent", "error", err)
 		return
 	}
+
+	slog.Info("bounce: complete", "parent_id", parent.ID, "snapshot_id", snapshot.ID)
 
 	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{
 		Type:    "track.ready",
-		Payload: map[string]any{"track_id": bouncedTrack.ID},
+		Payload: map[string]any{"track_id": parent.ID},
 	})
 }
 

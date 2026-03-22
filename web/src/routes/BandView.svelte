@@ -50,6 +50,8 @@
     tags: string[];
     song_id?: string;
     set_id?: string;
+    overdub_of?: string;
+    bounced_to?: string;
     song?: { id: string; name: string };
     source_url?: string;
     created_at: string;
@@ -86,7 +88,7 @@
   let isAdmin = $derived(band?.members.some((m) => m.user.id === $currentUser?.id && m.role === "admin") ?? false);
 
 
-  let ungroupedTracks = $derived(tracks.filter((t) => !t.song_id && !t.set_id));
+  let ungroupedTracks = $derived(tracks.filter((t) => !t.song_id && !t.set_id && !t.bounced_to && !t.overdub_of));
 
   // Reload when slug changes (band switching)
   $effect(() => {

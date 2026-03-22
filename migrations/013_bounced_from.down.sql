@@ -1,0 +1,2 @@
+ALTER TABLE tracks DROP COLUMN IF EXISTS bounced_to;
+ALTER TABLE tracks DROP COLUMN IF EXISTS bounced_from;

@@ -143,7 +143,7 @@ func (p *Processor) GeneratePeaks(ctx context.Context, filePath string) (json.Ra
 
 func (p *Processor) IsSupported(filename string) bool {
 	ext := strings.ToLower(filename)
-	for _, e := range []string{".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a", ".aiff", ".aif", ".wma", ".opus"} {
+	for _, e := range []string{".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a", ".aiff", ".aif", ".wma", ".opus", ".webm"} {
 		if strings.HasSuffix(ext, e) {
 			return true
 		}

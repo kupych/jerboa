@@ -398,10 +398,10 @@ func (q *Queries) SetTrackSong(ctx context.Context, trackID uuid.UUID, songID *u
 
 func (q *Queries) CreateTrack(ctx context.Context, t *models.Track) error {
 	return q.pool.QueryRow(ctx, `
-		INSERT INTO tracks (band_id, title, description, uploaded_by, file_path, file_size, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO tracks (band_id, title, description, uploaded_by, file_path, file_size, status, overdub_of, offset_ms, bounced_to)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at
-	`, t.BandID, t.Title, t.Description, t.UploadedBy, t.FilePath, t.FileSize, t.Status).Scan(&t.ID, &t.CreatedAt)
+	`, t.BandID, t.Title, t.Description, t.UploadedBy, t.FilePath, t.FileSize, t.Status, t.OverdubOf, t.OffsetMS, t.BouncedTo).Scan(&t.ID, &t.CreatedAt)
 }
 
 func (q *Queries) UpdateTrackFile(ctx context.Context, id uuid.UUID, filePath string, fileSize int64) error {
@@ -437,7 +437,7 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
-		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.created_at,
+		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to, t.created_at,
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
 		       s.name
 		FROM tracks t
@@ -447,7 +447,7 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 	`, id).Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
 		&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
 		&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
-		&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.CreatedAt,
+		&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo, &t.CreatedAt,
 		&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
 		&songName)
 	if err == pgx.ErrNoRows {
@@ -466,13 +466,13 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
-		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.created_at,
+		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to, t.created_at,
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
 		       s.name
 		FROM tracks t
 		JOIN users u ON t.uploaded_by = u.id
 		LEFT JOIN songs s ON t.song_id = s.id
-		WHERE t.band_id = $1 AND t.overdub_of IS NULL
+		WHERE t.band_id = $1 AND t.overdub_of IS NULL and t.bounced_to IS NULL
 		ORDER BY t.created_at DESC
 	`, bandID)
 	if err != nil {
@@ -489,7 +489,7 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 		if err := rows.Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
 			&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
 			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
-			&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.CreatedAt,
+			&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo, &t.CreatedAt,
 			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
 			&songName); err != nil {
 			return nil, err
@@ -795,7 +795,7 @@ func (q *Queries) ListSetTracks(ctx context.Context, setID uuid.UUID) ([]models.
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
-		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.created_at,
+		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to, t.created_at,
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
 		       s.name
 		FROM tracks t
@@ -818,7 +818,7 @@ func (q *Queries) ListSetTracks(ctx context.Context, setID uuid.UUID) ([]models.
 		if err := rows.Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
 			&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
 			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
-			&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.CreatedAt,
+			&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo, &t.CreatedAt,
 			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
 			&songName); err != nil {
 			return nil, err
@@ -1062,7 +1062,7 @@ func (q *Queries) ListOverdubs(ctx context.Context, parentID, viewerID uuid.UUID
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
-		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.created_at,
+		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to, t.created_at,
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
 		       (SELECT count(*) FROM overdub_votes WHERE overdub_id = t.id),
 		       EXISTS(SELECT 1 FROM overdub_votes WHERE overdub_id = t.id AND user_id = $2)
@@ -1084,7 +1084,7 @@ func (q *Queries) ListOverdubs(ctx context.Context, parentID, viewerID uuid.UUID
 		if err := rows.Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
 			&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
 			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
-			&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.CreatedAt,
+			&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo, &t.CreatedAt,
 			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
 			&t.VoteCount, &t.UserVoted); err != nil {
 			return nil, err
@@ -1116,6 +1116,20 @@ func (q *Queries) UnvoteOverdub(ctx context.Context, parentID, userID uuid.UUID)
 	_, err := q.pool.Exec(ctx, `
 		DELETE FROM overdub_votes WHERE track_id = $1 AND user_id = $2
 	`, parentID, userID)
+	return err
+}
+
+func (q *Queries) GetPreBounceID(ctx context.Context, trackID uuid.UUID) *uuid.UUID {
+	var id uuid.UUID
+	err := q.pool.QueryRow(ctx, `SELECT id FROM tracks WHERE bounced_to = $1 AND overdub_of IS NULL LIMIT 1`, trackID).Scan(&id)
+	if err != nil {
+		return nil
+	}
+	return &id
+}
+
+func (q *Queries) UpdateBouncedTo(ctx context.Context, trackID uuid.UUID, bouncedTo *uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, `UPDATE tracks SET bounced_to = $2 WHERE id = $1`, trackID, bouncedTo)
 	return err
 }
 

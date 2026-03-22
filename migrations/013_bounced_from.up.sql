@@ -1,0 +1,2 @@
+ALTER TABLE tracks DROP COLUMN IF EXISTS bounced_from;
+ALTER TABLE tracks ADD COLUMN bounced_to UUID REFERENCES tracks(id) ON DELETE SET NULL;
