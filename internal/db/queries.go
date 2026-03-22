@@ -159,7 +159,7 @@ func (q *Queries) GetBandMembers(ctx context.Context, bandID uuid.UUID) ([]model
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
 		FROM band_members bm JOIN users u ON bm.user_id = u.id
 		WHERE bm.band_id = $1
-		ORDER BY bm.joined_at
+		ORDER BY split_part(u.display_name, ' ', array_length(string_to_array(u.display_name, ' '), 1)), u.display_name
 	`, bandID)
 	if err != nil {
 		return nil, err
