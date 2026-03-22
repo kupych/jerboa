@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { marked } from "marked";
-  import { api, apiPatch, apiPost } from "../lib/api";
+  import { api, apiPatch, apiPost, uploadFile } from "../lib/api";
   import { navigate } from "../lib/stores/router";
   import { player } from "../lib/stores/player";
   import { formatDuration, formatRelativeTime, formatTimestamp, setTypeCode } from "../lib/utils/format";
@@ -343,6 +343,36 @@
     songSets = await api<SetSummary[]>(`/api/bands/${slug}/songs/${songId}/sets`);
   }
 
+  // Take upload
+  let takeUploading = $state(false);
+  let takeProgress = $state(0);
+  let takeError = $state("");
+  let takeFileInput = $state<HTMLInputElement | null>(null);
+  let takeDragging = $state(false);
+
+  async function uploadTake(file: File) {
+    takeError = "";
+    takeUploading = true;
+    takeProgress = 0;
+    try {
+      const track = await uploadFile<{ id: string }>(
+        `/api/bands/${slug}/tracks`,
+        file,
+        {},
+        (pct) => (takeProgress = pct),
+      );
+      await apiPatch(`/api/bands/${slug}/tracks/${track.id}/song`, {
+        song_id: songId,
+      });
+      await loadTracks();
+    } catch (e: any) {
+      takeError = e.message || "Upload failed";
+    } finally {
+      takeUploading = false;
+      if (takeFileInput) takeFileInput.value = "";
+    }
+  }
+
   async function saveLyrics() {
     if (!song) return;
     saving = true;
@@ -479,9 +509,49 @@
     </section>
 
     <!-- Takes -->
-    {#if directTracks.length > 0 || setTakes.length > 0}
       <section>
         <h2 class="label text-text-muted mb-3"><span class="text-accent/15 font-mono mr-2">03</span>takes</h2>
+
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="border border-dashed mb-3 p-4 text-center transition-colors {takeDragging ? 'border-accent bg-accent/5' : 'border-border hover:border-text-muted'}"
+          ondragover={(e) => { e.preventDefault(); takeDragging = true; }}
+          ondragleave={() => (takeDragging = false)}
+          ondrop={(e) => { e.preventDefault(); takeDragging = false; const f = e.dataTransfer?.files[0]; if (f) uploadTake(f); }}
+        >
+          {#if takeUploading}
+            <div class="flex items-center gap-4">
+              <div class="flex-1 bg-bg-primary h-1">
+                <div class="bg-accent h-1 transition-all duration-300" style="width: {takeProgress}%"></div>
+              </div>
+              <span class="label-sm font-mono text-text-muted">{takeProgress}%</span>
+            </div>
+          {:else}
+            <div class="flex items-center justify-center gap-2">
+              <svg class="text-text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <span class="text-sm text-text-muted font-semibold">
+                drop a take or
+                <button onclick={() => takeFileInput?.click()} class="text-accent hover:text-accent-hover underline underline-offset-4">browse</button>
+              </span>
+            </div>
+            <input
+              bind:this={takeFileInput}
+              type="file"
+              accept=".mp3,.wav,.flac,.ogg,.aac,.m4a,.aiff,.aif,.opus"
+              class="hidden"
+              onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadTake(f); }}
+            />
+          {/if}
+          {#if takeError}
+            <div class="mt-2 label-sm text-danger">{takeError}</div>
+          {/if}
+        </div>
+
+        {#if directTracks.length > 0 || setTakes.length > 0}
         <div class="space-y-2">
           <!-- Direct takes -->
           {#each directTracks as track}
@@ -674,8 +744,8 @@
             </div>
           {/each}
         </div>
+        {/if}
       </section>
-    {/if}
 
     <!-- Sets -->
     {#if songSets.length > 0}

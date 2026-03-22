@@ -144,6 +144,18 @@ type ChatMessage struct {
 	User      *User     `json:"user,omitempty"`
 }
 
+type Feedback struct {
+	ID        uuid.UUID `json:"id"`
+	UserID    uuid.UUID `json:"user_id"`
+	Body      string    `json:"body"`
+	PageURL   string    `json:"page_url,omitempty"`
+	ImagePath string    `json:"-"`
+	HasImage  bool      `json:"has_image"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	User      *User     `json:"user,omitempty"`
+}
+
 type Comment struct {
 	ID          uuid.UUID  `json:"id"`
 	TrackID     uuid.UUID  `json:"track_id"`

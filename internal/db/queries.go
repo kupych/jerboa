@@ -923,3 +923,52 @@ func (q *Queries) ListChatMessages(ctx context.Context, bandID uuid.UUID, limit 
 	}
 	return messages, nil
 }
+
+// Feedback
+
+func (q *Queries) CreateFeedback(ctx context.Context, fb *models.Feedback) error {
+	return q.pool.QueryRow(ctx, `
+		INSERT INTO feedback (user_id, body, page_url, image_path)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, status, created_at
+	`, fb.UserID, fb.Body, fb.PageURL, fb.ImagePath).Scan(&fb.ID, &fb.Status, &fb.CreatedAt)
+}
+
+func (q *Queries) ListFeedback(ctx context.Context) ([]models.Feedback, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT f.id, f.user_id, f.body, f.page_url, f.image_path, f.status, f.created_at,
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
+		FROM feedback f
+		JOIN users u ON f.user_id = u.id
+		ORDER BY f.created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []models.Feedback
+	for rows.Next() {
+		var fb models.Feedback
+		var u models.User
+		if err := rows.Scan(&fb.ID, &fb.UserID, &fb.Body, &fb.PageURL, &fb.ImagePath, &fb.Status, &fb.CreatedAt,
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		fb.HasImage = fb.ImagePath != ""
+		fb.User = &u
+		items = append(items, fb)
+	}
+	return items, nil
+}
+
+func (q *Queries) UpdateFeedbackStatus(ctx context.Context, id uuid.UUID, status string) error {
+	_, err := q.pool.Exec(ctx, `UPDATE feedback SET status = $2 WHERE id = $1`, id, status)
+	return err
+}
+
+func (q *Queries) GetFeedbackImagePath(ctx context.Context, id uuid.UUID) (string, error) {
+	var path string
+	err := q.pool.QueryRow(ctx, `SELECT image_path FROM feedback WHERE id = $1`, id).Scan(&path)
+	return path, err
+}

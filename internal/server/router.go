@@ -34,6 +34,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	importH := NewImportHandler(queries, store, processor, hub, cfg.YTDLPCookies)
 	setH := NewSetHandler(queries)
 	chatH := NewChatHandler(queries, hub)
+	feedbackH := NewFeedbackHandler(queries, store)
 
 	// Auth routes (no auth middleware)
 	r.Get("/auth/login", authH.Login)
@@ -100,6 +101,12 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Post("/api/tracks/{trackID}/comments", commentH.Create)
 		r.Put("/api/comments/{commentID}", commentH.Update)
 		r.Delete("/api/comments/{commentID}", commentH.Delete)
+
+		// Feedback
+		r.Post("/api/feedback", feedbackH.Create)
+		r.Get("/api/feedback", feedbackH.List)
+		r.Patch("/api/feedback/{feedbackID}", feedbackH.UpdateStatus)
+		r.Get("/api/feedback/{feedbackID}/image", feedbackH.ServeImage)
 
 		// WebSocket
 		r.Handle("/ws", hub)
