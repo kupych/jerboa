@@ -15,6 +15,7 @@
   import InviteView from "./routes/InviteView.svelte";
   import CarMode from "./routes/CarMode.svelte";
   import Profile from "./routes/Profile.svelte";
+  import AdminView from "./routes/AdminView.svelte";
 
   onMount(() => {
     checkAuth();
@@ -55,7 +56,9 @@
   <Login />
 {:else}
   <Layout>
-    {#if $route.isProfile}
+    {#if $route.isAdmin}
+      <AdminView />
+    {:else if $route.isProfile}
       <Profile />
     {:else if $route.isInvite}
       <InviteView token={$route.inviteToken!} />

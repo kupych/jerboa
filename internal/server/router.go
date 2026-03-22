@@ -35,6 +35,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	setH := NewSetHandler(queries)
 	chatH := NewChatHandler(queries, hub)
 	feedbackH := NewFeedbackHandler(queries, store)
+	adminH := NewAdminHandler(queries)
 
 	// Auth routes (no auth middleware)
 	r.Get("/auth/login", authH.Login)
@@ -107,6 +108,9 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/feedback", feedbackH.List)
 		r.Patch("/api/feedback/{feedbackID}", feedbackH.UpdateStatus)
 		r.Get("/api/feedback/{feedbackID}/image", feedbackH.ServeImage)
+
+		// Admin
+		r.Get("/api/admin/overview", adminH.Overview)
 
 		// WebSocket
 		r.Handle("/ws", hub)

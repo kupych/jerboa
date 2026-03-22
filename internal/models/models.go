@@ -144,6 +144,42 @@ type ChatMessage struct {
 	User      *User     `json:"user,omitempty"`
 }
 
+// Admin models
+
+type AdminUser struct {
+	ID          uuid.UUID `json:"id"`
+	Email       string    `json:"email"`
+	DisplayName string    `json:"display_name"`
+	AvatarURL   string    `json:"avatar_url,omitempty"`
+	IsAdmin     bool      `json:"is_admin"`
+	CreatedAt   time.Time `json:"created_at"`
+	Bands       string    `json:"bands"`
+}
+
+type AdminBand struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	ColorScheme string    `json:"color_scheme"`
+	CreatedAt   time.Time `json:"created_at"`
+	MemberCount int       `json:"member_count"`
+	TrackCount  int       `json:"track_count"`
+}
+
+type AdminInvite struct {
+	ID            uuid.UUID  `json:"id"`
+	Email         string     `json:"email"`
+	Token         string     `json:"-"`
+	ExpiresAt     time.Time  `json:"expires_at"`
+	UsedBy        *uuid.UUID `json:"-"`
+	UsedAt        *time.Time `json:"used_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	BandName      string     `json:"band_name"`
+	CreatedByName string     `json:"created_by_name"`
+	UsedByName    *string    `json:"used_by_name,omitempty"`
+	Status        string     `json:"status"`
+}
+
 type Feedback struct {
 	ID        uuid.UUID `json:"id"`
 	UserID    uuid.UUID `json:"user_id"`

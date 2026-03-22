@@ -972,3 +972,85 @@ func (q *Queries) GetFeedbackImagePath(ctx context.Context, id uuid.UUID) (strin
 	err := q.pool.QueryRow(ctx, `SELECT image_path FROM feedback WHERE id = $1`, id).Scan(&path)
 	return path, err
 }
+
+// Admin
+
+func (q *Queries) ListAllUsers(ctx context.Context) ([]models.AdminUser, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
+		       COALESCE(
+		         (SELECT string_agg(b.name, ', ' ORDER BY b.name)
+		          FROM band_members bm JOIN bands b ON bm.band_id = b.id
+		          WHERE bm.user_id = u.id), ''
+		       )
+		FROM users u
+		ORDER BY u.created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []models.AdminUser
+	for rows.Next() {
+		var u models.AdminUser
+		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt, &u.Bands); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}
+
+func (q *Queries) ListAllBands(ctx context.Context) ([]models.AdminBand, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT b.id, b.name, b.slug, b.color_scheme, b.created_at,
+		       (SELECT count(*) FROM band_members WHERE band_id = b.id),
+		       (SELECT count(*) FROM tracks WHERE band_id = b.id)
+		FROM bands b
+		ORDER BY b.created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var bands []models.AdminBand
+	for rows.Next() {
+		var b models.AdminBand
+		if err := rows.Scan(&b.ID, &b.Name, &b.Slug, &b.ColorScheme, &b.CreatedAt, &b.MemberCount, &b.TrackCount); err != nil {
+			return nil, err
+		}
+		bands = append(bands, b)
+	}
+	return bands, nil
+}
+
+func (q *Queries) ListAllInvites(ctx context.Context) ([]models.AdminInvite, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT i.id, i.email, i.token, i.expires_at, i.used_by, i.used_at, i.created_at,
+		       b.name,
+		       creator.display_name,
+		       acceptor.display_name
+		FROM band_invites i
+		JOIN bands b ON i.band_id = b.id
+		JOIN users creator ON i.created_by = creator.id
+		LEFT JOIN users acceptor ON i.used_by = acceptor.id
+		ORDER BY i.created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var invites []models.AdminInvite
+	for rows.Next() {
+		var inv models.AdminInvite
+		if err := rows.Scan(&inv.ID, &inv.Email, &inv.Token, &inv.ExpiresAt, &inv.UsedBy, &inv.UsedAt, &inv.CreatedAt,
+			&inv.BandName, &inv.CreatedByName, &inv.UsedByName); err != nil {
+			return nil, err
+		}
+		invites = append(invites, inv)
+	}
+	return invites, nil
+}
