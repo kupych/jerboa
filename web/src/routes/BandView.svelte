@@ -276,7 +276,7 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-4 sm:flex sm:items-center gap-1 sm:gap-4 w-full sm:w-auto">
+      <div class="grid grid-cols-5 sm:flex sm:items-center gap-1 sm:gap-4 w-full sm:w-auto">
         <button
           onclick={() => navigate(`/band/${slug}/car`)}
           class="label-sm sm:label text-text-muted hover:text-accent transition-colors flex items-center justify-center sm:justify-start gap-1.5 py-2 sm:py-0 bg-bg-surface sm:bg-transparent border border-border sm:border-0"
@@ -285,6 +285,16 @@
             <polygon points="5,3 19,12 5,21"/>
           </svg>
           play all
+        </button>
+        <button
+          onclick={() => navigate(`/band/${slug}/perform`)}
+          class="label-sm sm:label text-text-muted hover:text-accent transition-colors flex items-center justify-center sm:justify-start gap-1.5 py-2 sm:py-0 bg-bg-surface sm:bg-transparent border border-border sm:border-0"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 18V5l12-2v13"/>
+            <circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+          </svg>
+          perform
         </button>
         <button
           onclick={() => (showImport = !showImport)}

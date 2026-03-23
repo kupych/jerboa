@@ -55,7 +55,7 @@
   <div class="w-full max-w-sm -mt-16">
     <!-- Logo -->
     <div class="flex justify-center mb-6">
-      <div class="w-24 h-24 md:w-28 md:h-28 text-accent" style="-webkit-mask: url(/logo.svg) center/contain no-repeat; mask: url(/logo.svg) center/contain no-repeat; background: currentColor;"></div>
+      <div class="w-24 h-24 md:w-28 md:h-28 text-accent" title="jerbert" style="-webkit-mask: url(/logo.svg) center/contain no-repeat; mask: url(/logo.svg) center/contain no-repeat; background: currentColor;"></div>
     </div>
 
     <!-- Title block -->

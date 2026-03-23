@@ -448,10 +448,18 @@
               <p class="text-sm font-medium text-text-secondary mt-3">{set.notes}</p>
             {/if}
           </div>
+          <div class="flex items-center gap-4">
+          {#if set.items.length > 0}
+            <button
+              onclick={() => navigate(`/band/${slug}/set/${setId}/perform`)}
+              class="px-4 py-2 bg-accent hover:bg-accent-hover text-bg-primary label-sm transition-colors"
+            >perform</button>
+          {/if}
           <button
             onclick={startEditMeta}
             class="label text-text-muted hover:text-accent transition-colors"
           >edit</button>
+        </div>
         </div>
       {/if}
     </div>

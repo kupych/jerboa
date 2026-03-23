@@ -17,6 +17,7 @@
   import CarMode from "./routes/CarMode.svelte";
   import Profile from "./routes/Profile.svelte";
   import AdminView from "./routes/AdminView.svelte";
+  import PerformView from "./routes/PerformView.svelte";
 
   let onboardName = $state("");
   let onboardSaving = $state(false);
@@ -76,7 +77,7 @@
   <div class="min-h-screen flex flex-col items-center justify-center px-6">
     <div class="w-full max-w-sm space-y-6">
       <div class="flex justify-center">
-        <div class="w-16 h-16 text-accent" style="-webkit-mask: url(/logo.svg) center/contain no-repeat; mask: url(/logo.svg) center/contain no-repeat; background: currentColor;"></div>
+        <div class="w-16 h-16 text-accent" title="jerbert" style="-webkit-mask: url(/logo.svg) center/contain no-repeat; mask: url(/logo.svg) center/contain no-repeat; background: currentColor;"></div>
       </div>
       <div class="text-center">
         <h2 class="text-lg font-bold tracking-wider font-display text-text-primary">welcome to jerboa</h2>
@@ -112,6 +113,8 @@
       <TrackView slug={$route.bandSlug!} trackId={$route.trackId!} />
     {:else if $route.isCar}
       <CarMode slug={$route.bandSlug!} />
+    {:else if $route.isPerform}
+      <PerformView slug={$route.bandSlug!} setId={$route.setId ?? undefined} />
     {:else if $route.isSet}
       <SetView slug={$route.bandSlug!} setId={$route.setId!} />
     {:else if $route.isSong}

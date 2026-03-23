@@ -172,6 +172,42 @@ func (h *SetHandler) Get(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(set)
 }
 
+func (h *SetHandler) Perform(w http.ResponseWriter, r *http.Request) {
+	band, err := h.verifyBandAccess(r)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	setID, err := uuid.Parse(chi.URLParam(r, "setID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid set id"}`, http.StatusBadRequest)
+		return
+	}
+
+	set, err := h.queries.GetSet(r.Context(), setID)
+	if err != nil || set == nil || set.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	items, err := h.queries.ListPerformItems(r.Context(), set.ID)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	if items == nil {
+		items = []models.PerformItem{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"set_name": set.Name,
+		"set_type": set.SetType,
+		"items":    items,
+	})
+}
+
 func (h *SetHandler) Update(w http.ResponseWriter, r *http.Request) {
 	band, err := h.verifyBandAccess(r)
 	if err != nil || band == nil {

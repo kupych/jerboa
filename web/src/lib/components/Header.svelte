@@ -60,7 +60,7 @@
         onclick={handleLogoClick}
         class="flex items-center gap-2 md:gap-2.5 text-base md:text-lg font-bold tracking-[0.25em] uppercase text-accent hover:text-accent-hover transition-colors font-display shrink-0"
       >
-        <div class="h-6 w-6 md:h-8 md:w-8 bg-current" style="-webkit-mask: url(/logo.svg) center/contain no-repeat; mask: url(/logo.svg) center/contain no-repeat;"></div>
+        <div class="h-6 w-6 md:h-8 md:w-8 bg-current" title="jerbert" style="-webkit-mask: url(/logo.svg) center/contain no-repeat; mask: url(/logo.svg) center/contain no-repeat;"></div>
         <span class="hidden md:inline">jerboa</span>
       </button>
 

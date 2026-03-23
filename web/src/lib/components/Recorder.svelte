@@ -22,10 +22,10 @@
   let parentAudio: HTMLAudioElement | null = null;
   let capturedOffsetMs = 0;
 
-  let recState = $state<"warming" | "ready" | "recording" | "uploading">("warming");
+  let recState = $state<"idle" | "warming" | "recording" | "uploading">("idle");
   let mediaRecorder: MediaRecorder | null = null;
   let micStream: MediaStream | null = null;
-  let recordStream: MediaStream | null = null; // mono downmixed stream for recording
+  let recordStream: MediaStream | null = null;
   let chunks: Blob[] = [];
   let elapsed = $state(0);
   let timerInterval: ReturnType<typeof setInterval> | null = null;
@@ -44,137 +44,134 @@
     return `${m}:${sec.toString().padStart(2, "0")}`;
   }
 
-  // Pre-warm mic on mount so it's ready when user hits record
   onMount(() => {
-    warmUpMic();
     return () => cleanup();
   });
 
-  async function warmUpMic() {
+  async function handleRecord() {
+    if (recState === "recording") return;
+    error = "";
+    recState = "warming";
+
     try {
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          channelCount: 1,
-        },
-      });
+      // Request mic only when user clicks record
+      if (!micStream) {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 1,
+          },
+        });
 
-      audioCtx = new AudioContext();
-      await audioCtx.resume();
-      const source = audioCtx.createMediaStreamSource(micStream);
+        audioCtx = new AudioContext();
+        await audioCtx.resume();
+        const source = audioCtx.createMediaStreamSource(micStream);
 
-      // Force mono downmix through AudioContext
-      const merger = audioCtx.createChannelMerger(1);
-      source.connect(merger);
+        const merger = audioCtx.createChannelMerger(1);
+        source.connect(merger);
 
-      // Create a mono stream for recording
-      const dest = audioCtx.createMediaStreamDestination();
-      merger.connect(dest);
-      recordStream = dest.stream;
+        const dest = audioCtx.createMediaStreamDestination();
+        merger.connect(dest);
+        recordStream = dest.stream;
 
-      // Level meter on the mono output
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      merger.connect(analyser);
-      meterLoop();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        merger.connect(analyser);
+        meterLoop();
+      }
 
-      recState = "ready";
+      // Mic is ready — start recording immediately
+      await startRecording();
     } catch (e: any) {
       if (e.name === "NotAllowedError") {
         error = "mic access denied";
       } else {
         error = e.message || "Could not access mic";
       }
+      recState = "idle";
     }
   }
 
   async function startRecording() {
-    if (!micStream) return;
-    error = "";
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : "";
 
-    try {
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/mp4")
-          ? "audio/mp4"
-          : "";
+    mediaRecorder = new MediaRecorder(recordStream!, mimeType ? { mimeType } : {});
+    chunks = [];
 
-      mediaRecorder = new MediaRecorder(recordStream!, mimeType ? { mimeType } : {});
-      chunks = [];
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-
-      mediaRecorder.onstop = async () => {
-        if (chunks.length === 0) {
-          recState = "ready";
-          return;
-        }
-
-        const blob = new Blob(chunks, { type: mediaRecorder!.mimeType });
-        const ext = blob.type.includes("mp4") ? ".m4a" : ".webm";
-        const now = new Date();
-        const stamp = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}-${now.getDate().toString().padStart(2, "0")}_${now.getHours().toString().padStart(2, "0")}${now.getMinutes().toString().padStart(2, "0")}`;
-        const filename = `recording_${stamp}${ext}`;
-
-        recState = "uploading";
-        uploadProgress = 0;
-        try {
-          const file = new File([blob], filename, { type: blob.type });
-
-          if (overdubParentId) {
-            const adjustedOffset = capturedOffsetMs - latencyCompensation;
-            await uploadFile(
-              `/api/bands/${bandSlug}/tracks/${overdubParentId}/overdubs`,
-              file,
-              { offset_ms: String(adjustedOffset) },
-              (pct) => (uploadProgress = pct),
-            );
-          } else {
-            const track = await uploadFile<{ id: string }>(
-              `/api/bands/${bandSlug}/tracks`,
-              file,
-              {},
-              (pct) => (uploadProgress = pct),
-            );
-            if (songId) {
-              await apiPatch(`/api/bands/${bandSlug}/tracks/${track.id}/song`, {
-                song_id: songId,
-              });
-            }
-          }
-          onRecorded();
-        } catch (e: any) {
-          error = e.message || "Upload failed";
-        } finally {
-          recState = "ready";
-        }
-      };
-
-      // Wait for encoder to be active
-      await new Promise<void>((resolve) => {
-        mediaRecorder!.onstart = () => resolve();
-        mediaRecorder!.start();
-      });
-
-      recState = "recording";
-      elapsed = 0;
-      timerInterval = setInterval(() => elapsed++, 1000);
-
-      // Start parent playback — mic is confirmed active
-      if (overdubParentId && parentStreamUrl) {
-        parentAudio = new Audio(parentStreamUrl);
-        parentAudio.play().then(() => {
-          capturedOffsetMs = Math.round((parentAudio?.currentTime ?? 0) * 1000);
-        }).catch(() => {
-          capturedOffsetMs = 0;
-        });
+    mediaRecorder.onstop = async () => {
+      if (chunks.length === 0) {
+        recState = "idle";
+        return;
       }
-    } catch (e: any) {
-      error = e.message || "Could not start recording";
+
+      const blob = new Blob(chunks, { type: mediaRecorder!.mimeType });
+      const ext = blob.type.includes("mp4") ? ".m4a" : ".webm";
+      const now = new Date();
+      const stamp = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}-${now.getDate().toString().padStart(2, "0")}_${now.getHours().toString().padStart(2, "0")}${now.getMinutes().toString().padStart(2, "0")}`;
+      const filename = `recording_${stamp}${ext}`;
+
+      recState = "uploading";
+      uploadProgress = 0;
+      try {
+        const file = new File([blob], filename, { type: blob.type });
+
+        if (overdubParentId) {
+          const adjustedOffset = capturedOffsetMs - latencyCompensation;
+          await uploadFile(
+            `/api/bands/${bandSlug}/tracks/${overdubParentId}/overdubs`,
+            file,
+            { offset_ms: String(adjustedOffset) },
+            (pct) => (uploadProgress = pct),
+          );
+        } else {
+          const track = await uploadFile<{ id: string }>(
+            `/api/bands/${bandSlug}/tracks`,
+            file,
+            {},
+            (pct) => (uploadProgress = pct),
+          );
+          if (songId) {
+            await apiPatch(`/api/bands/${bandSlug}/tracks/${track.id}/song`, {
+              song_id: songId,
+            });
+          }
+        }
+        onRecorded();
+      } catch (e: any) {
+        error = e.message || "Upload failed";
+      } finally {
+        recState = "idle";
+      }
+    };
+
+    // Wait for encoder to be active
+    await new Promise<void>((resolve) => {
+      mediaRecorder!.onstart = () => resolve();
+      mediaRecorder!.start();
+    });
+
+    recState = "recording";
+    elapsed = 0;
+    timerInterval = setInterval(() => elapsed++, 1000);
+
+    // Start parent playback — mic is confirmed active
+    if (overdubParentId && parentStreamUrl) {
+      parentAudio = new Audio(parentStreamUrl);
+      parentAudio.play().then(() => {
+        capturedOffsetMs = Math.round((parentAudio?.currentTime ?? 0) * 1000);
+      }).catch(() => {
+        capturedOffsetMs = 0;
+      });
     }
   }
 
@@ -188,8 +185,6 @@
       timerInterval = null;
     }
     if (mediaRecorder && mediaRecorder.state === "recording") {
-      // Request final data chunk then stop after a short flush delay
-      // so the encoder doesn't truncate the tail
       mediaRecorder.requestData();
       setTimeout(() => {
         if (mediaRecorder && mediaRecorder.state === "recording") {
@@ -229,25 +224,18 @@
   }
 </script>
 
-{#if recState === "warming"}
-  <div class="border border-dashed border-border p-4 text-center">
-    <span class="text-sm text-text-muted font-semibold">warming up mic...</span>
-  </div>
-{:else if recState === "ready"}
+{#if recState === "idle"}
   <button
-    onclick={startRecording}
+    onclick={handleRecord}
     class="border border-dashed border-border hover:border-red-400/50 p-4 text-center transition-colors w-full flex items-center justify-center gap-3 group"
   >
     <div class="w-3 h-3 rounded-full bg-red-400/60 group-hover:bg-red-400 transition-colors"></div>
     <span class="text-sm text-text-muted font-semibold group-hover:text-red-400 transition-colors">{overdubParentId ? "record overdub" : "record a take"}</span>
-    <!-- Live mic level so you know the mic is working -->
-    <div class="w-16 h-2 bg-bg-primary overflow-hidden">
-      <div
-        class="h-full bg-red-400/40 transition-[width] duration-75"
-        style="width: {Math.min(100, level * 150)}%"
-      ></div>
-    </div>
   </button>
+{:else if recState === "warming"}
+  <div class="border border-dashed border-border p-4 text-center">
+    <span class="text-sm text-text-muted font-semibold">warming up mic...</span>
+  </div>
 {:else if recState === "recording"}
   <div class="border border-red-400/40 bg-red-400/5 p-4 text-center">
     <div class="flex items-center justify-center gap-4">

@@ -130,6 +130,15 @@ type SetItem struct {
 	SongName   string     `json:"song_name,omitempty"`
 }
 
+type PerformItem struct {
+	Position   int    `json:"position"`
+	SongName   string `json:"song_name"`
+	CustomName string `json:"custom_name"`
+	Lyrics     string `json:"lyrics"`
+	Tabs       string `json:"tabs"`
+	Notes      string `json:"notes,omitempty"`
+}
+
 type SetTake struct {
 	SetItemID    uuid.UUID       `json:"set_item_id"`
 	SetID        uuid.UUID       `json:"set_id"`

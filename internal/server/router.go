@@ -100,6 +100,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/bands/{slug}/sets", setH.List)
 		r.Post("/api/bands/{slug}/sets", setH.Create)
 		r.Get("/api/bands/{slug}/sets/{setID}", setH.Get)
+		r.Get("/api/bands/{slug}/sets/{setID}/perform", setH.Perform)
 		r.Patch("/api/bands/{slug}/sets/{setID}", setH.Update)
 		r.Delete("/api/bands/{slug}/sets/{setID}", setH.Delete)
 		r.Put("/api/bands/{slug}/sets/{setID}/items", setH.ReplaceItems)

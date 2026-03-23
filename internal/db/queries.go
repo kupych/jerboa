@@ -835,6 +835,32 @@ func (q *Queries) ListSetItems(ctx context.Context, setID uuid.UUID) ([]models.S
 	return items, nil
 }
 
+func (q *Queries) ListPerformItems(ctx context.Context, setID uuid.UUID) ([]models.PerformItem, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT si.position, COALESCE(s.name, ''), si.custom_name,
+		       COALESCE(s.lyrics, ''), COALESCE(s.tabs, ''), si.notes
+		FROM set_items si
+		LEFT JOIN songs s ON si.song_id = s.id
+		WHERE si.set_id = $1
+		ORDER BY si.position
+	`, setID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []models.PerformItem
+	for rows.Next() {
+		var pi models.PerformItem
+		if err := rows.Scan(&pi.Position, &pi.SongName, &pi.CustomName,
+			&pi.Lyrics, &pi.Tabs, &pi.Notes); err != nil {
+			return nil, err
+		}
+		items = append(items, pi)
+	}
+	return items, nil
+}
+
 func (q *Queries) ReplaceSetItems(ctx context.Context, setID uuid.UUID, items []models.SetItem) ([]models.SetItem, error) {
 	tx, err := q.pool.Begin(ctx)
 	if err != nil {

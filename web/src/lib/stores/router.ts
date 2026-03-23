@@ -27,7 +27,9 @@ export const route = derived(path, ($path) => {
     // /band/:slug/song/:id
     isSong: parts[0] === "band" && parts[2] === "song",
     // /band/:slug/set/:id
-    isSet: parts[0] === "band" && parts[2] === "set",
+    isSet: parts[0] === "band" && parts[2] === "set" && parts.length === 4,
+    // /band/:slug/set/:id/perform OR /band/:slug/perform (freestyle)
+    isPerform: parts[0] === "band" && ((parts[2] === "set" && parts[4] === "perform") || (parts[2] === "perform" && parts.length === 3)),
     // /band/:slug/car
     isCar: parts[0] === "band" && parts[2] === "car",
     // /invite/:token
