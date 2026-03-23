@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
 	"jerboa/internal/db"
 	"jerboa/internal/models"
 )
@@ -86,4 +89,48 @@ func (h *AdminHandler) Overview(w http.ResponseWriter, r *http.Request) {
 		"invites":  invites,
 		"feedback": feedback,
 	})
+}
+
+func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	admin := h.requireAdmin(w, r)
+	if admin == nil {
+		return
+	}
+
+	id, err := uuid.Parse(chi.URLParam(r, "userID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if id == admin.ID {
+		http.Error(w, `{"error":"cannot delete yourself"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.queries.DeleteUser(r.Context(), id); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *AdminHandler) DeleteInvite(w http.ResponseWriter, r *http.Request) {
+	if h.requireAdmin(w, r) == nil {
+		return
+	}
+
+	id, err := uuid.Parse(chi.URLParam(r, "inviteID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.queries.DeleteInvite(r.Context(), id); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

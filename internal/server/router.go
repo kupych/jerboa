@@ -123,6 +123,8 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 
 		// Admin
 		r.Get("/api/admin/overview", adminH.Overview)
+		r.Delete("/api/admin/users/{userID}", adminH.DeleteUser)
+		r.Delete("/api/admin/invites/{inviteID}", adminH.DeleteInvite)
 
 		// WebSocket
 		r.Handle("/ws", hub)

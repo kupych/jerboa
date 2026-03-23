@@ -1,9 +1,24 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api } from "../lib/api";
+  import { api, apiDelete } from "../lib/api";
   import { user } from "../lib/stores/auth";
   import { navigate } from "../lib/stores/router";
   import { formatRelativeTime } from "../lib/utils/format";
+
+  let confirmDeleteUser = $state<string | null>(null);
+  let confirmDeleteInvite = $state<string | null>(null);
+
+  async function deleteUser(id: string) {
+    await apiDelete(`/api/admin/users/${id}`);
+    users = users.filter((u) => u.id !== id);
+    confirmDeleteUser = null;
+  }
+
+  async function deleteInvite(id: string) {
+    await apiDelete(`/api/admin/invites/${id}`);
+    invites = invites.filter((i) => i.id !== id);
+    confirmDeleteInvite = null;
+  }
 
   type AdminUser = {
     id: string;
@@ -148,6 +163,14 @@
               <span class="text-text-muted/40 italic">no bands</span>
             {/if}
             <span class="font-mono">{formatRelativeTime(u.created_at)}</span>
+            {#if u.id !== $user?.id}
+              {#if confirmDeleteUser === u.id}
+                <button onclick={() => deleteUser(u.id)} class="text-danger hover:text-red-300 transition-colors">confirm</button>
+                <button onclick={() => confirmDeleteUser = null} class="text-text-muted hover:text-text-secondary transition-colors">cancel</button>
+              {:else}
+                <button onclick={() => confirmDeleteUser = u.id} class="text-text-muted/30 hover:text-danger transition-colors">delete</button>
+              {/if}
+            {/if}
           </div>
         </div>
       {/each}
@@ -196,6 +219,12 @@
               <span class="text-green-400">joined as {inv.used_by_name}</span>
             {/if}
             <span class="font-mono">{formatRelativeTime(inv.created_at)}</span>
+            {#if confirmDeleteInvite === inv.id}
+              <button onclick={() => deleteInvite(inv.id)} class="text-danger hover:text-red-300 transition-colors">confirm</button>
+              <button onclick={() => confirmDeleteInvite = null} class="text-text-muted hover:text-text-secondary transition-colors">cancel</button>
+            {:else}
+              <button onclick={() => confirmDeleteInvite = inv.id} class="text-text-muted/30 hover:text-danger transition-colors">delete</button>
+            {/if}
           </div>
         </div>
       {/each}

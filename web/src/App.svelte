@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { user, authLoading, checkAuth } from "./lib/stores/auth";
+  import { apiPatch } from "./lib/api";
   import { route, navigate } from "./lib/stores/router";
   import { bands, loadBands } from "./lib/stores/bands";
   import { applyColorScheme, resetColorScheme } from "./lib/colorSchemes";
@@ -16,6 +17,23 @@
   import CarMode from "./routes/CarMode.svelte";
   import Profile from "./routes/Profile.svelte";
   import AdminView from "./routes/AdminView.svelte";
+
+  let onboardName = $state("");
+  let onboardSaving = $state(false);
+  let needsOnboarding = $derived($user != null && !$user.display_name);
+
+  async function saveOnboardName() {
+    if (!onboardName.trim()) return;
+    onboardSaving = true;
+    try {
+      const updated = await apiPatch<{ display_name: string }>("/auth/me", {
+        display_name: onboardName.trim(),
+      });
+      user.update((u) => u ? { ...u, display_name: updated.display_name } : u);
+    } finally {
+      onboardSaving = false;
+    }
+  }
 
   onMount(() => {
     checkAuth();
@@ -54,6 +72,34 @@
   </div>
 {:else if !$user}
   <Login />
+{:else if needsOnboarding}
+  <div class="min-h-screen flex flex-col items-center justify-center px-6">
+    <div class="w-full max-w-sm space-y-6">
+      <div class="flex justify-center">
+        <div class="w-16 h-16 text-accent" style="-webkit-mask: url(/logo.svg) center/contain no-repeat; mask: url(/logo.svg) center/contain no-repeat; background: currentColor;"></div>
+      </div>
+      <div class="text-center">
+        <h2 class="text-lg font-bold tracking-wider font-display text-text-primary">welcome to jerboa</h2>
+        <p class="text-xs font-semibold text-text-muted mt-2">what should we call you?</p>
+      </div>
+      <form onsubmit={(e) => { e.preventDefault(); saveOnboardName(); }} class="space-y-4">
+        <input
+          type="text"
+          bind:value={onboardName}
+          placeholder="your name"
+          autofocus
+          class="w-full bg-transparent border border-border text-text-primary text-sm font-semibold px-4 py-3 placeholder:text-text-muted/30 focus:border-accent focus:outline-none transition-colors text-center"
+        />
+        <button
+          type="submit"
+          disabled={onboardSaving || !onboardName.trim()}
+          class="w-full px-6 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors"
+        >
+          {onboardSaving ? "..." : "let's go"}
+        </button>
+      </form>
+    </div>
+  </div>
 {:else}
   <Layout>
     {#if $route.isAdmin}

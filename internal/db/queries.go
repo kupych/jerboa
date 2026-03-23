@@ -58,6 +58,16 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (*models.User, erro
 	return &u, err
 }
 
+func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, "DELETE FROM users WHERE id = $1", id)
+	return err
+}
+
+func (q *Queries) DeleteInvite(ctx context.Context, id uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, "DELETE FROM band_invites WHERE id = $1", id)
+	return err
+}
+
 // Sessions
 
 func (q *Queries) CreateSession(ctx context.Context, userID uuid.UUID, ttl time.Duration) (string, error) {
