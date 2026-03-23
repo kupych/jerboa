@@ -91,6 +91,40 @@ func (q *Queries) DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
+// Magic links
+
+func (q *Queries) CreateMagicLink(ctx context.Context, email string, ttl time.Duration) (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	token := hex.EncodeToString(b)
+	_, err := q.pool.Exec(ctx, `
+		INSERT INTO magic_links (email, token, expires_at)
+		VALUES ($1, $2, $3)
+	`, email, token, time.Now().Add(ttl))
+	return token, err
+}
+
+func (q *Queries) GetMagicLink(ctx context.Context, token string) (string, error) {
+	var email string
+	err := q.pool.QueryRow(ctx, `
+		SELECT email FROM magic_links
+		WHERE token = $1 AND expires_at > now() AND used_at IS NULL
+	`, token).Scan(&email)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	return email, err
+}
+
+func (q *Queries) MarkMagicLinkUsed(ctx context.Context, token string) error {
+	_, err := q.pool.Exec(ctx, `
+		UPDATE magic_links SET used_at = now() WHERE token = $1
+	`, token)
+	return err
+}
+
 // Bands
 
 func (q *Queries) CreateBand(ctx context.Context, name, slug string, createdBy uuid.UUID) (*models.Band, error) {
@@ -223,6 +257,37 @@ func (q *Queries) CreateInvite(ctx context.Context, bandID, createdBy uuid.UUID,
 	`, bandID, token, createdBy, email, time.Now().Add(ttl)).Scan(
 		&inv.ID, &inv.BandID, &inv.Token, &inv.CreatedBy, &inv.ExpiresAt, &inv.CreatedAt)
 	return &inv, err
+}
+
+func (q *Queries) GetInviteByToken(ctx context.Context, token string) (*models.BandInvite, string, error) {
+	var inv models.BandInvite
+	var email string
+	err := q.pool.QueryRow(ctx, `
+		SELECT i.id, i.band_id, i.token, i.created_by, i.expires_at, i.used_by, i.used_at, i.created_at, i.email
+		FROM band_invites i
+		WHERE i.token = $1
+	`, token).Scan(&inv.ID, &inv.BandID, &inv.Token, &inv.CreatedBy, &inv.ExpiresAt, &inv.UsedBy, &inv.UsedAt, &inv.CreatedAt, &email)
+	if err == pgx.ErrNoRows {
+		return nil, "", nil
+	}
+	return &inv, email, err
+}
+
+func (q *Queries) EnsureBandMember(ctx context.Context, bandID, userID uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, `
+		INSERT INTO band_members (band_id, user_id, role)
+		VALUES ($1, $2, 'member')
+		ON CONFLICT DO NOTHING
+	`, bandID, userID)
+	return err
+}
+
+func (q *Queries) MarkInviteUsed(ctx context.Context, token string, userID uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, `
+		UPDATE band_invites SET used_by = $1, used_at = now()
+		WHERE token = $2 AND used_by IS NULL
+	`, userID, token)
+	return err
 }
 
 func (q *Queries) HasPendingInvite(ctx context.Context, email string) (bool, error) {

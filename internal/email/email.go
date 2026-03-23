@@ -82,6 +82,37 @@ func (m *Mailer) send(to, subject, msg string) error {
 	return nil
 }
 
+func (m *Mailer) SendMagicLoginEmail(to, loginURL string) {
+	subject := "Your Jerboa login link"
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
+<body style="margin:0;padding:0;background:#131313;font-family:'Courier New',monospace;">
+  <div style="max-width:480px;margin:0 auto;padding:40px 24px;">
+    <div style="border-bottom:1px solid #222;padding-bottom:16px;margin-bottom:32px;">
+      <span style="font-size:11px;font-weight:700;letter-spacing:0.25em;color:#555;text-transform:uppercase;">JERBOA · SYS·MSG·01</span>
+    </div>
+
+    <p style="font-size:14px;color:#ccc;line-height:1.6;margin:0 0 24px;">
+      Click the link below to sign in to Jerboa. This link expires in 15 minutes.
+    </p>
+
+    <a href="%s" style="display:inline-block;background:#c8a864;color:#131313;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;text-decoration:none;padding:12px 28px;margin:0 0 32px;">SIGN IN</a>
+
+    <p style="font-size:11px;color:#555;line-height:1.5;margin:0 0 32px;">
+      If you didn't request this, you can safely ignore it.
+    </p>
+
+    <div style="border-top:1px solid #222;padding-top:16px;margin-top:32px;">
+      <span style="font-size:8px;font-weight:600;letter-spacing:0.25em;color:rgba(255,255,255,0.1);text-transform:uppercase;">whether.network</span>
+    </div>
+  </div>
+</body>
+</html>`, loginURL)
+
+	go m.SendHTML(to, subject, html)
+}
+
 func (m *Mailer) SendInvite(to, bandName, inviteURL string) {
 	subject := fmt.Sprintf("You're invited to %s on Jerboa", bandName)
 	html := fmt.Sprintf(`<!DOCTYPE html>
@@ -97,7 +128,15 @@ func (m *Mailer) SendInvite(to, bandName, inviteURL string) {
       You've been invited to join <strong style="color:#fff;">%s</strong> on Jerboa.
     </p>
 
-    <a href="%s" style="display:inline-block;background:#c8a864;color:#131313;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;text-decoration:none;padding:12px 28px;margin:0 0 32px;">ACCEPT INVITE</a>
+    <p style="font-size:12px;color:#888;line-height:1.6;margin:0 0 24px;">
+      Jerboa is a private space for bands to share recordings, track ideas, and collaborate on music together. Think of it as your band's shared notebook &mdash; upload takes, leave comments, build setlists.
+    </p>
+
+    <a href="%s" style="display:inline-block;background:#c8a864;color:#131313;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;text-decoration:none;padding:12px 28px;margin:0 0 12px;">ACCEPT INVITE</a>
+
+    <p style="font-size:10px;color:#555;line-height:1.5;margin:0 0 32px;">
+      This link is also your login &mdash; bookmark it to sign in anytime.
+    </p>
 
     <div style="border-top:1px solid #222;padding-top:16px;margin-top:32px;">
       <span style="font-size:8px;font-weight:600;letter-spacing:0.25em;color:rgba(255,255,255,0.1);text-transform:uppercase;">whether.network</span>

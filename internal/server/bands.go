@@ -138,7 +138,7 @@ func (h *BandHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inviteURL := h.baseURL + "/invite/" + invite.Token
+	inviteURL := h.baseURL + "/auth/invite/" + invite.Token
 
 	h.mailer.SendInvite(req.Email, band.Name, inviteURL)
 

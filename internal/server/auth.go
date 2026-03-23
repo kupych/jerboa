@@ -4,25 +4,32 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"jerboa/internal/auth"
 	"jerboa/internal/db"
+	"jerboa/internal/email"
 )
 
 type AuthHandler struct {
 	provider *auth.Provider
 	queries  *db.Queries
+	mailer   *email.Mailer
 	baseURL  string
 	secure   bool
 }
 
-func NewAuthHandler(provider *auth.Provider, queries *db.Queries, baseURL string) *AuthHandler {
+func NewAuthHandler(provider *auth.Provider, queries *db.Queries, mailer *email.Mailer, baseURL string) *AuthHandler {
 	secure := len(baseURL) > 8 && baseURL[:8] == "https://"
 	return &AuthHandler{
 		provider: provider,
 		queries:  queries,
+		mailer:   mailer,
 		baseURL:  baseURL,
 		secure:   secure,
 	}
@@ -164,6 +171,157 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
+}
+
+// InviteLogin handles GET /auth/invite/{token} — authenticates via invite token.
+// Works for first-time and returning users. The invite link is their permanent login.
+func (h *AuthHandler) InviteLogin(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		http.Redirect(w, r, h.baseURL, http.StatusFound)
+		return
+	}
+
+	invite, inviteEmail, err := h.queries.GetInviteByToken(r.Context(), token)
+	if err != nil {
+		slog.Error("invite login: lookup", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if invite == nil || inviteEmail == "" {
+		http.Redirect(w, r, h.baseURL+"/no-access", http.StatusFound)
+		return
+	}
+
+	inviteEmail = strings.ToLower(strings.TrimSpace(inviteEmail))
+
+	// Upsert user (creates account if new, no-ops if existing)
+	user, err := h.queries.UpsertUser(r.Context(), inviteEmail, "", "")
+	if err != nil {
+		slog.Error("invite login: upsert user", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Ensure band membership
+	if err := h.queries.EnsureBandMember(r.Context(), invite.BandID, user.ID); err != nil {
+		slog.Error("invite login: ensure member", "error", err)
+	}
+
+	// Mark invite used (no-ops if already used)
+	if err := h.queries.MarkInviteUsed(r.Context(), token, user.ID); err != nil {
+		slog.Error("invite login: mark used", "error", err)
+	}
+
+	// Create session
+	sessionToken, err := h.queries.CreateSession(r.Context(), user.ID, 30*24*time.Hour)
+	if err != nil {
+		slog.Error("invite login: create session", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    sessionToken,
+		Path:     "/",
+		MaxAge:   30 * 24 * 60 * 60,
+		HttpOnly: true,
+		Secure:   h.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	slog.Info("invite login", "email", inviteEmail, "band_id", invite.BandID)
+	http.Redirect(w, r, h.baseURL, http.StatusFound)
+}
+
+// SendMagicLink handles POST /auth/magic-link — sends a login email for returning users.
+func (h *AuthHandler) SendMagicLink(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" {
+		http.Error(w, `{"error":"email is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	reqEmail := strings.ToLower(strings.TrimSpace(req.Email))
+
+	// Check user exists
+	exists, err := h.queries.UserExists(r.Context(), reqEmail)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Always return success to prevent email enumeration
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
+
+	if !exists {
+		return
+	}
+
+	// Create magic link token (15 min TTL)
+	token, err := h.queries.CreateMagicLink(r.Context(), reqEmail, 15*time.Minute)
+	if err != nil {
+		slog.Error("magic link: create token", "error", err)
+		return
+	}
+
+	loginURL := h.baseURL + "/auth/magic-link/verify?token=" + token
+	go h.mailer.SendMagicLoginEmail(reqEmail, loginURL)
+}
+
+// VerifyMagicLink handles GET /auth/magic-link/verify?token=xxx
+func (h *AuthHandler) VerifyMagicLink(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Redirect(w, r, h.baseURL, http.StatusFound)
+		return
+	}
+
+	linkEmail, err := h.queries.GetMagicLink(r.Context(), token)
+	if err != nil {
+		slog.Error("magic link: lookup", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if linkEmail == "" {
+		http.Redirect(w, r, h.baseURL+"/no-access", http.StatusFound)
+		return
+	}
+
+	// Mark as used
+	h.queries.MarkMagicLinkUsed(r.Context(), token)
+
+	// Get or create user
+	user, err := h.queries.UpsertUser(r.Context(), linkEmail, "", "")
+	if err != nil {
+		slog.Error("magic link: upsert user", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	sessionToken, err := h.queries.CreateSession(r.Context(), user.ID, 30*24*time.Hour)
+	if err != nil {
+		slog.Error("magic link: create session", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    sessionToken,
+		Path:     "/",
+		MaxAge:   30 * 24 * 60 * 60,
+		HttpOnly: true,
+		Secure:   h.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	slog.Info("magic link login", "email", linkEmail)
+	http.Redirect(w, r, h.baseURL, http.StatusFound)
 }
 
 func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {

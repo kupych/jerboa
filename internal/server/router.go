@@ -26,7 +26,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 
 	hub := NewHub(queries)
 	mailer := email.NewMailer(cfg)
-	authH := NewAuthHandler(authProvider, queries, cfg.BaseURL)
+	authH := NewAuthHandler(authProvider, queries, mailer, cfg.BaseURL)
 	bandH := NewBandHandler(queries, cfg.BaseURL, mailer)
 	trackH := NewTrackHandler(queries, store, processor, hub, cfg.MaxUploadMB)
 	commentH := NewCommentHandler(queries, hub)
@@ -41,6 +41,9 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	// Auth routes (no auth middleware)
 	r.Get("/auth/login", authH.Login)
 	r.Get("/auth/callback", authH.Callback)
+	r.Get("/auth/invite/{token}", authH.InviteLogin)
+	r.Post("/auth/magic-link", authH.SendMagicLink)
+	r.Get("/auth/magic-link/verify", authH.VerifyMagicLink)
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {

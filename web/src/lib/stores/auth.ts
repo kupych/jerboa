@@ -28,6 +28,15 @@ export function login() {
   window.location.href = "/auth/login";
 }
 
+export async function sendMagicLink(email: string): Promise<boolean> {
+  await api("/auth/magic-link", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return true;
+}
+
 export async function logout() {
   await api("/auth/logout", { method: "POST" });
   user.set(null);
