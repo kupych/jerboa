@@ -5,15 +5,14 @@
 
   const COLS = 32;
   const ROWS = 8;
-  const DECAY = 0.6;          // cells to drop per tick
-  const ATTACK_CHANCE = 0.12; // chance of a new spike per column per tick
+  const DECAY = 0.6;
+  const ATTACK_CHANCE = 0.12;
   let levels = $state(Array(COLS).fill(0));
   let timer: ReturnType<typeof setInterval>;
 
   let emailInput = $state("");
   let magicLinkSent = $state(false);
-  let magicLinkSending = $state(false);
-  let showEmailLogin = $state(false);
+  let sending = $state(false);
 
   onMount(() => {
     timer = setInterval(() => {
@@ -29,17 +28,21 @@
 
   onDestroy(() => clearInterval(timer));
 
-  async function handleMagicLink() {
+  async function handleSubmit() {
     if (!emailInput.trim()) return;
-    magicLinkSending = true;
+    sending = true;
     try {
-      await sendMagicLink(emailInput.trim());
+      const method = await sendMagicLink(emailInput.trim());
+      if (method === "oidc") {
+        // Google account — redirect to OIDC flow
+        login();
+        return;
+      }
       magicLinkSent = true;
     } catch {
-      // still show sent (no email enumeration)
       magicLinkSent = true;
     } finally {
-      magicLinkSending = false;
+      sending = false;
     }
   }
 </script>
@@ -79,45 +82,41 @@
 
     <!-- Sign in -->
     <div class="border-t border-accent/30" style="margin-top: 2px; padding-top: 0.25rem;">
-      <div class="flex justify-between items-start">
-        <span class="text-[9px] font-semibold tracking-[0.15em] text-accent/25 uppercase select-none leading-none" style="margin-top: 1px;">{version} — JRB·001A</span>
-        <button
-          onclick={login}
-          style="margin-right: -0.25em;"
-          class="text-accent hover:text-accent-hover text-sm font-bold tracking-[0.25em] uppercase transition-colors leading-none"
-        >
-          sign in
-        </button>
-      </div>
+      <span class="text-[9px] font-semibold tracking-[0.15em] text-accent/25 uppercase select-none leading-none block" style="margin-bottom: 12px;">{version} — JRB·001A</span>
 
-      <!-- Email login toggle -->
-      {#if !showEmailLogin}
-        <button
-          onclick={() => showEmailLogin = true}
-          class="mt-4 text-[10px] font-semibold tracking-[0.15em] text-accent/30 hover:text-accent/50 uppercase transition-colors"
-        >
-          no google? sign in with email
-        </button>
-      {:else if magicLinkSent}
-        <div class="mt-4">
-          <p class="text-xs font-semibold text-accent/60">check your email for a login link</p>
+      {#if magicLinkSent}
+        <div class="text-center py-2 space-y-3">
+          <p class="text-sm font-semibold text-accent">check your email for a login link</p>
+          <button
+            onclick={() => { magicLinkSent = false; emailInput = ""; }}
+            class="text-[10px] font-semibold tracking-[0.15em] text-accent/30 hover:text-accent/50 uppercase transition-colors"
+          >
+            try again
+          </button>
         </div>
       {:else}
-        <form onsubmit={(e) => { e.preventDefault(); handleMagicLink(); }} class="mt-4 flex gap-2">
+        <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="flex gap-2">
           <input
             type="email"
             bind:value={emailInput}
             placeholder="email"
-            class="flex-1 bg-transparent border border-accent/20 text-accent text-xs font-semibold px-3 py-2 placeholder:text-accent/20 focus:border-accent/40 focus:outline-none transition-colors"
+            autofocus
+            class="flex-1 bg-transparent border border-accent/20 text-accent text-sm font-semibold px-3 py-2.5 placeholder:text-accent/20 focus:border-accent/40 focus:outline-none transition-colors"
           />
           <button
             type="submit"
-            disabled={magicLinkSending || !emailInput.trim()}
-            class="px-4 py-2 bg-accent/10 border border-accent/20 text-accent text-[10px] font-bold tracking-[0.15em] uppercase hover:bg-accent/20 transition-colors disabled:opacity-30"
+            disabled={sending || !emailInput.trim()}
+            class="px-5 py-2.5 bg-accent text-bg-primary text-[10px] font-bold tracking-[0.2em] uppercase hover:bg-accent-hover transition-colors disabled:opacity-30"
           >
-            {magicLinkSending ? "..." : "send"}
+            {sending ? "..." : "sign in"}
           </button>
         </form>
+        <button
+          onclick={login}
+          class="mt-3 text-[10px] font-semibold tracking-[0.15em] text-accent/30 hover:text-accent/50 uppercase transition-colors"
+        >
+          sign in with google
+        </button>
       {/if}
     </div>
   </div>

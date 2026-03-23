@@ -28,13 +28,13 @@ export function login() {
   window.location.href = "/auth/login";
 }
 
-export async function sendMagicLink(email: string): Promise<boolean> {
-  await api("/auth/magic-link", {
+export async function sendMagicLink(email: string): Promise<"magic-link" | "oidc"> {
+  const res = await api<{ method: string }>("/auth/magic-link", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
   });
-  return true;
+  return res.method as "magic-link" | "oidc";
 }
 
 export async function logout() {

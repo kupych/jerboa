@@ -235,7 +235,18 @@ func (h *AuthHandler) InviteLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, h.baseURL, http.StatusFound)
 }
 
-// SendMagicLink handles POST /auth/magic-link — sends a login email for returning users.
+// isGoogleEmail returns true for domains that support Google OIDC login.
+func isGoogleEmail(email string) bool {
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	domain := strings.ToLower(parts[1])
+	return domain == "gmail.com" || domain == "googlemail.com"
+}
+
+// SendMagicLink handles POST /auth/magic-link — sends a login email, or
+// redirects to OIDC if the email is a Google account.
 func (h *AuthHandler) SendMagicLink(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email string `json:"email"`
@@ -247,6 +258,13 @@ func (h *AuthHandler) SendMagicLink(w http.ResponseWriter, r *http.Request) {
 
 	reqEmail := strings.ToLower(strings.TrimSpace(req.Email))
 
+	// If Google email and OIDC is configured, redirect to OIDC flow
+	if h.provider != nil && isGoogleEmail(reqEmail) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"method": "oidc"})
+		return
+	}
+
 	// Check user exists
 	exists, err := h.queries.UserExists(r.Context(), reqEmail)
 	if err != nil {
@@ -256,7 +274,7 @@ func (h *AuthHandler) SendMagicLink(w http.ResponseWriter, r *http.Request) {
 
 	// Always return success to prevent email enumeration
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"ok":true}`))
+	json.NewEncoder(w).Encode(map[string]string{"method": "magic-link"})
 
 	if !exists {
 		return
