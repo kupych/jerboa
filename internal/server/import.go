@@ -260,6 +260,10 @@ func (h *ImportHandler) downloadAndProcess(trackID uuid.UUID, sourceURL string, 
 			"track_id": trackID,
 		},
 	})
+	h.hub.Broadcast("band:"+bandID.String(), WSMessage{
+		Type:    "activity.update",
+		Payload: map[string]string{"band_id": bandID.String()},
+	})
 }
 
 func fileExists(path string) bool {

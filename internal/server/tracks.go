@@ -164,6 +164,10 @@ func (h *TrackHandler) processTrack(trackID uuid.UUID, filePath string, bandID u
 			"track_id": trackID,
 		},
 	})
+	h.hub.Broadcast("band:"+bandID.String(), WSMessage{
+		Type:    "activity.update",
+		Payload: map[string]string{"band_id": bandID.String()},
+	})
 }
 
 func (h *TrackHandler) Get(w http.ResponseWriter, r *http.Request) {

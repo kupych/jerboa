@@ -1245,3 +1245,41 @@ func (q *Queries) DeleteOverdubVotes(ctx context.Context, parentID uuid.UUID) er
 	`, parentID)
 	return err
 }
+
+// Activity / Unread
+
+func (q *Queries) UpdateLastSeen(ctx context.Context, bandID, userID uuid.UUID) error {
+	_, err := q.pool.Exec(ctx, `
+		UPDATE band_members SET last_seen_at = now()
+		WHERE band_id = $1 AND user_id = $2
+	`, bandID, userID)
+	return err
+}
+
+func (q *Queries) GetUnreadCounts(ctx context.Context, userID uuid.UUID) ([]models.UnreadCount, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT bm.band_id, b.slug,
+			(SELECT count(*) FROM tracks t WHERE t.band_id = bm.band_id AND t.created_at > bm.last_seen_at AND t.uploaded_by != $1 AND t.overdub_of IS NULL) AS new_tracks,
+			(SELECT count(*) FROM comments c JOIN tracks t ON c.track_id = t.id WHERE t.band_id = bm.band_id AND c.created_at > bm.last_seen_at AND c.user_id != $1) AS new_comments,
+			(SELECT count(*) FROM chat_messages m WHERE m.band_id = bm.band_id AND m.created_at > bm.last_seen_at AND m.user_id != $1) AS new_chats,
+			(SELECT count(*) FROM songs s WHERE s.band_id = bm.band_id AND s.created_at > bm.last_seen_at) AS new_songs
+		FROM band_members bm
+		JOIN bands b ON b.id = bm.band_id
+		WHERE bm.user_id = $1
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var counts []models.UnreadCount
+	for rows.Next() {
+		var c models.UnreadCount
+		if err := rows.Scan(&c.BandID, &c.BandSlug, &c.NewTracks, &c.NewComments, &c.NewChats, &c.NewSongs); err != nil {
+			return nil, err
+		}
+		c.Total = c.NewTracks + c.NewComments + c.NewChats + c.NewSongs
+		counts = append(counts, c)
+	}
+	return counts, nil
+}

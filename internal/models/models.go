@@ -215,6 +215,16 @@ type Feedback struct {
 	User      *User     `json:"user,omitempty"`
 }
 
+type UnreadCount struct {
+	BandID      uuid.UUID `json:"band_id"`
+	BandSlug    string    `json:"band_slug"`
+	NewTracks   int       `json:"new_tracks"`
+	NewComments int       `json:"new_comments"`
+	NewChats    int       `json:"new_chats"`
+	NewSongs    int       `json:"new_songs"`
+	Total       int       `json:"total"`
+}
+
 type Comment struct {
 	ID          uuid.UUID  `json:"id"`
 	TrackID     uuid.UUID  `json:"track_id"`

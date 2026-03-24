@@ -37,6 +37,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	feedbackH := NewFeedbackHandler(queries, store)
 	adminH := NewAdminHandler(queries)
 	overdubH := NewOverdubHandler(queries, store, processor, hub)
+	activityH := NewActivityHandler(queries)
 
 	// Auth routes (no auth middleware)
 	r.Get("/auth/login", authH.Login)
@@ -109,6 +110,10 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		// Chat
 		r.Get("/api/bands/{slug}/chat", chatH.List)
 		r.Post("/api/bands/{slug}/chat", chatH.Send)
+
+		// Activity / Unread
+		r.Get("/api/activity/unread", activityH.Unread)
+		r.Post("/api/bands/{slug}/seen", activityH.MarkSeen)
 
 		// Comments
 		r.Get("/api/tracks/{trackID}/comments", commentH.List)

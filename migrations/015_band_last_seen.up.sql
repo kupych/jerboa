@@ -1,0 +1,1 @@
+ALTER TABLE band_members ADD COLUMN last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now();

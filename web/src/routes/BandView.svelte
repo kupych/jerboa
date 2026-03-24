@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, apiPost, apiPatch, apiDelete } from "../lib/api";
+  import { markBandSeen } from "../lib/stores/notifications";
   import { ws } from "../lib/ws";
   import { user as currentUser } from "../lib/stores/auth";
   import { navigate } from "../lib/stores/router";
@@ -94,6 +95,7 @@
   $effect(() => {
     slug; // track dependency
     loadData();
+    markBandSeen(slug);
   });
 
   $effect(() => {

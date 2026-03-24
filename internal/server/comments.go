@@ -92,6 +92,10 @@ func (h *CommentHandler) Create(w http.ResponseWriter, r *http.Request) {
 			Type:    "comment.new",
 			Payload: comment,
 		})
+		h.hub.Broadcast("band:"+track.BandID.String(), WSMessage{
+			Type:    "activity.update",
+			Payload: map[string]string{"band_id": track.BandID.String()},
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -4,6 +4,7 @@
   import { apiPatch } from "./lib/api";
   import { route, navigate } from "./lib/stores/router";
   import { bands, loadBands } from "./lib/stores/bands";
+  import { loadUnread, totalUnread } from "./lib/stores/notifications";
   import { applyColorScheme, resetColorScheme } from "./lib/colorSchemes";
   import { ws } from "./lib/ws";
   import Layout from "./lib/components/Layout.svelte";
@@ -44,7 +45,21 @@
     if ($user) {
       ws.connect();
       loadBands();
-      return () => ws.disconnect();
+      loadUnread();
+      const off = ws.on("activity.update", () => loadUnread());
+      return () => { ws.disconnect(); off(); };
+    }
+  });
+
+  // PWA badge
+  $effect(() => {
+    const count = $totalUnread;
+    if ("setAppBadge" in navigator) {
+      if (count > 0) {
+        (navigator as any).setAppBadge(count);
+      } else {
+        (navigator as any).clearAppBadge();
+      }
     }
   });
 

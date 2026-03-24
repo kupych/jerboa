@@ -82,6 +82,10 @@ func (h *ChatHandler) Send(w http.ResponseWriter, r *http.Request) {
 		Type:    "chat.message",
 		Payload: msg,
 	})
+	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{
+		Type:    "activity.update",
+		Payload: map[string]string{"band_id": band.ID.String()},
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

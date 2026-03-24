@@ -175,6 +175,10 @@ func (h *OverdubHandler) processOverdub(trackID uuid.UUID, filePath string, band
 		Type:    "track.ready",
 		Payload: map[string]any{"track_id": trackID},
 	})
+	h.hub.Broadcast("band:"+bandID.String(), WSMessage{
+		Type:    "activity.update",
+		Payload: map[string]string{"band_id": bandID.String()},
+	})
 }
 
 // UpdateOffset adjusts the offset_ms of an overdub for fine-tuning sync.
@@ -418,6 +422,10 @@ func (h *OverdubHandler) doBounce(parent, overdub *models.Track, band *models.Ba
 	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{
 		Type:    "track.ready",
 		Payload: map[string]any{"track_id": parent.ID},
+	})
+	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{
+		Type:    "activity.update",
+		Payload: map[string]string{"band_id": band.ID.String()},
 	})
 }
 
