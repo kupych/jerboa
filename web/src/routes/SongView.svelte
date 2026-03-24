@@ -7,6 +7,7 @@
   import { formatDuration, formatRelativeTime, formatTimestamp, setTypeCode } from "../lib/utils/format";
   import CommentList from "../lib/components/CommentList.svelte";
   import Recorder from "../lib/components/Recorder.svelte";
+  import ChordProLyrics from "../lib/components/ChordProLyrics.svelte";
 
   marked.setOptions({ breaks: true, gfm: true });
 
@@ -97,6 +98,11 @@
   let editingTitle = $state(false);
   let titleInput = $state("");
   let savingTitle = $state(false);
+  let showChords = $state(true);
+
+  function hasChordPro(text: string): boolean {
+    return /\[[A-G][^\]]*\]/.test(text);
+  }
 
   async function saveTitle() {
     if (!song || !titleInput.trim()) return;
@@ -435,12 +441,20 @@
     <section>
       <div class="flex items-center justify-between mb-3">
         <h2 class="label text-text-muted"><span class="text-accent/15 font-mono mr-2">01</span>lyrics</h2>
-        {#if !editingLyrics}
-          <button
-            onclick={() => { editingLyrics = true; lyricsInput = song!.lyrics; }}
-            class="label-sm text-text-muted hover:text-accent transition-colors"
-          >edit</button>
-        {/if}
+        <div class="flex items-center gap-3">
+          {#if !editingLyrics && song.lyrics && hasChordPro(song.lyrics)}
+            <button
+              onclick={() => (showChords = !showChords)}
+              class="label-sm transition-colors {showChords ? 'text-accent' : 'text-text-muted hover:text-accent'}"
+            >{showChords ? "hide chords" : "show chords"}</button>
+          {/if}
+          {#if !editingLyrics}
+            <button
+              onclick={() => { editingLyrics = true; lyricsInput = song!.lyrics; }}
+              class="label-sm text-text-muted hover:text-accent transition-colors"
+            >edit</button>
+          {/if}
+        </div>
       </div>
 
       {#if editingLyrics}
@@ -449,7 +463,7 @@
             bind:value={lyricsInput}
             rows="16"
             class="w-full bg-bg-primary border border-border px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors resize-y"
-            placeholder="supports markdown..."
+            placeholder="lyrics with optional [Am]chordpro [G]notation..."
           ></textarea>
           <div class="flex gap-3">
             <button
@@ -464,7 +478,13 @@
           </div>
         </div>
       {:else if song.lyrics}
-        <div class="prose bg-bg-surface border border-border p-5">{@html marked.parse(song.lyrics)}</div>
+        {#if hasChordPro(song.lyrics)}
+          <div class="bg-bg-surface border border-border p-5">
+            <ChordProLyrics text={song.lyrics} {showChords} />
+          </div>
+        {:else}
+          <div class="prose bg-bg-surface border border-border p-5">{@html marked.parse(song.lyrics)}</div>
+        {/if}
       {:else}
         <p class="text-sm text-text-muted italic">no lyrics yet</p>
       {/if}
@@ -488,7 +508,7 @@
             bind:value={tabsInput}
             rows="16"
             class="w-full bg-bg-primary border border-border px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors font-mono resize-y"
-            placeholder="paste tabs or chord charts here..."
+            placeholder="paste tabs or chord charts with optional [Am]chordpro [G]notation..."
           ></textarea>
           <div class="flex gap-3">
             <button
@@ -503,7 +523,13 @@
           </div>
         </div>
       {:else if song.tabs}
-        <pre class="text-sm text-text-secondary whitespace-pre-wrap font-mono leading-relaxed bg-bg-surface border border-border p-5">{song.tabs}</pre>
+        {#if hasChordPro(song.tabs)}
+          <div class="bg-bg-surface border border-border p-5">
+            <ChordProLyrics text={song.tabs} {showChords} />
+          </div>
+        {:else}
+          <pre class="text-sm text-text-secondary whitespace-pre-wrap font-mono leading-relaxed bg-bg-surface border border-border p-5">{song.tabs}</pre>
+        {/if}
       {:else}
         <p class="text-sm text-text-muted italic">no tabs yet</p>
       {/if}
