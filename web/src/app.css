@@ -142,6 +142,15 @@ body {
 .prose a { color: var(--color-accent); text-decoration: underline; }
 .prose hr { border-color: var(--color-border); margin: 1.5em 0; }
 
+/* Notification highlight flash */
+@keyframes highlight-flash {
+  0% { color: var(--color-accent); text-shadow: 0 0 12px var(--color-accent); }
+  100% { color: inherit; text-shadow: none; }
+}
+.animate-highlight {
+  animation: highlight-flash 2s ease-out;
+}
+
 /* Vectorheart dividers */
 .vr-divider {
   color: var(--color-border);

@@ -225,6 +225,16 @@ type UnreadCount struct {
 	Total       int       `json:"total"`
 }
 
+type ActivityItem struct {
+	Type      string    `json:"type"`      // track, comment, chat, song
+	ActorName string    `json:"actor_name"`
+	Subject   string    `json:"subject"`
+	BandSlug  string    `json:"band_slug"`
+	BandName  string    `json:"band_name"`
+	LinkID    string    `json:"link_id,omitempty"` // track ID for navigation
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Comment struct {
 	ID          uuid.UUID  `json:"id"`
 	TrackID     uuid.UUID  `json:"track_id"`

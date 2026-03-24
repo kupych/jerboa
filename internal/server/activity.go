@@ -34,6 +34,22 @@ func (h *ActivityHandler) Unread(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(counts)
 }
 
+func (h *ActivityHandler) Feed(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+
+	items, err := h.queries.GetActivityFeed(r.Context(), user.ID, 30)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	if items == nil {
+		items = []models.ActivityItem{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(items)
+}
+
 func (h *ActivityHandler) MarkSeen(w http.ResponseWriter, r *http.Request) {
 	user := UserFrom(r.Context())
 	slug := chi.URLParam(r, "slug")

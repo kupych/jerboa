@@ -11,7 +11,18 @@ export interface UnreadCount {
   total: number;
 }
 
+export interface ActivityItem {
+  type: "track" | "comment" | "chat" | "song";
+  actor_name: string;
+  subject: string;
+  band_slug: string;
+  band_name: string;
+  link_id: string;
+  created_at: string;
+}
+
 export const unreadCounts = writable<UnreadCount[]>([]);
+export const activityFeed = writable<ActivityItem[]>([]);
 
 export const totalUnread = derived(unreadCounts, ($counts) =>
   $counts.reduce((sum, c) => sum + c.total, 0),
@@ -19,10 +30,15 @@ export const totalUnread = derived(unreadCounts, ($counts) =>
 
 export async function loadUnread() {
   try {
-    const counts = await api<UnreadCount[]>("/api/activity/unread");
+    const [counts, feed] = await Promise.all([
+      api<UnreadCount[]>("/api/activity/unread"),
+      api<ActivityItem[]>("/api/activity/feed"),
+    ]);
     unreadCounts.set(counts);
+    activityFeed.set(feed);
   } catch {
     unreadCounts.set([]);
+    activityFeed.set([]);
   }
 }
 

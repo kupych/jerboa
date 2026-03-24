@@ -12,7 +12,9 @@ window.addEventListener("popstate", () => {
 
 export function navigate(to: string) {
   window.history.pushState(null, "", to);
-  path.set(to);
+  // Only store pathname (strip query params) so route matching is clean
+  const url = new URL(to, window.location.origin);
+  path.set(url.pathname);
 }
 
 export const route = derived(path, ($path) => {

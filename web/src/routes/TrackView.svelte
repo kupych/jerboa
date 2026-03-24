@@ -115,6 +115,7 @@
   let overdubGain: GainNode | null = null;
   let parentVol = $state(1);
   let overdubVol = $state(1);
+  let highlight = $state(false);
   let isAdmin = $derived(
     members.some((m) => m.user.id === $currentUser?.id && m.role === "admin")
   );
@@ -280,6 +281,12 @@
 
   onMount(async () => {
     await loadData();
+    if (new URLSearchParams(window.location.search).has("highlight")) {
+      highlight = true;
+      // Clean up the URL
+      window.history.replaceState(null, "", window.location.pathname);
+      setTimeout(() => (highlight = false), 2000);
+    }
   });
 
   $effect(() => {
@@ -746,7 +753,7 @@
       {:else}
         <div class="flex items-start justify-between">
           <div>
-            <h2 class="text-2xl font-bold tracking-wider font-display">{track.title}</h2>
+            <h2 class="text-2xl font-bold tracking-wider font-display {highlight ? 'animate-highlight' : ''}">{track.title}</h2>
             {#if track.description}
               <p class="text-base font-medium text-text-secondary mt-3">{track.description}</p>
             {/if}

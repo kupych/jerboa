@@ -1256,6 +1256,62 @@ func (q *Queries) UpdateLastSeen(ctx context.Context, bandID, userID uuid.UUID) 
 	return err
 }
 
+func (q *Queries) GetActivityFeed(ctx context.Context, userID uuid.UUID, limit int) ([]models.ActivityItem, error) {
+	rows, err := q.pool.Query(ctx, `
+		WITH user_bands AS (
+			SELECT bm.band_id, bm.last_seen_at, b.slug, b.name
+			FROM band_members bm
+			JOIN bands b ON b.id = bm.band_id
+			WHERE bm.user_id = $1
+		)
+		(
+			SELECT 'track' AS type, u.display_name AS actor, t.title AS subject,
+			       ub.slug, ub.name, t.id::text AS link_id, t.created_at
+			FROM tracks t
+			JOIN users u ON t.uploaded_by = u.id
+			JOIN user_bands ub ON t.band_id = ub.band_id
+			WHERE t.created_at > ub.last_seen_at AND t.uploaded_by != $1 AND t.overdub_of IS NULL
+		) UNION ALL (
+			SELECT 'comment', u.display_name, t.title,
+			       ub.slug, ub.name, t.id::text, c.created_at
+			FROM comments c
+			JOIN users u ON c.user_id = u.id
+			JOIN tracks t ON c.track_id = t.id
+			JOIN user_bands ub ON t.band_id = ub.band_id
+			WHERE c.created_at > ub.last_seen_at AND c.user_id != $1
+		) UNION ALL (
+			SELECT 'chat', u.display_name, LEFT(m.body, 60),
+			       ub.slug, ub.name, '', m.created_at
+			FROM chat_messages m
+			JOIN users u ON m.user_id = u.id
+			JOIN user_bands ub ON m.band_id = ub.band_id
+			WHERE m.created_at > ub.last_seen_at AND m.user_id != $1
+		) UNION ALL (
+			SELECT 'song', '', s.name,
+			       ub.slug, ub.name, '', s.created_at
+			FROM songs s
+			JOIN user_bands ub ON s.band_id = ub.band_id
+			WHERE s.created_at > ub.last_seen_at
+		)
+		ORDER BY created_at DESC
+		LIMIT $2
+	`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []models.ActivityItem
+	for rows.Next() {
+		var a models.ActivityItem
+		if err := rows.Scan(&a.Type, &a.ActorName, &a.Subject, &a.BandSlug, &a.BandName, &a.LinkID, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, a)
+	}
+	return items, nil
+}
+
 func (q *Queries) GetUnreadCounts(ctx context.Context, userID uuid.UUID) ([]models.UnreadCount, error) {
 	rows, err := q.pool.Query(ctx, `
 		SELECT bm.band_id, b.slug,

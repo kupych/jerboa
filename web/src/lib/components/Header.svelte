@@ -2,7 +2,8 @@
   import { user, logout } from "../stores/auth";
   import { navigate, route } from "../stores/router";
   import { bands, loadBands } from "../stores/bands";
-  import { unreadCounts, totalUnread, markBandSeen } from "../stores/notifications";
+  import { activityFeed, totalUnread, markBandSeen } from "../stores/notifications";
+  import type { ActivityItem } from "../stores/notifications";
   import { apiPost } from "../api";
   import ThemeToggle from "./ThemeToggle.svelte";
   import { initials } from "../utils/format";
@@ -16,6 +17,26 @@
   let notifOpen = $state(false);
 
   let currentBand = $derived($bands.find((b) => b.slug === $route.bandSlug));
+
+  function activityLabel(item: ActivityItem): string {
+    switch (item.type) {
+      case "track": return `${item.actor_name} uploaded ${item.subject}`;
+      case "comment": return `${item.actor_name} commented on ${item.subject}`;
+      case "chat": return `${item.actor_name}: ${item.subject}`;
+      case "song": return `new song: ${item.subject}`;
+      default: return "";
+    }
+  }
+
+  function activityClick(item: ActivityItem) {
+    notifOpen = false;
+    markBandSeen(item.band_slug);
+    if (item.link_id && (item.type === "track" || item.type === "comment")) {
+      navigate(`/band/${item.band_slug}/track/${item.link_id}?highlight=1`);
+    } else {
+      navigate(`/band/${item.band_slug}`);
+    }
+  }
 
   function handleLogoClick() {
     if ($route.bandSlug) {
@@ -161,18 +182,17 @@
           {/if}
         </button>
         {#if notifOpen}
-          <div class="absolute top-full right-0 mt-2 bg-bg-elevated border border-border z-50 min-w-[260px] py-1">
-            {#each $unreadCounts.filter(c => c.total > 0) as band}
+          <div class="absolute top-full right-0 mt-2 bg-bg-elevated border border-border z-50 min-w-[280px] max-w-[340px] max-h-[400px] overflow-y-auto py-1">
+            {#each $activityFeed as item}
               <button
-                onclick={() => { notifOpen = false; markBandSeen(band.band_slug); navigate(`/band/${band.band_slug}`); }}
-                class="w-full text-left px-4 py-3 hover:bg-bg-surface transition-colors"
+                onclick={() => activityClick(item)}
+                class="w-full text-left px-4 py-2.5 hover:bg-bg-surface transition-colors border-b border-border/50 last:border-0"
               >
-                <div class="label text-text-primary">{$bands.find(b => b.slug === band.band_slug)?.name || band.band_slug}</div>
-                <div class="label-sm text-text-muted mt-1 flex gap-2 flex-wrap">
-                  {#if band.new_tracks > 0}<span>{band.new_tracks} new track{band.new_tracks > 1 ? 's' : ''}</span>{/if}
-                  {#if band.new_comments > 0}<span>{band.new_comments} comment{band.new_comments > 1 ? 's' : ''}</span>{/if}
-                  {#if band.new_chats > 0}<span>{band.new_chats} chat{band.new_chats > 1 ? 's' : ''}</span>{/if}
-                  {#if band.new_songs > 0}<span>{band.new_songs} new song{band.new_songs > 1 ? 's' : ''}</span>{/if}
+                <div class="label-sm text-text-primary leading-snug">{activityLabel(item)}</div>
+                <div class="label-sm text-text-muted/60 mt-0.5 flex items-center gap-2">
+                  <span>{item.band_name}</span>
+                  <span>&middot;</span>
+                  <span>{new Date(item.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
                 </div>
               </button>
             {:else}
