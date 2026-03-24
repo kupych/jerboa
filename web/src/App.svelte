@@ -51,6 +51,20 @@
     }
   });
 
+  // Subscribe to all band channels for activity updates
+  $effect(() => {
+    if ($user && $bands.length > 0) {
+      for (const band of $bands) {
+        ws.subscribe(`band:${band.id}`);
+      }
+      return () => {
+        for (const band of $bands) {
+          ws.unsubscribe(`band:${band.id}`);
+        }
+      };
+    }
+  });
+
   // PWA badge
   $effect(() => {
     const count = $totalUnread;
