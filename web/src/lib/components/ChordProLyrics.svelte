@@ -56,7 +56,7 @@
         {#each line.segments as seg}
           <span class="inline-flex flex-col align-bottom">
             <span class="text-accent font-bold text-sm leading-tight font-mono">{seg.chord || "\u00a0"}</span>
-            <span class="text-text-primary">{seg.lyric || "\u00a0"}</span>
+            <span class="text-text-primary whitespace-pre-wrap">{seg.lyric || "\u00a0"}</span>
           </span>
         {/each}
       </div>
