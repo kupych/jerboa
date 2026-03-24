@@ -8,9 +8,35 @@
   } = $props();
 
   type Segment = { chord: string; lyric: string };
-  type ParsedLine = { segments: Segment[]; hasChords: boolean };
+  type ParsedLine = { segments: Segment[]; hasChords: boolean; sectionLabel?: string };
+
+  const sectionMap: Record<string, string> = {
+    start_of_verse: "Verse", sov: "Verse",
+    start_of_chorus: "Chorus", soc: "Chorus",
+    start_of_bridge: "Bridge", sob: "Bridge",
+    start_of_tab: "Tab", sot: "Tab",
+  };
 
   function parseLine(line: string): ParsedLine {
+    const trimmed = line.trim();
+
+    // Section directives: {start_of_verse}, {soc}, {comment: Intro}, etc.
+    const directiveMatch = trimmed.match(/^\{(\w+)(?::\s*(.+))?\}$/);
+    if (directiveMatch) {
+      const key = directiveMatch[1].toLowerCase();
+      // Skip end directives
+      if (key.startsWith("end_of") || key === "eov" || key === "eoc" || key === "eob" || key === "eot") {
+        return { segments: [{ chord: "", lyric: "" }], hasChords: false };
+      }
+      const label = directiveMatch[2] || sectionMap[key];
+      if (label) {
+        return { segments: [], hasChords: false, sectionLabel: label };
+      }
+      // comment directive
+      if (key === "comment" || key === "c") {
+        return { segments: [], hasChords: false, sectionLabel: directiveMatch[2] || "" };
+      }
+    }
     const segments: Segment[] = [];
     const regex = /\[([^\]]*)\]/g;
     let lastIndex = 0;
@@ -49,7 +75,11 @@
 
 <div class="chordpro leading-relaxed">
   {#each lines as line}
-    {#if line.segments.length === 1 && !line.segments[0].lyric.trim() && !line.segments[0].chord}
+    {#if line.sectionLabel}
+      <div class="mt-5 mb-2 first:mt-0">
+        <span class="label-sm text-accent/70 tracking-[0.2em]">{line.sectionLabel}</span>
+      </div>
+    {:else if line.segments.length === 1 && !line.segments[0].lyric.trim() && !line.segments[0].chord}
       <div class="h-6"></div>
     {:else if line.hasChords && showChords}
       <div>
