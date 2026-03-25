@@ -429,6 +429,49 @@ func (h *OverdubHandler) doBounce(parent, overdub *models.Track, band *models.Ba
 	})
 }
 
+// PurgeBounceVersions deletes all intermediate pre-bounce snapshots, keeping only the original.
+func (h *OverdubHandler) PurgeBounceVersions(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	trackID, err := uuid.Parse(chi.URLParam(r, "trackID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid track id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || role != "admin" {
+		http.Error(w, `{"error":"admin only"}`, http.StatusForbidden)
+		return
+	}
+
+	versions, err := h.queries.ListBounceVersions(r.Context(), trackID)
+	if err != nil || len(versions) <= 1 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Keep the first (oldest = true original), delete the rest
+	for _, v := range versions[1:] {
+		filePath, err := h.queries.DeleteTrack(r.Context(), v.ID)
+		if err != nil {
+			slog.Error("purge: delete track", "id", v.ID, "error", err)
+			continue
+		}
+		if filePath != "" {
+			h.store.Delete(filePath)
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // Scrub deletes all non-winning overdubs for a parent track.
 func (h *OverdubHandler) Scrub(w http.ResponseWriter, r *http.Request) {
 	user := UserFrom(r.Context())

@@ -1222,11 +1222,39 @@ func (q *Queries) UnvoteOverdub(ctx context.Context, parentID, userID uuid.UUID)
 
 func (q *Queries) GetPreBounceID(ctx context.Context, trackID uuid.UUID) *uuid.UUID {
 	var id uuid.UUID
-	err := q.pool.QueryRow(ctx, `SELECT id FROM tracks WHERE bounced_to = $1 AND overdub_of IS NULL LIMIT 1`, trackID).Scan(&id)
+	err := q.pool.QueryRow(ctx, `SELECT id FROM tracks WHERE bounced_to = $1 AND overdub_of IS NULL ORDER BY created_at ASC LIMIT 1`, trackID).Scan(&id)
 	if err != nil {
 		return nil
 	}
 	return &id
+}
+
+func (q *Queries) CountBounceVersions(ctx context.Context, trackID uuid.UUID) int {
+	var count int
+	q.pool.QueryRow(ctx, `SELECT count(*) FROM tracks WHERE bounced_to = $1 AND overdub_of IS NULL`, trackID).Scan(&count)
+	return count
+}
+
+func (q *Queries) ListBounceVersions(ctx context.Context, trackID uuid.UUID) ([]models.Track, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, title, file_path, file_size, duration_ms, created_at
+		FROM tracks WHERE bounced_to = $1 AND overdub_of IS NULL
+		ORDER BY created_at ASC
+	`, trackID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tracks []models.Track
+	for rows.Next() {
+		var t models.Track
+		if err := rows.Scan(&t.ID, &t.Title, &t.FilePath, &t.FileSize, &t.DurationMS, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		tracks = append(tracks, t)
+	}
+	return tracks, nil
 }
 
 func (q *Queries) UpdateBouncedTo(ctx context.Context, trackID uuid.UUID, bouncedTo *uuid.UUID) error {

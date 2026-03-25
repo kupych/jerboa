@@ -96,6 +96,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs/vote", overdubH.Vote)
 		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs/bounce", overdubH.Bounce)
 		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs/scrub", overdubH.Scrub)
+		r.Delete("/api/bands/{slug}/tracks/{trackID}/bounce-versions", overdubH.PurgeBounceVersions)
 
 		// Sets
 		r.Get("/api/bands/{slug}/sets", setH.List)

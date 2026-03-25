@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { api, apiPost, apiPatch, apiDelete, uploadFile } from "../lib/api";
   import { ws } from "../lib/ws";
   import { navigate } from "../lib/stores/router";
@@ -43,6 +42,7 @@
     offset_ms: number;
     bounced_to?: string;
     pre_bounce_id?: string;
+    bounce_versions?: number;
     created_at: string;
     uploader?: { display_name: string; email: string };
   }
@@ -269,7 +269,8 @@
   );
   let assigningSong = $state(false);
 
-  let streamUrl = $derived(`/api/bands/${slug}/tracks/${trackId}/stream`);
+  let streamVersion = $state(0);
+  let streamUrl = $derived(`/api/bands/${slug}/tracks/${trackId}/stream${streamVersion ? `?v=${streamVersion}` : ""}`);
   let timedComments = $derived(
     comments
       .flatMap((c) => {
@@ -286,14 +287,20 @@
       })
   );
 
-  onMount(async () => {
-    await loadData();
-    if (new URLSearchParams(window.location.search).has("highlight")) {
-      highlight = true;
-      // Clean up the URL
-      window.history.replaceState(null, "", window.location.pathname);
-      setTimeout(() => (highlight = false), 2000);
-    }
+  // Reload when trackId changes (navigation between tracks, e.g. "view original")
+  $effect(() => {
+    const _id = trackId;
+    streamVersion = 0;
+    track = null;
+    overdubs = [];
+    comments = [];
+    loadData().then(() => {
+      if (new URLSearchParams(window.location.search).has("highlight")) {
+        highlight = true;
+        window.history.replaceState(null, "", window.location.pathname);
+        setTimeout(() => (highlight = false), 2000);
+      }
+    });
   });
 
   $effect(() => {
@@ -304,6 +311,7 @@
       const offTrack = ws.on("track.ready", (payload: any) => {
         if (payload.track_id === trackId) {
           // Our track was updated (e.g. bounce replaced the file)
+          streamVersion++;
           loadData();
           bouncing = false;
         }
@@ -909,11 +917,20 @@
         <!-- Pre-bounce rollback link -->
         {#if track.pre_bounce_id}
           <div class="flex items-center gap-2 mt-4">
-            <span class="label-sm text-text-muted">bounced —</span>
+            <span class="label-sm text-text-muted">bounced{(track.bounce_versions ?? 0) > 1 ? ` (${track.bounce_versions} versions)` : ""} —</span>
             <button
               onclick={() => navigate(`/band/${slug}/track/${track!.pre_bounce_id}`)}
               class="label-sm text-accent hover:text-accent-hover transition-colors"
             >view original</button>
+            {#if (track.bounce_versions ?? 0) > 1 && isAdmin}
+              <button
+                onclick={async () => {
+                  await apiDelete(`/api/bands/${slug}/tracks/${trackId}/bounce-versions`);
+                  loadData();
+                }}
+                class="label-sm text-text-muted hover:text-danger transition-colors"
+              >purge intermediates</button>
+            {/if}
           </div>
         {/if}
 
@@ -1008,14 +1025,16 @@
     <!-- Player -->
     {#if track.status === "ready"}
       <div class="mb-10">
-        <WaveformPlayer
-          bind:this={playerRef}
-          src={streamUrl}
-          peaks={track.waveform_data}
-          duration={track.duration_ms}
-          comments={timedComments}
-          onTimestampClick={handleTimestampClick}
-        />
+        {#key streamVersion}
+          <WaveformPlayer
+            bind:this={playerRef}
+            src={streamUrl}
+            peaks={track.waveform_data}
+            duration={track.duration_ms}
+            comments={timedComments}
+            onTimestampClick={handleTimestampClick}
+          />
+        {/key}
       </div>
     {:else if track.status === "processing"}
       <div class="bg-bg-surface border border-border p-12 text-center mb-10">

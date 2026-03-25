@@ -95,7 +95,8 @@ type Track struct {
 	Overdubs     []Track           `json:"overdubs,omitempty"`
 	VoteCount    int               `json:"vote_count,omitempty"`
 	UserVoted    bool              `json:"user_voted,omitempty"`
-	PreBounceID  *uuid.UUID        `json:"pre_bounce_id,omitempty"`
+	PreBounceID    *uuid.UUID        `json:"pre_bounce_id,omitempty"`
+	BounceVersions int               `json:"bounce_versions,omitempty"`
 }
 
 type OverdubVote struct {
