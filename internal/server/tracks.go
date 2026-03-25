@@ -248,8 +248,14 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	}
 
+	// Use file's real modtime so bounced tracks bust the browser cache
+	modTime := track.CreatedAt
+	if info, err := f.Stat(); err == nil {
+		modTime = info.ModTime()
+	}
+
 	// http.ServeContent handles Range requests, Content-Type, caching
-	http.ServeContent(w, r, track.FilePath, track.CreatedAt, f)
+	http.ServeContent(w, r, track.FilePath, modTime, f)
 }
 
 func (h *TrackHandler) UpdateMeta(w http.ResponseWriter, r *http.Request) {

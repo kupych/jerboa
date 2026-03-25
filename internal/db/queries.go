@@ -1169,7 +1169,7 @@ func (q *Queries) ListOverdubs(ctx context.Context, parentID, viewerID uuid.UUID
 		       EXISTS(SELECT 1 FROM overdub_votes WHERE overdub_id = t.id AND user_id = $2)
 		FROM tracks t
 		JOIN users u ON t.uploaded_by = u.id
-		WHERE t.overdub_of = $1
+		WHERE t.overdub_of = $1 AND t.bounced_to IS NULL
 		ORDER BY t.created_at ASC
 	`, parentID, viewerID)
 	if err != nil {
