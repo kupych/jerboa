@@ -94,6 +94,10 @@
     }
   }
 
+  export function getCurrentTimeMs(): number {
+    return Math.round(currentTime * 1000);
+  }
+
   function seekToComment(ms: number) {
     seekTo(ms);
   }

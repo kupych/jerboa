@@ -9,6 +9,7 @@
     overdubParentId = undefined,
     parentStreamUrl = undefined,
     latencyCompensation = 0,
+    punchInMs = 0,
     onRecorded,
   }: {
     bandSlug: string;
@@ -16,11 +17,15 @@
     overdubParentId?: string;
     parentStreamUrl?: string;
     latencyCompensation?: number;
+    punchInMs?: number;
     onRecorded: () => void;
   } = $props();
 
-  let parentAudio: HTMLAudioElement | null = null;
-  let capturedOffsetMs = 0;
+  // Parent audio: raw data (survives context resets) + decoded buffer
+  let parentRawData: ArrayBuffer | null = null;
+  let parentBuffer: AudioBuffer | null = null;
+  let parentSource: AudioBufferSourceNode | null = null;
+  let parentLoading = $state(false);
 
   let recState = $state<"idle" | "warming" | "recording" | "uploading">("idle");
   let mediaRecorder: MediaRecorder | null = null;
@@ -44,6 +49,25 @@
     return `${m}:${sec.toString().padStart(2, "0")}`;
   }
 
+  // Pre-fetch parent audio data when URL is available
+  $effect(() => {
+    if (parentStreamUrl && overdubParentId && !parentRawData) {
+      prefetchParent();
+    }
+  });
+
+  async function prefetchParent() {
+    parentLoading = true;
+    try {
+      const resp = await fetch(parentStreamUrl!);
+      parentRawData = await resp.arrayBuffer();
+    } catch {
+      error = "couldn't load parent track";
+    } finally {
+      parentLoading = false;
+    }
+  }
+
   onMount(() => {
     return () => cleanup();
   });
@@ -54,7 +78,7 @@
     recState = "warming";
 
     try {
-      // Request mic only when user clicks record
+      // Request mic on first use
       if (!micStream) {
         micStream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -72,6 +96,7 @@
         const merger = audioCtx.createChannelMerger(1);
         source.connect(merger);
 
+        // Recording destination captures ONLY mic, not parent playback
         const dest = audioCtx.createMediaStreamDestination();
         merger.connect(dest);
         recordStream = dest.stream;
@@ -82,7 +107,12 @@
         meterLoop();
       }
 
-      // Mic is ready — start recording immediately
+      // Decode parent audio for this AudioContext if needed
+      if (overdubParentId && parentRawData && !parentBuffer && audioCtx) {
+        // .slice(0) clones so we can re-decode if context is recreated
+        parentBuffer = await audioCtx.decodeAudioData(parentRawData.slice(0));
+      }
+
       await startRecording();
     } catch (e: any) {
       if (e.name === "NotAllowedError") {
@@ -126,7 +156,7 @@
         const file = new File([blob], filename, { type: blob.type });
 
         if (overdubParentId) {
-          const adjustedOffset = capturedOffsetMs - latencyCompensation;
+          const adjustedOffset = punchInMs - latencyCompensation;
           await uploadFile(
             `/api/bands/${bandSlug}/tracks/${overdubParentId}/overdubs`,
             file,
@@ -154,7 +184,7 @@
       }
     };
 
-    // Wait for encoder to be active
+    // Wait for encoder to be truly active before starting parent
     await new Promise<void>((resolve) => {
       mediaRecorder!.onstart = () => resolve();
       mediaRecorder!.start();
@@ -164,21 +194,20 @@
     elapsed = 0;
     timerInterval = setInterval(() => elapsed++, 1000);
 
-    // Start parent playback — mic is confirmed active
-    if (overdubParentId && parentStreamUrl) {
-      parentAudio = new Audio(parentStreamUrl);
-      parentAudio.play().then(() => {
-        capturedOffsetMs = Math.round((parentAudio?.currentTime ?? 0) * 1000);
-      }).catch(() => {
-        capturedOffsetMs = 0;
-      });
+    // Start parent playback via Web Audio API — sample-accurate sync
+    // Routed to ctx.destination (speakers) but NOT to recordStream (mic only)
+    if (overdubParentId && parentBuffer && audioCtx) {
+      parentSource = audioCtx.createBufferSource();
+      parentSource.buffer = parentBuffer;
+      parentSource.connect(audioCtx.destination);
+      parentSource.start(0, punchInMs / 1000);
     }
   }
 
   function stopRecording() {
-    if (parentAudio) {
-      parentAudio.pause();
-      parentAudio = null;
+    if (parentSource) {
+      try { parentSource.stop(); } catch {}
+      parentSource = null;
     }
     if (timerInterval) {
       clearInterval(timerInterval);
@@ -201,6 +230,7 @@
       micStream.getTracks().forEach((t) => t.stop());
       micStream = null;
     }
+    parentBuffer = null;
   }
 
   function meterLoop() {
@@ -227,10 +257,13 @@
 {#if recState === "idle"}
   <button
     onclick={handleRecord}
+    disabled={parentLoading}
     class="border border-dashed border-border hover:border-red-400/50 p-4 text-center transition-colors w-full flex items-center justify-center gap-3 group"
   >
     <div class="w-3 h-3 rounded-full bg-red-400/60 group-hover:bg-red-400 transition-colors"></div>
-    <span class="text-sm text-text-muted font-semibold group-hover:text-red-400 transition-colors">{overdubParentId ? "record overdub" : "record a take"}</span>
+    <span class="text-sm text-text-muted font-semibold group-hover:text-red-400 transition-colors">
+      {parentLoading ? "loading track..." : (overdubParentId ? "record overdub" : "record a take")}
+    </span>
   </button>
 {:else if recState === "warming"}
   <div class="border border-dashed border-border p-4 text-center">

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, apiPost, apiPatch, apiDelete } from "../lib/api";
+  import { api, apiPost, apiPatch, apiDelete, uploadFile } from "../lib/api";
   import { ws } from "../lib/ws";
   import { navigate } from "../lib/stores/router";
   import { formatDuration, formatFileSize, formatRelativeTime } from "../lib/utils/format";
@@ -106,6 +106,13 @@
   let scrubbing = $state(false);
   let confirmDeleteOd = $state<string | null>(null);
   let deletingOd = $state(false);
+  let punchInMs = $state(0);
+  let showOverdubUpload = $state(false);
+  let overdubFile = $state<File | null>(null);
+  let uploadOffsetMs = $state(0);
+  let uploadingOverdub = $state(false);
+  let playerRef: any;
+
   let previewingId = $state<string | null>(null);
   let previewLoading = $state(false);
   let previewCtx: AudioContext | null = null;
@@ -414,6 +421,25 @@
       await loadOverdubs();
     } finally {
       scrubbing = false;
+    }
+  }
+
+  async function uploadOverdubFile() {
+    if (!overdubFile || uploadingOverdub) return;
+    uploadingOverdub = true;
+    try {
+      await uploadFile(
+        `/api/bands/${slug}/tracks/${trackId}/overdubs`,
+        overdubFile,
+        { offset_ms: String(uploadOffsetMs) },
+      );
+      showOverdubUpload = false;
+      overdubFile = null;
+      uploadOffsetMs = 0;
+      await loadOverdubs();
+    } catch {
+    } finally {
+      uploadingOverdub = false;
     }
   }
 
@@ -983,6 +1009,7 @@
     {#if track.status === "ready"}
       <div class="mb-10">
         <WaveformPlayer
+          bind:this={playerRef}
           src={streamUrl}
           peaks={track.waveform_data}
           duration={track.duration_ms}
@@ -1033,11 +1060,17 @@
               <span class="label-sm text-text-muted">ms</span>
             </div>
             <button
-              onclick={() => (showOverdubRecord = !showOverdubRecord)}
+              onclick={() => { showOverdubUpload = !showOverdubUpload; if (showOverdubUpload) showOverdubRecord = false; }}
+              class="label-sm text-text-muted hover:text-accent transition-colors"
+            >
+              {showOverdubUpload ? "cancel" : "upload"}
+            </button>
+            <button
+              onclick={() => { showOverdubRecord = !showOverdubRecord; if (showOverdubRecord) showOverdubUpload = false; }}
               class="label-sm text-text-muted hover:text-accent transition-colors flex items-center gap-1.5"
             >
               <div class="w-2 h-2 rounded-full bg-red-400/60"></div>
-              {showOverdubRecord ? "cancel" : "record overdub"}
+              {showOverdubRecord ? "cancel" : "record"}
             </button>
           </div>
         </div>
@@ -1046,15 +1079,74 @@
           <p class="label-sm text-text-muted mb-3">{calibrationMsg}</p>
         {/if}
 
+        {#if showOverdubUpload}
+          <div class="mb-4 bg-bg-surface border border-border p-4 space-y-3">
+            <p class="label-sm text-text-muted">upload a pre-recorded overdub file. set the offset to where it aligns in the parent track.</p>
+            <div class="flex items-center gap-4 flex-wrap">
+              <input
+                type="file"
+                accept="audio/*"
+                onchange={(e) => overdubFile = (e.target as HTMLInputElement).files?.[0] ?? null}
+                class="label-sm text-text-secondary file:bg-bg-primary file:border file:border-border file:px-3 file:py-1.5 file:text-text-secondary file:label-sm file:mr-3 file:cursor-pointer"
+              />
+              <div class="flex items-center gap-2">
+                <span class="label-sm text-text-muted">offset</span>
+                <input
+                  type="number"
+                  step="100"
+                  bind:value={uploadOffsetMs}
+                  class="w-24 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
+                />
+                <span class="label-sm text-text-muted">ms</span>
+              </div>
+              <button
+                onclick={() => { uploadOffsetMs = playerRef?.getCurrentTimeMs() ?? 0; }}
+                class="label-sm text-accent hover:text-accent-hover transition-colors"
+              >use player position</button>
+              <button
+                onclick={uploadOverdubFile}
+                disabled={!overdubFile || uploadingOverdub}
+                class="px-4 py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors"
+              >{uploadingOverdub ? "uploading..." : "upload"}</button>
+            </div>
+          </div>
+        {/if}
+
         {#if showOverdubRecord}
-          <div class="mb-4 bg-bg-surface border border-border p-4">
-            <p class="label-sm text-text-muted mb-3">play the track through headphones while recording your overdub. offset is auto-adjusted{calibratedLatency != null ? ` (${calibratedLatency}ms compensation)` : " — calibrate first for best results"}.</p>
+          <div class="mb-4 bg-bg-surface border border-border p-4 space-y-3">
+            <div class="flex items-center gap-4 flex-wrap">
+              <span class="label-sm text-text-muted">punch in at:</span>
+              <div class="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="100"
+                  bind:value={punchInMs}
+                  class="w-24 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
+                />
+                <span class="label-sm text-text-muted">ms</span>
+              </div>
+              <button
+                onclick={() => { punchInMs = playerRef?.getCurrentTimeMs() ?? 0; }}
+                class="label-sm text-accent hover:text-accent-hover transition-colors"
+              >use player position</button>
+              {#if punchInMs > 0}
+                <button
+                  onclick={() => punchInMs = 0}
+                  class="label-sm text-text-muted hover:text-danger transition-colors"
+                >reset</button>
+                <span class="label-sm text-text-muted font-mono">starts at {formatDuration(punchInMs)}</span>
+              {/if}
+            </div>
+            <p class="label-sm text-text-muted">
+              headphones on — parent plays from {punchInMs > 0 ? formatDuration(punchInMs) : "the start"} when you hit record{calibratedLatency != null ? ` (${calibratedLatency}ms compensation)` : ""}
+            </p>
             <Recorder
               bandSlug={slug}
               onRecorded={() => { showOverdubRecord = false; loadOverdubs(); }}
               overdubParentId={trackId}
               parentStreamUrl={streamUrl}
               latencyCompensation={calibratedLatency ?? 0}
+              {punchInMs}
             />
           </div>
         {/if}
