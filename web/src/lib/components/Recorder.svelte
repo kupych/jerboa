@@ -10,6 +10,7 @@
     parentStreamUrl = undefined,
     latencyCompensation = 0,
     punchInMs = 0,
+    bpm = 0,
     onRecorded,
   }: {
     bandSlug: string;
@@ -18,6 +19,7 @@
     parentStreamUrl?: string;
     latencyCompensation?: number;
     punchInMs?: number;
+    bpm?: number;
     onRecorded: () => void;
   } = $props();
 
@@ -27,7 +29,7 @@
   let parentSource: AudioBufferSourceNode | null = null;
   let parentLoading = $state(false);
 
-  let recState = $state<"idle" | "warming" | "recording" | "uploading">("idle");
+  let recState = $state<"idle" | "warming" | "counting" | "recording" | "uploading">("idle");
   let mediaRecorder: MediaRecorder | null = null;
   let micStream: MediaStream | null = null;
   let recordStream: MediaStream | null = null;
@@ -124,6 +126,36 @@
     }
   }
 
+  let countBeat = $state(0);
+
+  function playCountIn(ctx: AudioContext): Promise<void> {
+    if (!bpm || bpm <= 0) return Promise.resolve();
+    const beatInterval = 60 / bpm;
+    const beats = 4;
+    return new Promise((resolve) => {
+      for (let i = 0; i < beats; i++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        // High click: first beat accented
+        osc.frequency.value = i === 0 ? 1200 : 800;
+        osc.type = "sine";
+        const startTime = ctx.currentTime + i * beatInterval;
+        gain.gain.setValueAtTime(0.5, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.08);
+        osc.start(startTime);
+        osc.stop(startTime + 0.08);
+        // Update beat counter for UI
+        setTimeout(() => { countBeat = i + 1; }, i * beatInterval * 1000);
+      }
+      setTimeout(() => {
+        countBeat = 0;
+        resolve();
+      }, beats * beatInterval * 1000);
+    });
+  }
+
   async function startRecording() {
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
@@ -183,6 +215,12 @@
         recState = "idle";
       }
     };
+
+    // Count-in clicks before recording
+    if (bpm > 0 && audioCtx) {
+      recState = "counting";
+      await playCountIn(audioCtx);
+    }
 
     // Wait for encoder to be truly active before starting parent
     await new Promise<void>((resolve) => {
@@ -268,6 +306,17 @@
 {:else if recState === "warming"}
   <div class="border border-dashed border-border p-4 text-center">
     <span class="text-sm text-text-muted font-semibold">warming up mic...</span>
+  </div>
+{:else if recState === "counting"}
+  <div class="border border-amber-400/40 bg-amber-400/5 p-4 text-center">
+    <div class="flex items-center justify-center gap-4">
+      <div class="flex items-center gap-2">
+        {#each [1, 2, 3, 4] as beat}
+          <div class="w-4 h-4 rounded-full transition-colors {countBeat >= beat ? 'bg-amber-400' : 'bg-amber-400/20'}"></div>
+        {/each}
+      </div>
+      <span class="label text-amber-400 font-mono">{bpm} bpm</span>
+    </div>
   </div>
 {:else if recState === "recording"}
   <div class="border border-red-400/40 bg-red-400/5 p-4 text-center">

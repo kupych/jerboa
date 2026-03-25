@@ -18,6 +18,7 @@
     name: string;
     lyrics: string;
     tabs: string;
+    bpm: number;
     created_at: string;
   };
 
@@ -99,6 +100,42 @@
   let titleInput = $state("");
   let savingTitle = $state(false);
   let showChords = $state(true);
+
+  // BPM / tap tempo
+  let bpmInput = $state(0);
+  let savingBpm = $state(false);
+  let tapTimes: number[] = [];
+
+  function handleTap() {
+    const now = performance.now();
+    // Reset if gap > 2 seconds
+    if (tapTimes.length > 0 && now - tapTimes[tapTimes.length - 1] > 2000) {
+      tapTimes = [];
+    }
+    tapTimes.push(now);
+    if (tapTimes.length < 2) return;
+    // Keep last 8 taps
+    if (tapTimes.length > 8) tapTimes = tapTimes.slice(-8);
+    // Average interval
+    let sum = 0;
+    for (let i = 1; i < tapTimes.length; i++) {
+      sum += tapTimes[i] - tapTimes[i - 1];
+    }
+    const avgMs = sum / (tapTimes.length - 1);
+    bpmInput = Math.round(60000 / avgMs);
+  }
+
+  async function saveBpm() {
+    if (!song || bpmInput < 0) return;
+    savingBpm = true;
+    try {
+      song = await apiPatch<Song>(`/api/bands/${slug}/songs/${songId}`, {
+        bpm: bpmInput,
+      });
+    } finally {
+      savingBpm = false;
+    }
+  }
 
   function hasChordPro(text: string): boolean {
     return /\[[A-G][^\]]*\]/.test(text);
@@ -335,6 +372,7 @@
     song = await api<Song>(`/api/bands/${slug}/songs/${songId}`);
     lyricsInput = song.lyrics;
     tabsInput = song.tabs;
+    bpmInput = song.bpm;
   }
 
   async function loadTracks() {
@@ -435,6 +473,31 @@
           title="click to edit"
         >{song.name}</h1>
       {/if}
+
+      <!-- BPM -->
+      <div class="flex items-center gap-3 mt-4">
+        <span class="label-sm text-text-muted">bpm:</span>
+        <input
+          type="number"
+          min="0"
+          max="300"
+          step="1"
+          bind:value={bpmInput}
+          onchange={saveBpm}
+          class="w-16 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
+        />
+        <button
+          onclick={handleTap}
+          class="label-sm text-text-muted hover:text-accent transition-colors px-3 py-1 border border-border hover:border-accent"
+        >tap</button>
+        {#if bpmInput > 0 && bpmInput !== song.bpm}
+          <button
+            onclick={saveBpm}
+            disabled={savingBpm}
+            class="label-sm text-accent hover:text-accent-hover transition-colors"
+          >{savingBpm ? "..." : "save"}</button>
+        {/if}
+      </div>
     </div>
 
     <!-- Lyrics -->
@@ -578,7 +641,7 @@
           {/if}
         </div>
 
-        <Recorder bandSlug={slug} {songId} onRecorded={loadTracks} />
+        <Recorder bandSlug={slug} {songId} bpm={song?.bpm ?? 0} onRecorded={loadTracks} />
 
         {#if directTracks.length > 0 || setTakes.length > 0}
         <div class="space-y-2">

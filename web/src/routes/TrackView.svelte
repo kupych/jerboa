@@ -12,6 +12,7 @@
   interface Song {
     id: string;
     name: string;
+    bpm: number;
   }
 
   interface SetSummary {
@@ -352,7 +353,14 @@
     document.getElementById("comment-input")?.focus();
   }
 
-  function handleSeek(_ms: number) {}
+  function handleSeek(ms: number) {
+    playerRef?.seekTo(ms);
+  }
+
+  function scrollToComment(commentId: string) {
+    const el = document.getElementById(`comment-${commentId}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
   async function submitComment() {
     if (!newComment.trim()) return;
@@ -401,11 +409,12 @@
     }
   }
 
-  async function bounceOverdub(overdubId: string) {
+  async function bounceOverdub(overdubId: string, toNewTrack = false) {
     bouncing = true;
     try {
       await apiPost(`/api/bands/${slug}/tracks/${trackId}/overdubs/bounce`, {
         overdub_id: overdubId,
+        to_new_track: toNewTrack,
       });
     } finally {
       bouncing = false;
@@ -429,6 +438,21 @@
       await loadOverdubs();
     } finally {
       scrubbing = false;
+    }
+  }
+
+  let restoring = $state(false);
+  let confirmRestore = $state(false);
+
+  async function restoreOriginal() {
+    restoring = true;
+    try {
+      await apiPost(`/api/bands/${slug}/tracks/${trackId}/restore`, {});
+      confirmRestore = false;
+      streamVersion++;
+      await loadData();
+    } finally {
+      restoring = false;
     }
   }
 
@@ -914,22 +938,34 @@
           </div>
         {/if}
 
-        <!-- Pre-bounce rollback link -->
+        <!-- Bounce status + restore -->
         {#if track.pre_bounce_id}
           <div class="flex items-center gap-2 mt-4">
-            <span class="label-sm text-text-muted">bounced{(track.bounce_versions ?? 0) > 1 ? ` (${track.bounce_versions} versions)` : ""} —</span>
+            <span class="label-sm text-text-muted">bounced —</span>
             <button
               onclick={() => navigate(`/band/${slug}/track/${track!.pre_bounce_id}`)}
               class="label-sm text-accent hover:text-accent-hover transition-colors"
             >view original</button>
-            {#if (track.bounce_versions ?? 0) > 1 && isAdmin}
-              <button
-                onclick={async () => {
-                  await apiDelete(`/api/bands/${slug}/tracks/${trackId}/bounce-versions`);
-                  loadData();
-                }}
-                class="label-sm text-text-muted hover:text-danger transition-colors"
-              >purge intermediates</button>
+            {#if isAdmin}
+              {#if !confirmRestore}
+                <button
+                  onclick={() => confirmRestore = true}
+                  class="label-sm text-text-muted hover:text-danger transition-colors"
+                >restore original</button>
+              {:else}
+                <span class="flex items-center gap-2">
+                  <span class="label-sm text-danger">undo all bounces?</span>
+                  <button
+                    onclick={restoreOriginal}
+                    disabled={restoring}
+                    class="label-sm text-danger hover:text-red-300 transition-colors"
+                  >{restoring ? "..." : "yes"}</button>
+                  <button
+                    onclick={() => confirmRestore = false}
+                    class="label-sm text-text-muted hover:text-text-secondary transition-colors"
+                  >no</button>
+                </span>
+              {/if}
             {/if}
           </div>
         {/if}
@@ -1033,6 +1069,7 @@
             duration={track.duration_ms}
             comments={timedComments}
             onTimestampClick={handleTimestampClick}
+            onCommentClick={scrollToComment}
           />
         {/key}
       </div>
@@ -1166,6 +1203,7 @@
               parentStreamUrl={streamUrl}
               latencyCompensation={calibratedLatency ?? 0}
               {punchInMs}
+              bpm={track?.song?.bpm ?? 0}
             />
           </div>
         {/if}
@@ -1284,10 +1322,15 @@
 
                   {#if isAdmin}
                     <button
+                      onclick={() => bounceOverdub(od.id, true)}
+                      disabled={bouncing}
+                      class="label-sm text-text-muted hover:text-accent transition-colors"
+                    >{bouncing ? "bouncing..." : "bounce to new"}</button>
+                    <button
                       onclick={() => bounceOverdub(od.id)}
                       disabled={bouncing}
                       class="label-sm text-text-muted hover:text-accent transition-colors"
-                    >{bouncing ? "bouncing..." : "bounce"}</button>
+                    >bounce in-place</button>
                   {/if}
 
                   {#if confirmDeleteOd === od.id}

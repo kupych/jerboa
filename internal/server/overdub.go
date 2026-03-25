@@ -294,7 +294,8 @@ func (h *OverdubHandler) Bounce(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		OverdubID uuid.UUID `json:"overdub_id"`
+		OverdubID  uuid.UUID `json:"overdub_id"`
+		ToNewTrack bool      `json:"to_new_track"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
@@ -307,8 +308,11 @@ func (h *OverdubHandler) Bounce(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Bounce in background
-	go h.doBounce(parent, overdub, band, user)
+	if req.ToNewTrack {
+		go h.doBounceToNew(parent, overdub, band, user)
+	} else {
+		go h.doBounce(parent, overdub, band, user)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "bouncing"})
@@ -362,25 +366,31 @@ func (h *OverdubHandler) doBounce(parent, overdub *models.Track, band *models.Ba
 		return
 	}
 
-	// Save the parent's current file as a snapshot (pre-bounce version) for rollback
-	snapshot := &models.Track{
-		BandID:     band.ID,
-		Title:      parent.Title + " (pre-bounce)",
-		UploadedBy: parent.UploadedBy,
-		FilePath:   parent.FilePath,
-		FileSize:   parent.FileSize,
-		Status:     "ready",
-	}
+	// Only create snapshot on FIRST bounce — preserves the true original
+	existingOriginal := h.queries.GetPreBounceID(ctx, parent.ID)
+	if existingOriginal == nil {
+		snapshot := &models.Track{
+			BandID:     band.ID,
+			Title:      parent.Title + " (original)",
+			UploadedBy: parent.UploadedBy,
+			FilePath:   parent.FilePath,
+			FileSize:   parent.FileSize,
+			Status:     "ready",
+		}
 
-	if err := h.queries.CreateTrack(ctx, snapshot); err != nil {
-		h.store.Delete(storedPath)
-		slog.Error("bounce: create snapshot", "error", err)
-		return
-	}
+		if err := h.queries.CreateTrack(ctx, snapshot); err != nil {
+			h.store.Delete(storedPath)
+			slog.Error("bounce: create snapshot", "error", err)
+			return
+		}
 
-	// Copy over the old waveform/metadata so the snapshot is immediately playable
-	if err := h.queries.UpdateTrackProcessed(ctx, snapshot.ID, parent.WaveformData, parent.DurationMS, parent.Format, parent.SampleRate); err != nil {
-		slog.Error("bounce: update snapshot", "error", err)
+		if err := h.queries.UpdateTrackProcessed(ctx, snapshot.ID, parent.WaveformData, parent.DurationMS, parent.Format, parent.SampleRate); err != nil {
+			slog.Error("bounce: update snapshot", "error", err)
+		}
+
+		if err := h.queries.UpdateBouncedTo(ctx, snapshot.ID, &parent.ID); err != nil {
+			slog.Error("bounce: update snapshot bounced_to", "error", err)
+		}
 	}
 
 	// Replace the parent track's file with the bounced version
@@ -389,10 +399,7 @@ func (h *OverdubHandler) doBounce(parent, overdub *models.Track, band *models.Ba
 		return
 	}
 
-	// Mark snapshot and overdub as bounced into the parent
-	if err := h.queries.UpdateBouncedTo(ctx, snapshot.ID, &parent.ID); err != nil {
-		slog.Error("bounce: update snapshot bounced_to", "error", err)
-	}
+	// Mark overdub as bounced
 	if err := h.queries.UpdateBouncedTo(ctx, overdub.ID, &parent.ID); err != nil {
 		slog.Error("bounce: update overdub bounced_to", "error", err)
 	}
@@ -417,7 +424,7 @@ func (h *OverdubHandler) doBounce(parent, overdub *models.Track, band *models.Ba
 		return
 	}
 
-	slog.Info("bounce: complete", "parent_id", parent.ID, "snapshot_id", snapshot.ID)
+	slog.Info("bounce: complete", "parent_id", parent.ID)
 
 	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{
 		Type:    "track.ready",
@@ -427,6 +434,196 @@ func (h *OverdubHandler) doBounce(parent, overdub *models.Track, band *models.Ba
 		Type:    "activity.update",
 		Payload: map[string]string{"band_id": band.ID.String()},
 	})
+}
+
+func (h *OverdubHandler) doBounceToNew(parent, overdub *models.Track, band *models.Band, user *models.User) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "bounce-*")
+	if err != nil {
+		slog.Error("bounce-new: create temp dir", "error", err)
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	outPath := filepath.Join(tmpDir, "bounced.wav")
+
+	var filter string
+	if overdub.OffsetMS > 0 {
+		filter = fmt.Sprintf("[1]adelay=%d|%d[ov];[0][ov]amix=inputs=2:duration=longest:normalize=0", overdub.OffsetMS, overdub.OffsetMS)
+	} else if overdub.OffsetMS < 0 {
+		delay := -overdub.OffsetMS
+		filter = fmt.Sprintf("[0]adelay=%d|%d[par];[par][1]amix=inputs=2:duration=longest:normalize=0", delay, delay)
+	} else {
+		filter = "[0][1]amix=inputs=2:duration=longest:normalize=0"
+	}
+
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-i", parent.FilePath,
+		"-i", overdub.FilePath,
+		"-filter_complex", filter,
+		"-ac", "2",
+		"-ar", "48000",
+		"-y", outPath,
+	)
+	output, err := cmd.CombinedOutput()
+	slog.Info("bounce-new: ffmpeg done", "exit_err", err, "output", string(output))
+	if err != nil {
+		return
+	}
+
+	storedPath, fileSize, err := h.store.Import(band.ID, "bounced.wav", outPath)
+	if err != nil {
+		slog.Error("bounce-new: import", "error", err)
+		return
+	}
+
+	// Create as a new independent track
+	newTrack := &models.Track{
+		BandID:     band.ID,
+		Title:      parent.Title + " (bounce)",
+		UploadedBy: user.ID,
+		FilePath:   storedPath,
+		FileSize:   fileSize,
+		Status:     "processing",
+	}
+	// Inherit song assignment from parent
+	if parent.SongID != nil {
+		newTrack.SongID = parent.SongID
+	}
+
+	if err := h.queries.CreateTrack(ctx, newTrack); err != nil {
+		h.store.Delete(storedPath)
+		slog.Error("bounce-new: create track", "error", err)
+		return
+	}
+
+	// Mark overdub as bounced
+	if err := h.queries.UpdateBouncedTo(ctx, overdub.ID, &newTrack.ID); err != nil {
+		slog.Error("bounce-new: update overdub bounced_to", "error", err)
+	}
+
+	// Process the new track (waveform, metadata)
+	meta, err := h.processor.Probe(ctx, storedPath)
+	if err != nil {
+		slog.Error("bounce-new: probe", "error", err)
+		h.queries.UpdateTrackError(ctx, newTrack.ID)
+		return
+	}
+
+	peaks, err := h.processor.GeneratePeaks(ctx, storedPath)
+	if err != nil {
+		slog.Error("bounce-new: peaks", "error", err)
+		h.queries.UpdateTrackError(ctx, newTrack.ID)
+		return
+	}
+
+	if err := h.queries.UpdateTrackProcessed(ctx, newTrack.ID, peaks, meta.DurationMS, meta.Format, meta.SampleRate); err != nil {
+		slog.Error("bounce-new: update track", "error", err)
+		return
+	}
+
+	slog.Info("bounce-new: complete", "parent_id", parent.ID, "new_id", newTrack.ID)
+
+	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{
+		Type:    "track.ready",
+		Payload: map[string]any{"track_id": newTrack.ID},
+	})
+	// Also notify the parent page so the overdub disappears from the list
+	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{
+		Type:    "track.ready",
+		Payload: map[string]any{"track_id": parent.ID},
+	})
+	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{
+		Type:    "activity.update",
+		Payload: map[string]string{"band_id": band.ID.String()},
+	})
+}
+
+// RestoreOriginal rolls back a track to its pre-bounce original state.
+func (h *OverdubHandler) RestoreOriginal(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	trackID, err := uuid.Parse(chi.URLParam(r, "trackID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid track id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
+	if err != nil || role != "admin" {
+		http.Error(w, `{"error":"admin only"}`, http.StatusForbidden)
+		return
+	}
+
+	parent, err := h.queries.GetTrack(r.Context(), trackID)
+	if err != nil || parent == nil || parent.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	originalID := h.queries.GetPreBounceID(r.Context(), trackID)
+	if originalID == nil {
+		http.Error(w, `{"error":"no original to restore"}`, http.StatusNotFound)
+		return
+	}
+
+	original, err := h.queries.GetTrack(r.Context(), *originalID)
+	if err != nil || original == nil {
+		http.Error(w, `{"error":"original not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// Copy original file to new storage path (so parent owns its own copy)
+	srcFile, err := h.store.Open(original.FilePath)
+	if err != nil {
+		http.Error(w, `{"error":"original file missing"}`, http.StatusInternalServerError)
+		return
+	}
+	newPath, newSize, err := h.store.Save(band.ID, filepath.Base(original.FilePath), srcFile)
+	srcFile.Close()
+	if err != nil {
+		http.Error(w, `{"error":"restore failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Delete parent's current bounced file
+	if parent.FilePath != "" {
+		h.store.Delete(parent.FilePath)
+	}
+
+	// Restore parent to original state
+	h.queries.UpdateTrackFile(r.Context(), parent.ID, newPath, newSize)
+	h.queries.UpdateTrackProcessed(r.Context(), parent.ID, original.WaveformData, original.DurationMS, original.Format, original.SampleRate)
+
+	// Delete all bounce snapshots (and their files)
+	versions, _ := h.queries.ListBounceVersions(r.Context(), trackID)
+	for _, v := range versions {
+		filePath, err := h.queries.DeleteTrack(r.Context(), v.ID)
+		if err != nil {
+			slog.Error("restore: delete snapshot", "id", v.ID, "error", err)
+			continue
+		}
+		if filePath != "" {
+			h.store.Delete(filePath)
+		}
+	}
+
+	// Un-bounce all overdubs so they reappear
+	h.queries.ClearBouncedOverdubs(r.Context(), trackID)
+
+	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{
+		Type:    "track.ready",
+		Payload: map[string]any{"track_id": parent.ID},
+	})
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // PurgeBounceVersions deletes all intermediate pre-bounce snapshots, keeping only the original.

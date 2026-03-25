@@ -12,6 +12,7 @@
     regions = [],
     clickToTag = false,
     onTimestampClick = undefined,
+    onCommentClick = undefined,
     minPxPerMin = 0,
   }: {
     src: string;
@@ -21,6 +22,7 @@
     regions?: Array<{ start_ms: number; end_ms: number; label: string; color?: string }>;
     clickToTag?: boolean;
     onTimestampClick?: (ms: number) => void;
+    onCommentClick?: (commentId: string) => void;
     minPxPerMin?: number;
   } = $props();
 
@@ -271,14 +273,14 @@
         style="left: {commentPosition(comment.timestamp_ms)}%"
         onmouseenter={() => (hoveredComment = comment.id)}
         onmouseleave={() => (hoveredComment = null)}
-        onclick={(e) => { e.stopPropagation(); seekToComment(comment.timestamp_ms); }}
+        onclick={(e) => { e.stopPropagation(); seekToComment(comment.timestamp_ms); onCommentClick?.(comment.id); }}
       >
         <div class="absolute -top-1 -left-[3px] w-2 h-2 bg-marker"></div>
 
         {#if hoveredComment === comment.id}
-          <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-4 py-3 bg-bg-elevated border border-border whitespace-nowrap z-10">
-            <div class="label-sm text-text-secondary">{comment.user_name}</div>
-            <div class="text-sm font-medium text-text-primary mt-1 max-w-48 truncate">{comment.body}</div>
+          <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-4 py-3 bg-bg-elevated border border-border w-56 z-10">
+            <div class="label-sm text-text-secondary truncate">{comment.user_name}</div>
+            <div class="text-sm font-medium text-text-primary mt-1 line-clamp-3">{comment.body}</div>
             <div class="text-text-muted label-sm font-mono mt-1">{formatTimestamp(comment.timestamp_ms)}</div>
           </div>
         {/if}
