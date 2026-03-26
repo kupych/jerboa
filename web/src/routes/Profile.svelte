@@ -3,6 +3,7 @@
   import { apiPatch } from "../lib/api";
   import { navigate } from "../lib/stores/router";
   import { bands } from "../lib/stores/bands";
+  import { themePreference, setTheme, type ThemePreference } from "../lib/stores/theme";
 
   let displayName = $state($user?.display_name || "");
   let saving = $state(false);
@@ -60,6 +61,18 @@
       {#if saved}
         <span class="label text-success">saved</span>
       {/if}
+    </div>
+
+    <div>
+      <span class="label text-text-muted block mb-2">theme</span>
+      <div class="flex">
+        {#each [["dark", "dark"], ["light", "light"], ["system", "system"]] as [value, label]}
+          <button
+            onclick={() => setTheme(value as ThemePreference)}
+            class="px-4 py-2 label-sm border border-border transition-colors -ml-px first:ml-0 {$themePreference === value ? 'bg-accent text-bg-primary border-accent' : 'text-text-muted hover:text-text-secondary'}"
+          >{label}</button>
+        {/each}
+      </div>
     </div>
   </div>
 </div>

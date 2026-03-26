@@ -3,6 +3,7 @@
   import ChatPanel from "./ChatPanel.svelte";
   import KeyboardHelp from "./KeyboardHelp.svelte";
   import FeedbackButton from "./FeedbackButton.svelte";
+  import WhatsNewModal from "./WhatsNewModal.svelte";
   import type { Snippet } from "svelte";
 
   let { children }: { children: Snippet } = $props();
@@ -22,3 +23,4 @@
   <FeedbackButton />
 </div>
 <KeyboardHelp />
+<WhatsNewModal />

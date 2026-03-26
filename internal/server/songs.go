@@ -145,6 +145,7 @@ func (h *SongHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Name   *string `json:"name"`
 		Lyrics *string `json:"lyrics"`
 		Tabs   *string `json:"tabs"`
+		Notes  *string `json:"notes"`
 		BPM    *int    `json:"bpm"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -164,12 +165,16 @@ func (h *SongHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.Tabs != nil {
 		tabs = *req.Tabs
 	}
+	notes := song.Notes
+	if req.Notes != nil {
+		notes = *req.Notes
+	}
 	bpm := song.BPM
 	if req.BPM != nil {
 		bpm = *req.BPM
 	}
 
-	if err := h.queries.UpdateSong(r.Context(), songID, name, lyrics, tabs, bpm); err != nil {
+	if err := h.queries.UpdateSong(r.Context(), songID, name, lyrics, tabs, notes, bpm); err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
 	}
@@ -177,6 +182,7 @@ func (h *SongHandler) Update(w http.ResponseWriter, r *http.Request) {
 	song.Name = name
 	song.Lyrics = lyrics
 	song.Tabs = tabs
+	song.Notes = notes
 	song.BPM = bpm
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(song)

@@ -18,6 +18,7 @@
     name: string;
     lyrics: string;
     tabs: string;
+    notes: string;
     bpm: number;
     created_at: string;
   };
@@ -92,14 +93,17 @@
 
   let editingLyrics = $state(false);
   let editingTabs = $state(false);
+  let editingNotes = $state(false);
   let lyricsInput = $state("");
   let tabsInput = $state("");
+  let notesInput = $state("");
   let saving = $state(false);
 
   let editingTitle = $state(false);
   let titleInput = $state("");
   let savingTitle = $state(false);
   let showChords = $state(true);
+  let expandedSection = $state<"notes" | "lyrics" | "tabs" | null>(null);
 
   // BPM / tap tempo
   let bpmInput = $state(0);
@@ -372,6 +376,7 @@
     song = await api<Song>(`/api/bands/${slug}/songs/${songId}`);
     lyricsInput = song.lyrics;
     tabsInput = song.tabs;
+    notesInput = song.notes;
     bpmInput = song.bpm;
   }
 
@@ -443,6 +448,19 @@
       saving = false;
     }
   }
+
+  async function saveNotes() {
+    if (!song) return;
+    saving = true;
+    try {
+      song = await apiPatch<Song>(`/api/bands/${slug}/songs/${songId}`, {
+        notes: notesInput,
+      });
+      editingNotes = false;
+    } finally {
+      saving = false;
+    }
+  }
 </script>
 
 {#if song}
@@ -500,107 +518,9 @@
       </div>
     </div>
 
-    <!-- Lyrics -->
-    <section>
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="label text-text-muted"><span class="text-accent/15 font-mono mr-2">01</span>lyrics</h2>
-        <div class="flex items-center gap-3">
-          {#if !editingLyrics && song.lyrics && hasChordPro(song.lyrics)}
-            <button
-              onclick={() => (showChords = !showChords)}
-              class="label-sm transition-colors {showChords ? 'text-accent' : 'text-text-muted hover:text-accent'}"
-            >{showChords ? "hide chords" : "show chords"}</button>
-          {/if}
-          {#if !editingLyrics}
-            <button
-              onclick={() => { editingLyrics = true; lyricsInput = song!.lyrics; }}
-              class="label-sm text-text-muted hover:text-accent transition-colors"
-            >edit</button>
-          {/if}
-        </div>
-      </div>
-
-      {#if editingLyrics}
-        <div class="space-y-3">
-          <textarea
-            bind:value={lyricsInput}
-            rows="16"
-            class="w-full bg-bg-primary border border-border px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors resize-y"
-            placeholder="lyrics with optional [Am]chordpro [G]notation..."
-          ></textarea>
-          <div class="flex gap-3">
-            <button
-              onclick={saveLyrics}
-              disabled={saving}
-              class="px-4 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors"
-            >{saving ? "..." : "save"}</button>
-            <button
-              onclick={() => { editingLyrics = false; lyricsInput = song!.lyrics; }}
-              class="label-sm text-text-muted hover:text-text-secondary transition-colors"
-            >cancel</button>
-          </div>
-        </div>
-      {:else if song.lyrics}
-        {#if hasChordPro(song.lyrics)}
-          <div class="bg-bg-surface border border-border p-5">
-            <ChordProLyrics text={song.lyrics} {showChords} />
-          </div>
-        {:else}
-          <div class="prose bg-bg-surface border border-border p-5">{@html marked.parse(song.lyrics)}</div>
-        {/if}
-      {:else}
-        <p class="text-sm text-text-muted italic">no lyrics yet</p>
-      {/if}
-    </section>
-
-    <!-- Tabs -->
-    <section>
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="label text-text-muted"><span class="text-accent/15 font-mono mr-2">02</span>tabs / chords</h2>
-        {#if !editingTabs}
-          <button
-            onclick={() => { editingTabs = true; tabsInput = song!.tabs; }}
-            class="label-sm text-text-muted hover:text-accent transition-colors"
-          >edit</button>
-        {/if}
-      </div>
-
-      {#if editingTabs}
-        <div class="space-y-3">
-          <textarea
-            bind:value={tabsInput}
-            rows="16"
-            class="w-full bg-bg-primary border border-border px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors font-mono resize-y"
-            placeholder="paste tabs or chord charts with optional [Am]chordpro [G]notation..."
-          ></textarea>
-          <div class="flex gap-3">
-            <button
-              onclick={saveTabs}
-              disabled={saving}
-              class="px-4 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors"
-            >{saving ? "..." : "save"}</button>
-            <button
-              onclick={() => { editingTabs = false; tabsInput = song!.tabs; }}
-              class="label-sm text-text-muted hover:text-text-secondary transition-colors"
-            >cancel</button>
-          </div>
-        </div>
-      {:else if song.tabs}
-        {#if hasChordPro(song.tabs)}
-          <div class="bg-bg-surface border border-border p-5">
-            <ChordProLyrics text={song.tabs} {showChords} />
-          </div>
-        {:else}
-          <pre class="text-sm text-text-secondary whitespace-pre-wrap font-mono leading-relaxed bg-bg-surface border border-border p-5">{song.tabs}</pre>
-        {/if}
-      {:else}
-        <p class="text-sm text-text-muted italic">no tabs yet</p>
-      {/if}
-    </section>
-
     <!-- Takes -->
       <section>
-        <h2 class="label text-text-muted mb-3"><span class="text-accent/15 font-mono mr-2">03</span>takes</h2>
+        <h2 class="label text-text-muted mb-3"><span class="text-accent/15 font-mono mr-2">01</span>takes</h2>
 
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
@@ -842,7 +762,7 @@
     <!-- Sets -->
     {#if songSets.length > 0}
       <section>
-        <h2 class="label text-text-muted mb-3"><span class="text-accent/15 font-mono mr-2">04</span>sets</h2>
+        <h2 class="label text-text-muted mb-3"><span class="text-accent/15 font-mono mr-2">02</span>sets</h2>
         <div class="space-y-2">
           {#each songSets as s}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -866,6 +786,156 @@
         </div>
       </section>
     {/if}
+
+    <!-- Notes / Lyrics / Tabs — collapsible -->
+    <div class="border-t border-border/30 pt-6 space-y-0">
+      <!-- Notes -->
+      <section class="border border-border">
+        <button
+          onclick={() => { expandedSection = expandedSection === "notes" ? null : "notes"; }}
+          class="w-full flex items-center justify-between px-5 py-3 hover:bg-bg-surface/50 transition-colors"
+        >
+          <div class="flex items-center gap-3">
+            <span class="text-accent/15 font-mono label">03</span>
+            <span class="label text-text-muted">notes</span>
+            {#if song.notes}
+              <span class="label-sm text-text-muted/50">&mdash; {song.notes.split('\n')[0].slice(0, 60)}{song.notes.split('\n')[0].length > 60 ? '...' : ''}</span>
+            {/if}
+          </div>
+          <span class="label-sm text-text-muted/40 transition-transform {expandedSection === 'notes' ? 'rotate-90' : ''}">&rsaquo;</span>
+        </button>
+        {#if editingNotes}
+          <div class="px-5 pb-5 border-t border-border/50 pt-4">
+            <textarea
+              bind:value={notesInput}
+              rows="12"
+              class="w-full bg-bg-primary border border-border px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors resize-y"
+              placeholder="production notes, arrangement ideas, references..."
+            ></textarea>
+            <div class="flex gap-3 mt-3">
+              <button onclick={saveNotes} disabled={saving} class="px-4 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors">{saving ? "..." : "save"}</button>
+              <button onclick={() => { editingNotes = false; notesInput = song!.notes; }} class="label-sm text-text-muted hover:text-text-secondary transition-colors">cancel</button>
+            </div>
+          </div>
+        {:else if expandedSection === "notes"}
+          <div class="px-5 pb-5 border-t border-border/50 pt-4">
+            {#if song.notes}
+              <div class="prose bg-bg-surface border border-border p-5">{@html marked.parse(song.notes)}</div>
+              <button onclick={() => { editingNotes = true; notesInput = song!.notes; }} class="label-sm text-text-muted hover:text-accent transition-colors mt-3">edit</button>
+            {:else}
+              <button
+                onclick={() => { editingNotes = true; notesInput = ""; }}
+                class="text-sm text-text-muted hover:text-accent italic transition-colors"
+              >no notes yet — click to add</button>
+            {/if}
+          </div>
+        {/if}
+      </section>
+
+      <!-- Lyrics -->
+      <section class="border border-border border-t-0">
+        <button
+          onclick={() => { expandedSection = expandedSection === "lyrics" ? null : "lyrics"; }}
+          class="w-full flex items-center justify-between px-5 py-3 hover:bg-bg-surface/50 transition-colors"
+        >
+          <div class="flex items-center gap-3">
+            <span class="text-accent/15 font-mono label">04</span>
+            <span class="label text-text-muted">lyrics</span>
+            {#if song.lyrics}
+              <span class="label-sm text-text-muted/50">&mdash; {song.lyrics.split('\n')[0].slice(0, 60)}{song.lyrics.split('\n')[0].length > 60 ? '...' : ''}</span>
+            {/if}
+          </div>
+          <span class="label-sm text-text-muted/40 transition-transform {expandedSection === 'lyrics' ? 'rotate-90' : ''}">&rsaquo;</span>
+        </button>
+        {#if editingLyrics}
+          <div class="px-5 pb-5 border-t border-border/50 pt-4">
+            <textarea
+              bind:value={lyricsInput}
+              rows="16"
+              class="w-full bg-bg-primary border border-border px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors resize-y"
+              placeholder="lyrics with optional [Am]chordpro [G]notation..."
+            ></textarea>
+            <div class="flex gap-3 mt-3">
+              <button onclick={saveLyrics} disabled={saving} class="px-4 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors">{saving ? "..." : "save"}</button>
+              <button onclick={() => { editingLyrics = false; lyricsInput = song!.lyrics; }} class="label-sm text-text-muted hover:text-text-secondary transition-colors">cancel</button>
+            </div>
+          </div>
+        {:else if expandedSection === "lyrics"}
+          <div class="px-5 pb-5 border-t border-border/50 pt-4">
+            {#if song.lyrics}
+              {#if hasChordPro(song.lyrics)}
+                <div class="flex items-center justify-end mb-3">
+                  <button
+                    onclick={() => (showChords = !showChords)}
+                    class="label-sm transition-colors {showChords ? 'text-accent' : 'text-text-muted hover:text-accent'}"
+                  >{showChords ? "hide chords" : "show chords"}</button>
+                </div>
+                <div class="bg-bg-surface border border-border p-5">
+                  <ChordProLyrics text={song.lyrics} {showChords} />
+                </div>
+              {:else}
+                <div class="prose bg-bg-surface border border-border p-5">{@html marked.parse(song.lyrics)}</div>
+              {/if}
+              <button onclick={() => { editingLyrics = true; lyricsInput = song!.lyrics; }} class="label-sm text-text-muted hover:text-accent transition-colors mt-3">edit</button>
+            {:else}
+              <button
+                onclick={() => { editingLyrics = true; lyricsInput = ""; }}
+                class="text-sm text-text-muted hover:text-accent italic transition-colors"
+              >no lyrics yet — click to add</button>
+            {/if}
+          </div>
+        {/if}
+      </section>
+
+      <!-- Tabs -->
+      <section class="border border-border border-t-0">
+        <button
+          onclick={() => { expandedSection = expandedSection === "tabs" ? null : "tabs"; }}
+          class="w-full flex items-center justify-between px-5 py-3 hover:bg-bg-surface/50 transition-colors"
+        >
+          <div class="flex items-center gap-3">
+            <span class="text-accent/15 font-mono label">05</span>
+            <span class="label text-text-muted">tabs / chords</span>
+            {#if song.tabs}
+              <span class="label-sm text-text-muted/50">&mdash; {song.tabs.split('\n')[0].slice(0, 60)}{song.tabs.split('\n')[0].length > 60 ? '...' : ''}</span>
+            {/if}
+          </div>
+          <span class="label-sm text-text-muted/40 transition-transform {expandedSection === 'tabs' ? 'rotate-90' : ''}">&rsaquo;</span>
+        </button>
+        {#if editingTabs}
+          <div class="px-5 pb-5 border-t border-border/50 pt-4">
+            <textarea
+              bind:value={tabsInput}
+              rows="16"
+              class="w-full bg-bg-primary border border-border px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors font-mono resize-y"
+              placeholder="paste tabs or chord charts..."
+            ></textarea>
+            <div class="flex gap-3 mt-3">
+              <button onclick={saveTabs} disabled={saving} class="px-4 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors">{saving ? "..." : "save"}</button>
+              <button onclick={() => { editingTabs = false; tabsInput = song!.tabs; }} class="label-sm text-text-muted hover:text-text-secondary transition-colors">cancel</button>
+            </div>
+          </div>
+        {:else if expandedSection === "tabs"}
+          <div class="px-5 pb-5 border-t border-border/50 pt-4">
+            {#if song.tabs}
+              {#if hasChordPro(song.tabs)}
+                <div class="bg-bg-surface border border-border p-5">
+                  <ChordProLyrics text={song.tabs} {showChords} />
+                </div>
+              {:else}
+                <pre class="text-sm text-text-secondary whitespace-pre-wrap font-mono leading-relaxed bg-bg-surface border border-border p-5">{song.tabs}</pre>
+              {/if}
+              <button onclick={() => { editingTabs = true; tabsInput = song!.tabs; }} class="label-sm text-text-muted hover:text-accent transition-colors mt-3">edit</button>
+            {:else}
+              <button
+                onclick={() => { editingTabs = true; tabsInput = ""; }}
+                class="text-sm text-text-muted hover:text-accent italic transition-colors"
+              >no tabs yet — click to add</button>
+            {/if}
+          </div>
+        {/if}
+      </section>
+    </div>
 
     <!-- Hidden audio element -->
     {#if playingTrackId}

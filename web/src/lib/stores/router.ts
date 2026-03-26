@@ -40,6 +40,8 @@ export const route = derived(path, ($path) => {
     isProfile: parts[0] === "profile",
     // /admin
     isAdmin: parts[0] === "admin",
+    // /changelog
+    isChangelog: parts[0] === "changelog",
     // /no-access
     isNoAccess: parts[0] === "no-access",
     bandSlug: parts[0] === "band" ? parts[1] : null,

@@ -19,6 +19,7 @@
   import Profile from "./routes/Profile.svelte";
   import AdminView from "./routes/AdminView.svelte";
   import PerformView from "./routes/PerformView.svelte";
+  import Changelog from "./routes/Changelog.svelte";
 
   let onboardName = $state("");
   let onboardSaving = $state(false);
@@ -132,7 +133,9 @@
   </div>
 {:else}
   <Layout>
-    {#if $route.isAdmin}
+    {#if $route.isChangelog}
+      <Changelog />
+    {:else if $route.isAdmin}
       <AdminView />
     {:else if $route.isProfile}
       <Profile />

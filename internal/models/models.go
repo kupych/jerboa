@@ -55,6 +55,7 @@ type Song struct {
 	Name      string    `json:"name"`
 	Lyrics    string    `json:"lyrics"`
 	Tabs      string    `json:"tabs"`
+	Notes     string    `json:"notes"`
 	BPM       int       `json:"bpm"`
 	CreatedAt time.Time `json:"created_at"`
 	TakeCount int       `json:"take_count"`

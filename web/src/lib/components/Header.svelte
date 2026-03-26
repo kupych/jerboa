@@ -5,7 +5,7 @@
   import { activityFeed, totalUnread, markBandSeen } from "../stores/notifications";
   import type { ActivityItem } from "../stores/notifications";
   import { apiPost } from "../api";
-  import ThemeToggle from "./ThemeToggle.svelte";
+
   import { initials } from "../utils/format";
 
   let { onChatToggle, chatOpen }: { onChatToggle: () => void; chatOpen: boolean } = $props();
@@ -213,9 +213,6 @@
           </svg>
         </button>
       {/if}
-
-      <ThemeToggle />
-
       {#if $user}
         <div class="flex items-center gap-2 md:gap-3">
           <button onclick={() => navigate("/profile")} class="cursor-pointer" title="Profile">
