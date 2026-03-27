@@ -296,7 +296,7 @@
   <button
     onclick={handleRecord}
     disabled={parentLoading}
-    class="border border-dashed border-border hover:border-red-400/50 p-3 text-center transition-colors w-full flex items-center justify-center gap-3 group"
+    class="border border-dashed border-border hover:border-red-400/50 p-3 md:py-2 text-center transition-colors w-full flex items-center justify-center gap-3 group"
   >
     <div class="w-3 h-3 rounded-full bg-red-400/60 group-hover:bg-red-400 transition-colors"></div>
     <span class="text-sm text-text-muted font-semibold group-hover:text-red-400 transition-colors">

@@ -518,15 +518,15 @@
       {:else}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="border border-dashed border-border hover:border-accent/40 hover:bg-accent/[0.02] p-3 text-center transition-colors cursor-pointer flex items-center justify-center gap-2"
+          class="border border-dashed border-border hover:border-accent/40 hover:bg-accent/[0.02] p-3 md:py-2 text-center transition-colors cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
           onclick={() => (showImport = true)}
         >
-          <svg class="text-text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <svg class="text-text-muted shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
           </svg>
           <span class="text-sm text-text-muted font-semibold">import url</span>
-          <span class="label-sm text-text-muted/30 font-mono hidden md:inline ml-1">youtube, soundcloud, etc</span>
+          <span class="label-sm text-text-muted/30 font-mono hidden md:inline translate-y-px">youtube, etc</span>
         </div>
       {/if}
     </div>

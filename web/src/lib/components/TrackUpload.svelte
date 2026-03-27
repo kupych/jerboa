@@ -54,7 +54,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="border border-dashed p-3 text-center transition-colors
+  class="border border-dashed p-3 md:py-2 text-center transition-colors
     {isDragging ? 'border-accent bg-accent/5' : 'border-border hover:border-accent/40 hover:bg-accent/[0.02]'}"
   ondragover={(e) => { e.preventDefault(); isDragging = true; }}
   ondragleave={() => (isDragging = false)}
