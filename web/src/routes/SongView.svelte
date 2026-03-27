@@ -107,6 +107,11 @@
   let showChords = $state(true);
   let expandedSection = $state<"notes" | "lyrics" | "tabs" | null>(null);
 
+  // Dynamic section numbers (avoid skipping 02 when no sets)
+  let notesNum = $derived(songSets.length > 0 ? '03' : '02');
+  let lyricsNum = $derived(songSets.length > 0 ? '04' : '03');
+  let tabsNum = $derived(songSets.length > 0 ? '05' : '04');
+
   // BPM / tap tempo
   let bpmInput = $state(0);
   let savingBpm = $state(false);
@@ -213,6 +218,8 @@
     if (!isSetTake) {
       const track = directTracks.find((t) => t.id === trackId);
       if (track) {
+        // Stop local set-take audio first
+        audioEl?.pause();
         globalPlayer.play({
           id: track.id,
           title: track.title,
@@ -233,6 +240,10 @@
     }
 
     // Set takes with time boundaries — use local audio
+    // Pause the global player first
+    const globalAudio = globalPlayer.getAudioElement();
+    if (globalAudio && !globalAudio.paused) globalAudio.pause();
+
     if (playingKey === k) {
       if (audioEl?.paused) {
         audioEl.play();
@@ -385,6 +396,13 @@
   // Keep player store in sync with current audio element
   $effect(() => {
     player.setMediaElement(audioEl);
+  });
+
+  // If the global player starts playing, pause local set-take audio
+  $effect(() => {
+    if ($playerState.playing && audioEl && !audioEl.paused) {
+      audioEl.pause();
+    }
   });
 
   onMount(() => {
@@ -579,7 +597,7 @@
                     >{track.title}</button>
                     {#if track.tags?.length}
                       {#each track.tags as tag}
-                        <span class="label-sm text-accent bg-accent/10 px-1.5 py-0.5">{tag}</span>
+                        <span class="label-sm text-accent border border-accent/30 px-1.5 py-0.5">{tag}</span>
                       {/each}
                     {/if}
                   </div>
@@ -592,9 +610,9 @@
                   {/if}
                 </div>
 
-                <div class="flex items-center gap-3 label-sm text-text-muted shrink-0">
+                <div class="flex items-center gap-3 label-sm text-text-muted font-mono shrink-0">
                   {#if track.status === "ready"}
-                    <span class="font-mono">{formatDuration(track.duration_ms)}</span>
+                    <span>{formatDuration(track.duration_ms)}</span>
                   {/if}
                   <span>{track.uploader?.display_name || track.uploader?.email || ""}</span>
                   <span>{formatRelativeTime(track.created_at)}</span>
@@ -653,7 +671,7 @@
                     <span class="label-sm text-accent bg-accent/10 px-1.5 py-0.5" title={setTypeLabel(take.set_type)}>{setTypeLabel(take.set_type)}</span>
                     {#if take.tags?.length}
                       {#each take.tags as tag}
-                        <span class="label-sm text-accent bg-accent/10 px-1.5 py-0.5">{tag}</span>
+                        <span class="label-sm text-accent border border-accent/30 px-1.5 py-0.5">{tag}</span>
                       {/each}
                     {/if}
                   </div>
@@ -666,8 +684,8 @@
                   </div>
                 </div>
 
-                <div class="flex items-center gap-3 label-sm text-text-muted shrink-0">
-                  <span class="font-mono">{formatDuration(takeDurationMs)}</span>
+                <div class="flex items-center gap-3 label-sm text-text-muted font-mono shrink-0">
+                  <span>{formatDuration(takeDurationMs)}</span>
                   <span>{take.uploader?.display_name || take.uploader?.email || ""}</span>
                   <span>{formatRelativeTime(take.created_at)}</span>
                 </div>
@@ -772,7 +790,7 @@
           class="w-full flex items-center justify-between px-5 py-3 hover:bg-bg-surface/50 transition-colors"
         >
           <div class="flex items-center gap-3">
-            <span class="text-accent/15 font-mono label">03</span>
+            <span class="text-accent/15 font-mono label">{notesNum}</span>
             <span class="label {song.notes ? 'text-text-secondary' : 'text-text-muted'}">notes</span>
             {#if song.notes}
               <span class="label-sm text-text-muted/50">&mdash; {song.notes.split('\n')[0].slice(0, 60)}{song.notes.split('\n')[0].length > 60 ? '...' : ''}</span>
@@ -815,7 +833,7 @@
           class="w-full flex items-center justify-between px-5 py-3 hover:bg-bg-surface/50 transition-colors"
         >
           <div class="flex items-center gap-3">
-            <span class="text-accent/15 font-mono label">04</span>
+            <span class="text-accent/15 font-mono label">{lyricsNum}</span>
             <span class="label {song.lyrics ? 'text-text-secondary' : 'text-text-muted'}">lyrics</span>
             {#if song.lyrics}
               <span class="label-sm text-text-muted/50">&mdash; {song.lyrics.split('\n')[0].slice(0, 60)}{song.lyrics.split('\n')[0].length > 60 ? '...' : ''}</span>
@@ -870,7 +888,7 @@
           class="w-full flex items-center justify-between px-5 py-3 hover:bg-bg-surface/50 transition-colors"
         >
           <div class="flex items-center gap-3">
-            <span class="text-accent/15 font-mono label">05</span>
+            <span class="text-accent/15 font-mono label">{tabsNum}</span>
             <span class="label {song.tabs ? 'text-text-secondary' : 'text-text-muted'}">tabs / chords</span>
             {#if song.tabs}
               <span class="label-sm text-text-muted/50">&mdash; {song.tabs.split('\n')[0].slice(0, 60)}{song.tabs.split('\n')[0].length > 60 ? '...' : ''}</span>

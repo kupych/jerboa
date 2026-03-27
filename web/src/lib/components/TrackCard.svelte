@@ -107,7 +107,7 @@
         {#if track.tags?.length}
           <div class="flex gap-2">
             {#each track.tags as tag}
-              <span class="label-sm text-accent bg-accent/10 px-2 py-0.5">{tag}</span>
+              <span class="label-sm text-accent border border-accent/30 px-2 py-0.5">{tag}</span>
             {/each}
           </div>
         {/if}
