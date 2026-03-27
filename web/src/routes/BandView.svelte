@@ -19,9 +19,16 @@
     role: string;
   }
 
+  interface PendingInvite {
+    id: string;
+    email: string;
+    created_at: string;
+  }
+
   interface BandDetail {
     band: { id: string; name: string; slug: string; color_scheme: string };
     members: BandMember[];
+    pending_invites?: PendingInvite[];
   }
 
   interface Song {
@@ -301,6 +308,12 @@
             {#if member.user.id === $currentUser?.id}
               <span class="text-accent/60 ml-1">you</span>
             {/if}
+          </span>
+        {/each}
+        {#each band.pending_invites ?? [] as invite}
+          <span class="label-sm text-text-muted/40 px-3 py-1.5 border border-dashed border-border/60">
+            {invite.email}
+            <span class="text-text-muted/25 ml-1">invited</span>
           </span>
         {/each}
       </div>

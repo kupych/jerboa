@@ -300,6 +300,29 @@ func (q *Queries) MarkInviteUsed(ctx context.Context, token string, userID uuid.
 	return err
 }
 
+func (q *Queries) GetPendingBandInvites(ctx context.Context, bandID uuid.UUID) ([]models.PendingInvite, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT i.id, i.email, i.created_at
+		FROM band_invites i
+		WHERE i.band_id = $1 AND i.used_by IS NULL AND i.expires_at > now()
+		ORDER BY i.created_at DESC
+	`, bandID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var invites []models.PendingInvite
+	for rows.Next() {
+		var inv models.PendingInvite
+		if err := rows.Scan(&inv.ID, &inv.Email, &inv.CreatedAt); err != nil {
+			return nil, err
+		}
+		invites = append(invites, inv)
+	}
+	return invites, nil
+}
+
 func (q *Queries) HasPendingInvite(ctx context.Context, email string) (bool, error) {
 	var exists bool
 	err := q.pool.QueryRow(ctx, `

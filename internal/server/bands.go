@@ -100,11 +100,13 @@ func (h *BandHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	members, _ := h.queries.GetBandMembers(r.Context(), band.ID)
+	pendingInvites, _ := h.queries.GetPendingBandInvites(r.Context(), band.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"band":    band,
-		"members": members,
+		"band":             band,
+		"members":          members,
+		"pending_invites":  pendingInvites,
 	})
 }
 
