@@ -230,12 +230,12 @@
         onclick={() => showList = !showList}
         class="text-center"
       >
-        {#if totalItems > 0}
-          <div class="text-[10px] font-mono font-semibold tracking-[0.3em] text-text-muted/40 uppercase">
-            {currentIndex + 1} / {totalItems}
-          </div>
-        {/if}
-        <div class="label text-text-primary">{title}</div>
+        <div class="label text-text-primary">
+          {title}
+          {#if totalItems > 0}
+            <span class="text-text-muted/40 font-mono ml-2">{currentIndex + 1}/{totalItems}</span>
+          {/if}
+        </div>
       </button>
 
       <div class="flex items-center gap-3">
@@ -264,15 +264,15 @@
       </div>
     {:else if currentItem}
       <!-- Song title -->
-      <div class="px-6 pt-5 pb-3 shrink-0">
+      <div class="px-6 pt-5 pb-4 shrink-0 border-b border-border/30">
         <h1 class="text-xl md:text-2xl font-display font-bold tracking-wider text-text-primary">{itemName}</h1>
         {#if currentItem.notes}
-          <p class="text-xs font-semibold text-text-muted mt-1">{currentItem.notes}</p>
+          <p class="text-xs font-semibold text-text-muted/50 mt-1">{currentItem.notes}</p>
         {/if}
       </div>
 
       <!-- Lyrics area -->
-      <div id="perform-lyrics" class="flex-1 overflow-y-auto px-6 pb-24 text-base md:text-lg">
+      <div id="perform-lyrics" class="flex-1 overflow-y-auto px-6 pt-4 pb-24 text-base md:text-lg">
         {#if currentItem.lyrics}
           <ChordProLyrics text={currentItem.lyrics} {showChords} />
         {:else}
@@ -297,7 +297,7 @@
         {#if freestyle && currentIndex === totalItems - 1}
           <button
             onclick={openPicker}
-            class="pointer-events-auto label-sm text-accent hover:text-accent-hover transition-colors"
+            class="pointer-events-auto label text-accent hover:text-accent-hover transition-colors px-4 py-3 border border-accent/40 hover:border-accent min-h-[44px] min-w-[44px] flex items-center"
           >+ next song</button>
         {:else}
           <button

@@ -196,7 +196,10 @@
                 </div>
               </button>
             {:else}
-              <div class="px-4 py-6 text-center label-sm text-text-muted">all caught up</div>
+              <div class="px-4 py-8 text-center">
+                <div class="text-2xl mb-2 opacity-30">( _ _ )</div>
+                <div class="label-sm text-text-muted">all caught up</div>
+              </div>
             {/each}
           </div>
         {/if}

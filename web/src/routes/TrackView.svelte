@@ -752,8 +752,8 @@
     <!-- Breadcrumb -->
     <div class="text-[11px] font-mono font-semibold tracking-[0.2em] text-text-muted/30 uppercase select-none flex items-center gap-1.5 mb-8">
       <button onclick={() => navigate(`/band/${slug}`)} class="hover:text-accent/60 transition-colors py-1">{slug.toUpperCase()}</button>
-      <span>/</span>
-      <span class="text-text-muted/50">T:{track.title.replace(/\s+/g, "").toUpperCase()}</span>
+      <span class="text-text-muted/20">&rsaquo;</span>
+      <span class="text-text-muted/50">{track.title.toUpperCase()}</span>
     </div>
 
     <!-- Track info -->
@@ -1386,7 +1386,7 @@
             <button
               type="button"
               onclick={clearTimestamp}
-              class="absolute left-4 top-1/2 -translate-y-1/2 label-sm text-marker bg-marker/10 px-2 py-1 font-mono hover:bg-marker/20 transition-colors"
+              class="absolute left-4 top-1/2 -translate-y-1/2 label-sm text-accent bg-accent/10 px-2 py-1 font-mono hover:bg-accent/20 transition-colors"
             >
               @{Math.floor(commentTimestamp / 1000)}s x
             </button>

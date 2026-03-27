@@ -13,7 +13,7 @@
 
 <div class="min-h-screen flex flex-col">
   <Header onChatToggle={() => (chatOpen = !chatOpen)} {chatOpen} />
-  <main class="flex-1 mx-5 my-6 md:mx-12 md:my-10 pb-8">
+  <main class="flex-1 px-5 my-6 md:px-12 md:my-10 pb-8 w-full max-w-[960px] mx-auto">
     {@render children()}
   </main>
   <div class="px-5 md:px-12 pb-3">

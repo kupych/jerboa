@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { api, apiPost, apiPatch, apiPut, apiDelete } from "../lib/api";
   import { navigate } from "../lib/stores/router";
-  import { formatDuration, setTypeCode } from "../lib/utils/format";
+  import { formatDuration, setTypeCode, setTypeLabel } from "../lib/utils/format";
   import WaveformPlayer from "../lib/components/WaveformPlayer.svelte";
 
   let { slug, setId }: { slug: string; setId: string } = $props();
@@ -431,7 +431,7 @@
           <div>
             <div class="flex items-center gap-3">
               <h2 class="text-2xl font-bold tracking-wider font-display">{set.name}</h2>
-              <span class="label-sm text-accent bg-accent/10 px-2 py-0.5 font-mono">{setTypeCode(set.set_type)}</span>
+              <span class="label-sm text-accent bg-accent/10 px-2 py-0.5 font-mono" title={setTypeLabel(set.set_type)}>{setTypeCode(set.set_type)}</span>
             </div>
             <div class="flex items-center gap-3 mt-3 label-sm text-text-muted">
               {#if set.recorded_at}

@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { marked } from "marked";
-  import { api, apiPatch, apiPost, uploadFile } from "../lib/api";
+  import { api, apiPatch, apiPost } from "../lib/api";
   import { navigate } from "../lib/stores/router";
   import { player } from "../lib/stores/player";
-  import { formatDuration, formatRelativeTime, formatTimestamp, setTypeCode } from "../lib/utils/format";
+  import { formatDuration, formatRelativeTime, formatTimestamp, setTypeCode, setTypeLabel } from "../lib/utils/format";
   import CommentList from "../lib/components/CommentList.svelte";
   import Recorder from "../lib/components/Recorder.svelte";
+  import TrackUpload from "../lib/components/TrackUpload.svelte";
   import ChordProLyrics from "../lib/components/ChordProLyrics.svelte";
 
   marked.setOptions({ breaks: true, gfm: true });
@@ -393,35 +394,6 @@
     songSets = await api<SetSummary[]>(`/api/bands/${slug}/songs/${songId}/sets`);
   }
 
-  // Take upload
-  let takeUploading = $state(false);
-  let takeProgress = $state(0);
-  let takeError = $state("");
-  let takeFileInput = $state<HTMLInputElement | null>(null);
-  let takeDragging = $state(false);
-
-  async function uploadTake(file: File) {
-    takeError = "";
-    takeUploading = true;
-    takeProgress = 0;
-    try {
-      const track = await uploadFile<{ id: string }>(
-        `/api/bands/${slug}/tracks`,
-        file,
-        {},
-        (pct) => (takeProgress = pct),
-      );
-      await apiPatch(`/api/bands/${slug}/tracks/${track.id}/song`, {
-        song_id: songId,
-      });
-      await loadTracks();
-    } catch (e: any) {
-      takeError = e.message || "Upload failed";
-    } finally {
-      takeUploading = false;
-      if (takeFileInput) takeFileInput.value = "";
-    }
-  }
 
   async function saveLyrics() {
     if (!song) return;
@@ -468,8 +440,8 @@
     <!-- Breadcrumb -->
     <div class="text-[11px] font-mono font-semibold tracking-[0.2em] text-text-muted/30 uppercase select-none flex items-center gap-1.5">
       <button onclick={() => navigate(`/band/${slug}`)} class="hover:text-accent/60 transition-colors py-1">{slug.toUpperCase()}</button>
-      <span>/</span>
-      <span class="text-text-muted/50">S:{song.name.replace(/\s+/g, "").toUpperCase()}</span>
+      <span class="text-text-muted/20">&rsaquo;</span>
+      <span class="text-text-muted/50">{song.name.toUpperCase()}</span>
     </div>
 
     <!-- Header -->
@@ -493,8 +465,8 @@
       {/if}
 
       <!-- BPM -->
-      <div class="flex items-center gap-3 mt-4">
-        <span class="label-sm text-text-muted">bpm:</span>
+      <div class="flex items-center gap-2 mt-2">
+        <span class="label-sm text-text-muted/60">bpm</span>
         <input
           type="number"
           min="0"
@@ -502,11 +474,11 @@
           step="1"
           bind:value={bpmInput}
           onchange={saveBpm}
-          class="w-16 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
+          class="w-14 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
         />
         <button
           onclick={handleTap}
-          class="label-sm text-text-muted hover:text-accent transition-colors px-3 py-1 border border-border hover:border-accent"
+          class="label-sm text-text-muted hover:text-accent active:scale-95 transition-all px-2 py-1 border border-border hover:border-accent"
         >tap</button>
         {#if bpmInput > 0 && bpmInput !== song.bpm}
           <button
@@ -522,46 +494,10 @@
       <section>
         <h2 class="label text-text-muted mb-3"><span class="text-accent/15 font-mono mr-2">01</span>takes</h2>
 
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="border border-dashed mb-3 p-4 text-center transition-colors {takeDragging ? 'border-accent bg-accent/5' : 'border-border hover:border-text-muted'}"
-          ondragover={(e) => { e.preventDefault(); takeDragging = true; }}
-          ondragleave={() => (takeDragging = false)}
-          ondrop={(e) => { e.preventDefault(); takeDragging = false; const f = e.dataTransfer?.files[0]; if (f) uploadTake(f); }}
-        >
-          {#if takeUploading}
-            <div class="flex items-center gap-4">
-              <div class="flex-1 bg-bg-primary h-1">
-                <div class="bg-accent h-1 transition-all duration-300" style="width: {takeProgress}%"></div>
-              </div>
-              <span class="label-sm font-mono text-text-muted">{takeProgress}%</span>
-            </div>
-          {:else}
-            <div class="flex items-center justify-center gap-2">
-              <svg class="text-text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/>
-                <line x1="12" y1="3" x2="12" y2="15"/>
-              </svg>
-              <span class="text-sm text-text-muted font-semibold">
-                drop a take or
-                <button onclick={() => takeFileInput?.click()} class="text-accent hover:text-accent-hover underline underline-offset-4">browse</button>
-              </span>
-            </div>
-            <input
-              bind:this={takeFileInput}
-              type="file"
-              accept=".mp3,.wav,.flac,.ogg,.aac,.m4a,.aiff,.aif,.opus"
-              class="hidden"
-              onchange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadTake(f); }}
-            />
-          {/if}
-          {#if takeError}
-            <div class="mt-2 label-sm text-danger">{takeError}</div>
-          {/if}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-1 mb-2">
+          <TrackUpload bandSlug={slug} {songId} onUploaded={loadTracks} />
+          <Recorder bandSlug={slug} {songId} bpm={song?.bpm ?? 0} onRecorded={loadTracks} />
         </div>
-
-        <Recorder bandSlug={slug} {songId} bpm={song?.bpm ?? 0} onRecorded={loadTracks} />
 
         {#if directTracks.length > 0 || setTakes.length > 0}
         <div class="space-y-2">
@@ -674,7 +610,7 @@
                       onclick={() => navigate(`/band/${slug}/set/${take.set_id}`)}
                       class="label-sm text-text-muted bg-bg-primary border border-border px-1.5 py-0.5 hover:text-accent hover:border-accent/40 transition-colors"
                     >{take.set_name}</button>
-                    <span class="label-sm text-accent bg-accent/10 px-1.5 py-0.5 font-mono">{setTypeCode(take.set_type)}</span>
+                    <span class="label-sm text-accent bg-accent/10 px-1.5 py-0.5" title={setTypeLabel(take.set_type)}>{setTypeLabel(take.set_type)}</span>
                     {#if take.tags?.length}
                       {#each take.tags as tag}
                         <span class="label-sm text-accent bg-accent/10 px-1.5 py-0.5">{tag}</span>
@@ -724,7 +660,7 @@
                     class="flex gap-2 p-4 pb-2"
                   >
                     {#if playingKey === take.set_item_id && audioEl}
-                      <span class="label-sm text-marker bg-marker/10 px-2 py-2 font-mono shrink-0">
+                      <span class="label-sm text-accent bg-accent/10 px-2 py-2 font-mono shrink-0">
                         @{formatTimestamp(Math.max(0, Math.round(audioEl.currentTime * 1000) - take.start_ms))}
                       </span>
                     {/if}
@@ -773,7 +709,7 @@
             >
               <div class="flex items-center gap-3 min-w-0">
                 <span class="text-sm font-semibold text-text-primary font-display tracking-wide group-hover:text-accent transition-colors truncate">{s.name}</span>
-                <span class="label-sm text-accent bg-accent/10 px-1.5 py-0.5 shrink-0 font-mono">{setTypeCode(s.set_type)}</span>
+                <span class="label-sm text-accent bg-accent/10 px-1.5 py-0.5 shrink-0 font-mono" title={setTypeLabel(s.set_type)}>{setTypeCode(s.set_type)}</span>
               </div>
               <div class="flex items-center gap-3 label-sm text-text-muted shrink-0">
                 <span>{s.item_count} {s.item_count === 1 ? 'song' : 'songs'}</span>
@@ -797,12 +733,12 @@
         >
           <div class="flex items-center gap-3">
             <span class="text-accent/15 font-mono label">03</span>
-            <span class="label text-text-muted">notes</span>
+            <span class="label {song.notes ? 'text-text-secondary' : 'text-text-muted'}">notes</span>
             {#if song.notes}
               <span class="label-sm text-text-muted/50">&mdash; {song.notes.split('\n')[0].slice(0, 60)}{song.notes.split('\n')[0].length > 60 ? '...' : ''}</span>
             {/if}
           </div>
-          <span class="label-sm text-text-muted/40 transition-transform {expandedSection === 'notes' ? 'rotate-90' : ''}">&rsaquo;</span>
+          <span class="label-sm transition-transform {expandedSection === 'notes' ? 'rotate-90 text-accent' : song.notes ? 'text-text-muted' : 'text-text-muted/30'}">&rsaquo;</span>
         </button>
         {#if editingNotes}
           <div class="px-5 pb-5 border-t border-border/50 pt-4">
@@ -840,12 +776,12 @@
         >
           <div class="flex items-center gap-3">
             <span class="text-accent/15 font-mono label">04</span>
-            <span class="label text-text-muted">lyrics</span>
+            <span class="label {song.lyrics ? 'text-text-secondary' : 'text-text-muted'}">lyrics</span>
             {#if song.lyrics}
               <span class="label-sm text-text-muted/50">&mdash; {song.lyrics.split('\n')[0].slice(0, 60)}{song.lyrics.split('\n')[0].length > 60 ? '...' : ''}</span>
             {/if}
           </div>
-          <span class="label-sm text-text-muted/40 transition-transform {expandedSection === 'lyrics' ? 'rotate-90' : ''}">&rsaquo;</span>
+          <span class="label-sm transition-transform {expandedSection === 'lyrics' ? 'rotate-90 text-accent' : song.lyrics ? 'text-text-muted' : 'text-text-muted/30'}">&rsaquo;</span>
         </button>
         {#if editingLyrics}
           <div class="px-5 pb-5 border-t border-border/50 pt-4">
@@ -895,12 +831,12 @@
         >
           <div class="flex items-center gap-3">
             <span class="text-accent/15 font-mono label">05</span>
-            <span class="label text-text-muted">tabs / chords</span>
+            <span class="label {song.tabs ? 'text-text-secondary' : 'text-text-muted'}">tabs / chords</span>
             {#if song.tabs}
               <span class="label-sm text-text-muted/50">&mdash; {song.tabs.split('\n')[0].slice(0, 60)}{song.tabs.split('\n')[0].length > 60 ? '...' : ''}</span>
             {/if}
           </div>
-          <span class="label-sm text-text-muted/40 transition-transform {expandedSection === 'tabs' ? 'rotate-90' : ''}">&rsaquo;</span>
+          <span class="label-sm transition-transform {expandedSection === 'tabs' ? 'rotate-90 text-accent' : song.tabs ? 'text-text-muted' : 'text-text-muted/30'}">&rsaquo;</span>
         </button>
         {#if editingTabs}
           <div class="px-5 pb-5 border-t border-border/50 pt-4">

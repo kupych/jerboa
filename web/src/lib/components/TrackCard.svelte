@@ -59,7 +59,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="bg-bg-surface border border-border p-6 transition-colors {track.status === 'error' ? '' : 'hover:border-accent/40 cursor-pointer'} group"
+  class="bg-bg-surface border border-border px-4 py-3 transition-colors {track.status === 'error' ? '' : 'hover:border-accent/40 cursor-pointer'} group"
   onclick={open}
 >
   <div class="flex items-start justify-between gap-4">
@@ -105,7 +105,7 @@
     {/if}
   </div>
 
-  <div class="flex items-center gap-3 mt-5 label-sm text-text-muted">
+  <div class="flex items-center gap-3 mt-2 label-sm text-text-muted">
     {#if track.status === "ready"}
       <span class="font-mono">{formatDuration(track.duration_ms)}</span>
       <span class="vr-divider">/</span>
@@ -115,7 +115,7 @@
     <span>{formatFileSize(track.file_size)}</span>
     <span class="vr-divider">/</span>
     <span>{track.uploader?.display_name || track.uploader?.email || "unknown"}</span>
-    {#if track.recorded_at}
+    {#if track.recorded_at && !track.title.includes(track.recorded_at.slice(0, 10))}
       <span class="vr-divider">/</span>
       <span>rec {new Date(track.recorded_at.slice(0, 10) + 'T00:00:00').toLocaleDateString()}</span>
     {/if}

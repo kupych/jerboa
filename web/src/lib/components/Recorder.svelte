@@ -296,7 +296,7 @@
   <button
     onclick={handleRecord}
     disabled={parentLoading}
-    class="border border-dashed border-border hover:border-red-400/50 p-4 text-center transition-colors w-full flex items-center justify-center gap-3 group"
+    class="border border-dashed border-border hover:border-red-400/50 p-3 text-center transition-colors w-full flex items-center justify-center gap-3 group"
   >
     <div class="w-3 h-3 rounded-full bg-red-400/60 group-hover:bg-red-400 transition-colors"></div>
     <span class="text-sm text-text-muted font-semibold group-hover:text-red-400 transition-colors">
@@ -304,11 +304,11 @@
     </span>
   </button>
 {:else if recState === "warming"}
-  <div class="border border-dashed border-border p-4 text-center">
+  <div class="border border-dashed border-border p-3 text-center">
     <span class="text-sm text-text-muted font-semibold">warming up mic...</span>
   </div>
 {:else if recState === "counting"}
-  <div class="border border-amber-400/40 bg-amber-400/5 p-4 text-center">
+  <div class="border border-amber-400/40 bg-amber-400/5 p-3 text-center">
     <div class="flex items-center justify-center gap-4">
       <div class="flex items-center gap-2">
         {#each [1, 2, 3, 4] as beat}
@@ -319,7 +319,7 @@
     </div>
   </div>
 {:else if recState === "recording"}
-  <div class="border border-red-400/40 bg-red-400/5 p-4 text-center">
+  <div class="border border-red-400/40 bg-red-400/5 p-3 text-center">
     <div class="flex items-center justify-center gap-4">
       <div class="flex items-center gap-2">
         <div class="w-3 h-3 rounded-full bg-red-400 animate-pulse"></div>

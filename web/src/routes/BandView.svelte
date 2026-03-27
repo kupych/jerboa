@@ -10,7 +10,7 @@
   import TrackCard from "../lib/components/TrackCard.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
   import Recorder from "../lib/components/Recorder.svelte";
-  import { setTypeCode } from "../lib/utils/format";
+  import { setTypeCode, setTypeLabel } from "../lib/utils/format";
 
   let { slug }: { slug: string } = $props();
 
@@ -263,81 +263,74 @@
 {:else if band}
   <div>
     <!-- Band header -->
-    <div class="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8 md:mb-10">
-      <div>
+    <div class="mb-2">
+      <div class="flex items-center gap-3 mb-1">
         <h2 class="text-xl md:text-2xl font-bold tracking-wider font-display">{band.band.name}</h2>
-        <div class="flex items-center gap-2 md:gap-3 mt-3 md:mt-4 flex-wrap">
-          {#each band.members as member}
-            <span class="label-sm text-text-muted px-3 py-1.5 bg-bg-surface border border-border">
-              {member.user.display_name || member.user.email}
-              {#if member.role === "admin"}
-                <span class="text-accent">*</span>
-              {/if}
-            </span>
-          {/each}
+        <div class="flex items-center gap-1">
+          <button
+            onclick={() => (showInviteForm = !showInviteForm)}
+            class="w-7 h-7 flex items-center justify-center text-text-muted/40 hover:text-accent transition-colors"
+            title="Invite member"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="8.5" cy="7" r="4"/>
+              <line x1="20" y1="8" x2="20" y2="14"/>
+              <line x1="23" y1="11" x2="17" y2="11"/>
+            </svg>
+          </button>
+          {#if isAdmin}
+            <button
+              onclick={() => { showSettings = !showSettings; if (showSettings && band) editBandName = band.band.name; }}
+              class="w-7 h-7 flex items-center justify-center transition-colors {showSettings ? 'text-accent' : 'text-text-muted/40 hover:text-accent'}"
+              title="Band settings"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
+          {/if}
         </div>
       </div>
 
-      <div class="grid grid-cols-5 sm:flex sm:items-center gap-1 sm:gap-4 w-full sm:w-auto">
+      <div class="flex items-center gap-2 md:gap-3 flex-wrap mb-2">
+        {#each band.members as member}
+          <span class="label-sm text-text-muted px-3 py-1.5 bg-bg-surface border border-border">
+            {member.user.display_name || member.user.email}
+            {#if member.user.id === $currentUser?.id}
+              <span class="text-accent/60 ml-1">you</span>
+            {/if}
+          </span>
+        {/each}
+      </div>
+
+      <div class="grid grid-cols-2 sm:flex sm:items-center gap-1 sm:gap-2">
         <button
           onclick={() => navigate(`/band/${slug}/car`)}
-          class="label-sm sm:label text-text-muted hover:text-accent transition-colors flex items-center justify-center sm:justify-start gap-1.5 py-2 sm:py-0 bg-bg-surface sm:bg-transparent border border-border sm:border-0"
+          class="label-sm sm:label text-bg-primary bg-accent hover:bg-accent-hover transition-colors flex items-center justify-center gap-1.5 py-2.5 sm:py-1.5 px-3 sm:px-4 border border-accent"
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg class="-translate-y-px" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polygon points="5,3 19,12 5,21"/>
           </svg>
           play all
         </button>
         <button
           onclick={() => navigate(`/band/${slug}/perform`)}
-          class="label-sm sm:label text-text-muted hover:text-accent transition-colors flex items-center justify-center sm:justify-start gap-1.5 py-2 sm:py-0 bg-bg-surface sm:bg-transparent border border-border sm:border-0"
+          class="label-sm sm:label text-accent hover:bg-accent/10 transition-colors flex items-center justify-center gap-1.5 py-2.5 sm:py-1.5 px-3 sm:px-4 border border-accent/40 hover:border-accent"
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg class="-translate-y-px" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M9 18V5l12-2v13"/>
             <circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
           </svg>
           perform
         </button>
-        <button
-          onclick={() => (showImport = !showImport)}
-          class="label-sm sm:label text-text-muted hover:text-accent transition-colors flex items-center justify-center sm:justify-start gap-1.5 py-2 sm:py-0 bg-bg-surface sm:bg-transparent border border-border sm:border-0"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-          </svg>
-          import
-        </button>
-        <button
-          onclick={() => (showInviteForm = !showInviteForm)}
-          class="label-sm sm:label text-text-muted hover:text-accent transition-colors flex items-center justify-center sm:justify-start gap-1.5 py-2 sm:py-0 bg-bg-surface sm:bg-transparent border border-border sm:border-0"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-            <circle cx="8.5" cy="7" r="4"/>
-            <line x1="20" y1="8" x2="20" y2="14"/>
-            <line x1="23" y1="11" x2="17" y2="11"/>
-          </svg>
-          invite
-        </button>
-        {#if isAdmin}
-          <button
-            onclick={() => { showSettings = !showSettings; if (showSettings && band) editBandName = band.band.name; }}
-            class="label-sm sm:label transition-colors flex items-center justify-center sm:justify-start gap-1.5 py-2 sm:py-0 bg-bg-surface sm:bg-transparent border border-border sm:border-0 {showSettings ? 'text-accent' : 'text-text-muted hover:text-accent'}"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-            settings
-          </button>
-        {/if}
       </div>
     </div>
 
     <!-- Invite URL -->
     {#if showInviteUrl}
-      <div class="mb-8 bg-bg-surface border border-accent/30 p-4 flex items-center gap-3">
+      <div class="mb-4 bg-bg-surface border border-accent/30 p-3 flex items-center gap-3">
         <input
           type="text"
           value={showInviteUrl}
@@ -363,7 +356,7 @@
     {#if showInviteForm}
       <form
         onsubmit={(e) => { e.preventDefault(); generateInvite(); }}
-        class="mb-8 bg-bg-surface border border-border p-4 md:p-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
+        class="mb-4 bg-bg-surface border border-border p-3 md:p-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
       >
         <input
           bind:value={inviteEmail}
@@ -390,7 +383,7 @@
 
     <!-- Settings panel -->
     {#if showSettings && isAdmin && band}
-      <div class="mb-8 bg-bg-surface border border-border p-4 md:p-6 space-y-5">
+      <div class="mb-4 bg-bg-surface border border-border p-3 md:p-4 space-y-4">
         <div>
           <span class="label-sm md:label text-text-muted block mb-2">band name</span>
           <form onsubmit={(e) => { e.preventDefault(); updateBandName(); }} class="flex gap-2">
@@ -415,10 +408,14 @@
             {#each Object.entries(colorSchemes) as [key, scheme]}
               <button
                 onclick={() => setColorScheme(key)}
-                class="w-7 h-7 md:w-8 md:h-8 border-2 transition-all {band.band.color_scheme === key ? 'border-text-primary scale-110' : 'border-transparent hover:border-text-muted/30'}"
+                class="w-7 h-7 md:w-8 md:h-8 border-2 transition-all flex items-center justify-center {band.band.color_scheme === key ? 'border-text-primary scale-110 ring-2 ring-text-primary/30' : 'border-transparent hover:border-text-muted/30'}"
                 style="background: {scheme.accent}"
                 title={scheme.name}
-              ></button>
+              >
+                {#if band.band.color_scheme === key}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                {/if}
+              </button>
             {/each}
           </div>
         </div>
@@ -427,13 +424,13 @@
           <span class="label-sm md:label text-text-muted block mb-2">members</span>
           <div class="space-y-1.5">
             {#each band.members as member}
-              <div class="flex items-center justify-between gap-2 py-1.5 px-3 bg-bg-primary border border-border">
+              <div class="group/member flex items-center justify-between gap-2 py-1.5 px-3 bg-bg-primary border border-border">
                 <div class="flex items-center gap-2 min-w-0">
                   <span class="label-sm text-text-primary truncate">{member.user.display_name || member.user.email}</span>
                   <span class="label-sm text-text-muted shrink-0">{member.role}</span>
                 </div>
                 {#if member.user.id !== $currentUser?.id}
-                  <div class="flex items-center gap-2 shrink-0">
+                  <div class="flex items-center gap-2 shrink-0 opacity-0 group-hover/member:opacity-100 transition-opacity">
                     <button
                       onclick={() => toggleRole(member)}
                       class="label-sm text-text-muted hover:text-accent transition-colors hidden sm:block"
@@ -442,7 +439,7 @@
                     </button>
                     <button
                       onclick={() => removeMember(member.user.id)}
-                      class="label-sm text-red-400 hover:text-red-300 transition-colors"
+                      class="label-sm text-red-400/70 hover:text-red-300 transition-colors text-[10px]"
                     >
                       remove
                     </button>
@@ -478,57 +475,64 @@
       </div>
     {/if}
 
-    <!-- YouTube Import -->
-    {#if showImport}
-      <form
-        onsubmit={(e) => { e.preventDefault(); importFromUrl(); }}
-        class="mb-8 bg-bg-surface border border-border p-6 space-y-4"
-      >
-        <div>
-          <span class="label text-text-muted block mb-2">youtube url</span>
-          <input
-            bind:value={importUrl}
-            type="url"
-            placeholder="https://www.youtube.com/watch?v=..."
-            class="w-full bg-bg-primary border border-border px-4 py-3 text-base text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-          />
-        </div>
-        <div>
-          <span class="label text-text-muted block mb-2">title (optional, auto-detected)</span>
-          <input
-            bind:value={importTitle}
-            type="text"
-            placeholder="Leave blank to use video title"
-            class="w-full bg-bg-primary border border-border px-4 py-3 text-base text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-          />
-        </div>
-        <div class="flex gap-4">
-          <button
-            type="submit"
-            disabled={importing || !importUrl.trim()}
-            class="px-6 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors"
-          >
-            {importing ? "importing..." : "import"}
-          </button>
-          <button
-            type="button"
-            onclick={() => (showImport = false)}
-            class="px-6 py-3 label text-text-muted hover:text-text-secondary transition-colors"
-          >
-            cancel
-          </button>
-        </div>
-      </form>
-    {/if}
-
-    <!-- Upload & Record -->
-    <div class="mb-8 space-y-2">
+    <!-- Add tracks: Upload / Record / Import -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-1 mb-4">
       <TrackUpload bandSlug={slug} onUploaded={loadTracks} />
       <Recorder bandSlug={slug} onRecorded={loadTracks} />
+
+      <!-- Import URL -->
+      {#if showImport}
+        <form
+          onsubmit={(e) => { e.preventDefault(); importFromUrl(); }}
+          class="border border-accent/40 bg-accent/5 p-3 md:col-span-3"
+        >
+          <div class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] gap-2 items-end">
+            <input
+              bind:value={importUrl}
+              type="url"
+              placeholder="youtube url..."
+              class="w-full bg-bg-primary border border-border px-4 py-2.5 text-sm text-text-primary font-semibold placeholder:text-text-muted/40 focus:outline-none focus:border-accent transition-colors"
+            />
+            <input
+              bind:value={importTitle}
+              type="text"
+              placeholder="title (optional)"
+              class="w-full bg-bg-primary border border-border px-4 py-2.5 text-sm text-text-primary font-semibold placeholder:text-text-muted/40 focus:outline-none focus:border-accent transition-colors"
+            />
+            <button
+              type="submit"
+              disabled={importing || !importUrl.trim()}
+              class="px-4 py-2.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors"
+            >
+              {importing ? "..." : "import"}
+            </button>
+            <button
+              type="button"
+              onclick={() => (showImport = false)}
+              class="px-4 py-2.5 label-sm text-text-muted hover:text-text-secondary transition-colors"
+            >
+              cancel
+            </button>
+          </div>
+        </form>
+      {:else}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="border border-dashed border-border hover:border-accent/40 hover:bg-accent/[0.02] p-3 text-center transition-colors cursor-pointer flex items-center justify-center gap-2"
+          onclick={() => (showImport = true)}
+        >
+          <svg class="text-text-muted" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          <span class="text-sm text-text-muted font-semibold">import url</span>
+          <span class="label-sm text-text-muted/30 font-mono hidden md:inline ml-1">youtube, soundcloud, etc</span>
+        </div>
+      {/if}
     </div>
 
     <!-- Tab toggle -->
-    <div class="flex items-center gap-6 mb-6">
+    <div class="flex items-center gap-6 mb-2">
       <button
         onclick={() => (viewTab = "songs")}
         class="label transition-colors {viewTab === 'songs' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
@@ -545,7 +549,7 @@
             type="text"
             placeholder="+ new song"
             disabled={creatingSong}
-            class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40"
+            class="bg-transparent border border-accent/30 px-3 py-1 label-sm text-text-secondary placeholder:text-accent/70 focus:outline-none focus:border-accent transition-colors w-40"
           />
         </form>
       {:else}
@@ -572,40 +576,45 @@
 
     {#if viewTab === "songs"}
       {#if songs.length > 0}
-        <div class="space-y-2 mb-10">
+        <div class="space-y-1 mb-4">
           {#each songs as song}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="bg-bg-surface border border-border p-5 hover:border-accent/40 transition-colors cursor-pointer group flex items-center justify-between"
+              class="bg-bg-surface border border-border border-l-2 border-l-transparent hover:border-l-accent hover:border-accent/40 px-4 py-3 transition-all cursor-pointer group flex items-center justify-between"
               onclick={() => navigate(`/band/${slug}/song/${song.id}`)}
             >
-              <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors">{song.name}</h4>
-              <span class="label-sm text-text-muted">{song.take_count} {song.take_count === 1 ? 'take' : 'takes'}</span>
+              <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-white transition-colors">{song.name}</h4>
+              <div class="flex items-center gap-3">
+                <span class="label-sm text-text-muted group-hover:text-accent transition-colors">{song.take_count} {song.take_count === 1 ? 'take' : 'takes'}</span>
+                <span class="label-sm text-text-muted/0 group-hover:text-accent transition-colors">&rsaquo;</span>
+              </div>
             </div>
           {/each}
         </div>
       {:else if tracks.length === 0}
-        <div class="text-center py-20 label text-text-muted mb-10">
+        <div class="text-center py-12 label text-text-muted mb-4">
           no songs yet
         </div>
       {/if}
     {:else}
       {#if sets.length > 0}
-        <div class="space-y-2 mb-10">
+        <div class="space-y-1 mb-4">
           {#each sets as set}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="bg-bg-surface border border-border p-5 hover:border-accent/40 transition-colors cursor-pointer group flex items-center justify-between"
+              class="bg-bg-surface border border-border px-4 py-3 hover:border-accent/40 transition-colors cursor-pointer group flex items-center justify-between"
               onclick={() => navigate(`/band/${slug}/set/${set.id}`)}
             >
               <div class="flex items-center gap-3 min-w-0">
                 <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors truncate">{set.name}</h4>
-                <span class="label-sm text-accent bg-accent/10 px-2 py-0.5 shrink-0 font-mono">{setTypeCode(set.set_type)}</span>
+                <span class="label-sm text-accent bg-accent/10 px-2 py-0.5 shrink-0" title={setTypeLabel(set.set_type)}>{setTypeLabel(set.set_type)}</span>
               </div>
-              <div class="flex items-center gap-4 label-sm text-text-muted shrink-0">
-                <span>{set.item_count} {set.item_count === 1 ? 'song' : 'songs'}</span>
+              <div class="flex items-center gap-4 label-sm text-text-muted/60 shrink-0">
+                {#if set.item_count > 0}
+                  <span>{set.item_count} {set.item_count === 1 ? 'song' : 'songs'}</span>
+                {/if}
                 {#if set.recorded_at}
                   <span>{new Date(set.recorded_at.slice(0, 10) + 'T00:00:00').toLocaleDateString()}</span>
                 {/if}
@@ -614,7 +623,7 @@
           {/each}
         </div>
       {:else}
-        <div class="text-center py-20 label text-text-muted mb-10">
+        <div class="text-center py-12 label text-text-muted mb-4">
           no sets yet
         </div>
       {/if}
@@ -622,9 +631,9 @@
 
     <!-- Ungrouped tracks -->
     {#if ungroupedTracks.length > 0}
-      <div>
-        <h3 class="label text-text-muted mb-4">unassigned takes</h3>
-        <div class="space-y-3">
+      <div class="mt-6 pt-4 border-t border-border/30">
+        <h3 class="label text-text-muted/50 mb-2">unassigned takes</h3>
+        <div class="space-y-1">
           {#each ungroupedTracks as track}
             <TrackCard {track} bandSlug={slug} onDelete={loadTracks} />
           {/each}
