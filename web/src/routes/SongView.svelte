@@ -8,6 +8,7 @@
   import CommentList from "../lib/components/CommentList.svelte";
   import Recorder from "../lib/components/Recorder.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
+  import { globalPlayer, playerState } from "../lib/stores/globalPlayer";
   import ChordProLyrics from "../lib/components/ChordProLyrics.svelte";
 
   marked.setOptions({ breaks: true, gfm: true });
@@ -206,6 +207,32 @@
 
   function togglePlay(trackId: string, key?: string, startMs?: number, endMs?: number) {
     const k = key || trackId;
+    const isSetTake = startMs != null && startMs > 0;
+
+    // For simple direct tracks, use the persistent global player
+    if (!isSetTake) {
+      const track = directTracks.find((t) => t.id === trackId);
+      if (track) {
+        globalPlayer.play({
+          id: track.id,
+          title: track.title,
+          bandSlug: slug,
+          songName: song?.name,
+          durationMs: track.duration_ms,
+        });
+        // Keep local state in sync for UI
+        if (playingKey === k) {
+          playingKey = null;
+          playingTrackId = null;
+        } else {
+          playingKey = k;
+          playingTrackId = trackId;
+        }
+        return;
+      }
+    }
+
+    // Set takes with time boundaries — use local audio
     if (playingKey === k) {
       if (audioEl?.paused) {
         audioEl.play();
@@ -474,7 +501,8 @@
           step="1"
           bind:value={bpmInput}
           onchange={saveBpm}
-          class="w-14 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
+          placeholder="--"
+          class="w-14 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right placeholder:text-text-muted/40 focus:outline-none focus:border-accent transition-colors {bpmInput === 0 ? 'text-text-muted/40' : ''}"
         />
         <button
           onclick={handleTap}
@@ -506,21 +534,33 @@
             <div class="bg-bg-surface border border-border">
               <div class="flex items-center gap-4 p-4">
                 {#if track.status === "ready"}
-                  <button
-                    onclick={() => togglePlay(track.id)}
-                    class="w-8 h-8 flex items-center justify-center text-text-muted hover:text-accent transition-colors shrink-0"
-                  >
-                    {#if playingKey === track.id && audioEl && !audioEl.paused}
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <rect x="6" y="4" width="4" height="16"/>
-                        <rect x="14" y="4" width="4" height="16"/>
+                  <div class="flex items-center shrink-0">
+                    <button
+                      onclick={() => togglePlay(track.id)}
+                      class="w-8 h-8 flex items-center justify-center text-text-muted hover:text-accent transition-colors"
+                    >
+                      {#if $playerState.track?.id === track.id && $playerState.playing}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                          <rect x="6" y="4" width="4" height="16"/>
+                          <rect x="14" y="4" width="4" height="16"/>
+                        </svg>
+                      {:else}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                          <polygon points="5,3 19,12 5,21"/>
+                        </svg>
+                      {/if}
+                    </button>
+                    <button
+                      onclick={() => globalPlayer.enqueue({ id: track.id, title: track.title, bandSlug: slug, songName: song?.name })}
+                      class="w-6 h-6 flex items-center justify-center text-text-muted/0 hover:text-accent transition-colors"
+                      title="Add to queue"
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19"/>
+                        <line x1="5" y1="12" x2="19" y2="12"/>
                       </svg>
-                    {:else}
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <polygon points="5,3 19,12 5,21"/>
-                      </svg>
-                    {/if}
-                  </button>
+                    </button>
+                  </div>
                 {:else}
                   <div class="w-8 h-8 flex items-center justify-center shrink-0">
                     {#if track.status === "processing"}
@@ -724,7 +764,7 @@
     {/if}
 
     <!-- Notes / Lyrics / Tabs — collapsible -->
-    <div class="border-t border-border/30 pt-6 space-y-0">
+    <div class="border-t border-accent/10 pt-8 space-y-0">
       <!-- Notes -->
       <section class="border border-border">
         <button

@@ -163,6 +163,28 @@ func (q *Queries) GetBandBySlug(ctx context.Context, slug string) (*models.Band,
 	return &b, err
 }
 
+func (q *Queries) ListAllBandsWithRole(ctx context.Context) ([]models.BandWithRole, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT b.id, b.name, b.slug, b.created_by, b.color_scheme, b.created_at, 'admin'
+		FROM bands b
+		ORDER BY b.name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var bands []models.BandWithRole
+	for rows.Next() {
+		var b models.BandWithRole
+		if err := rows.Scan(&b.ID, &b.Name, &b.Slug, &b.CreatedBy, &b.ColorScheme, &b.CreatedAt, &b.Role); err != nil {
+			return nil, err
+		}
+		bands = append(bands, b)
+	}
+	return bands, nil
+}
+
 func (q *Queries) ListUserBands(ctx context.Context, userID uuid.UUID) ([]models.BandWithRole, error) {
 	rows, err := q.pool.Query(ctx, `
 		SELECT b.id, b.name, b.slug, b.created_by, b.color_scheme, b.created_at, bm.role

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"jerboa/internal/db"
 	"jerboa/internal/models"
 )
@@ -16,6 +17,19 @@ const userCtxKey ctxKey = "user"
 func UserFrom(ctx context.Context) *models.User {
 	u, _ := ctx.Value(userCtxKey).(*models.User)
 	return u
+}
+
+// CheckBandAccess checks membership or superadmin status.
+// Returns (isMember bool, role string). Superadmins get "admin" role.
+func CheckBandAccess(q *db.Queries, ctx context.Context, bandID, userID uuid.UUID, isAdmin bool) (bool, string) {
+	if isAdmin {
+		return true, "admin"
+	}
+	ok, role, err := q.IsBandMember(ctx, bandID, userID)
+	if err != nil {
+		return false, ""
+	}
+	return ok, role
 }
 
 func AuthMiddleware(q *db.Queries) func(http.Handler) http.Handler {

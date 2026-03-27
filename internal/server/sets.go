@@ -29,8 +29,8 @@ func (h *SetHandler) verifyBandAccess(r *http.Request) (*models.Band, error) {
 		return nil, err
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		return nil, err
 	}
 

@@ -43,9 +43,8 @@
       progressColor: getComputedStyle(document.documentElement)
         .getPropertyValue("--color-waveform-progress")
         .trim(),
-      cursorColor: getComputedStyle(document.documentElement)
-        .getPropertyValue("--color-accent")
-        .trim(),
+      cursorColor: "#ffffff",
+      cursorWidth: 2,
       barWidth: 2,
       barGap: 1,
       barRadius: 0,
@@ -186,7 +185,7 @@
   <div class="flex items-center gap-5 mb-5">
     <button
       onclick={togglePlay}
-      class="w-10 h-10 flex items-center justify-center bg-accent hover:bg-accent-hover text-bg-primary transition-colors rounded-md"
+      class="w-10 h-10 flex items-center justify-center bg-accent hover:bg-accent-hover text-bg-primary transition-colors"
     >
       {#if isPlaying}
         <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">

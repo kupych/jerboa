@@ -48,8 +48,8 @@ func (h *ImportHandler) ImportURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -145,8 +145,8 @@ func (h *ImportHandler) RetryImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}

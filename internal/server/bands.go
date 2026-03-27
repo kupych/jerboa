@@ -34,7 +34,13 @@ func slugify(s string) string {
 
 func (h *BandHandler) List(w http.ResponseWriter, r *http.Request) {
 	user := UserFrom(r.Context())
-	bands, err := h.queries.ListUserBands(r.Context(), user.ID)
+	var bands []models.BandWithRole
+	var err error
+	if user.IsAdmin {
+		bands, err = h.queries.ListAllBandsWithRole(r.Context())
+	} else {
+		bands, err = h.queries.ListUserBands(r.Context(), user.ID)
+	}
 	if err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
@@ -93,8 +99,8 @@ func (h *BandHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -120,8 +126,8 @@ func (h *BandHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || role != "admin" {
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if role != "admin" {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
@@ -178,8 +184,8 @@ func (h *BandHandler) UpdateBand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || role != "admin" {
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if role != "admin" {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
@@ -240,8 +246,8 @@ func (h *BandHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || role != "admin" {
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if role != "admin" {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
@@ -276,8 +282,8 @@ func (h *BandHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || role != "admin" {
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if role != "admin" {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
@@ -318,8 +324,8 @@ func (h *BandHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || role != "admin" {
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if role != "admin" {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}

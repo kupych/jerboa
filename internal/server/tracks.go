@@ -45,8 +45,8 @@ func (h *TrackHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -74,8 +74,8 @@ func (h *TrackHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -185,8 +185,8 @@ func (h *TrackHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -220,8 +220,8 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -274,8 +274,8 @@ func (h *TrackHandler) UpdateMeta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -345,8 +345,8 @@ func (h *TrackHandler) UpdateTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -394,11 +394,7 @@ func (h *TrackHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil {
-		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
-		return
-	}
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
 
 	track, err := h.queries.GetTrack(r.Context(), trackID)
 	if err != nil || track == nil || track.BandID != band.ID {
@@ -510,8 +506,8 @@ func (h *TrackHandler) verifyTrackAccess(r *http.Request) (*models.Track, error)
 		return nil, err
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		return nil, err
 	}
 

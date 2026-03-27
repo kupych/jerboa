@@ -311,9 +311,9 @@
           </span>
         {/each}
         {#each band.pending_invites ?? [] as invite}
-          <span class="label-sm text-text-muted/40 px-3 py-1.5 border border-dashed border-border/60">
+          <span class="label-sm text-text-muted/60 px-3 py-1.5 border border-dashed border-border/40">
             {invite.email}
-            <span class="text-text-muted/25 ml-1">invited</span>
+            <span class="text-text-muted/35 ml-1">invited</span>
           </span>
         {/each}
       </div>
@@ -343,7 +343,7 @@
 
     <!-- Invite URL -->
     {#if showInviteUrl}
-      <div class="mb-4 bg-bg-surface border border-accent/30 p-3 flex items-center gap-3">
+      <div class="mb-4 bg-bg-surface border border-accent/30 p-3 flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity">
         <input
           type="text"
           value={showInviteUrl}
@@ -562,7 +562,7 @@
             type="text"
             placeholder="+ new song"
             disabled={creatingSong}
-            class="bg-transparent border border-accent/30 px-3 py-1 label-sm text-text-secondary placeholder:text-accent/70 focus:outline-none focus:border-accent transition-colors w-40"
+            class="bg-transparent border border-accent/30 px-3 py-1 label-sm text-text-secondary placeholder:text-accent/70 focus:outline-none focus:border-accent focus:bg-accent/[0.03] transition-colors w-40"
           />
         </form>
       {:else}
@@ -597,7 +597,7 @@
               class="bg-bg-surface border border-border border-l-2 border-l-transparent hover:border-l-accent hover:border-accent/40 px-4 py-3 transition-all cursor-pointer group flex items-center justify-between"
               onclick={() => navigate(`/band/${slug}/song/${song.id}`)}
             >
-              <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-white transition-colors">{song.name}</h4>
+              <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors">{song.name}</h4>
               <div class="flex items-center gap-3">
                 <span class="label-sm text-text-muted group-hover:text-accent transition-colors">{song.take_count} {song.take_count === 1 ? 'take' : 'takes'}</span>
                 <span class="label-sm text-text-muted/0 group-hover:text-accent transition-colors">&rsaquo;</span>

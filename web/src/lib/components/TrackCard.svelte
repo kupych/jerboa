@@ -2,6 +2,7 @@
   import { navigate } from "../stores/router";
   import { apiPost, apiDelete } from "../api";
   import { formatDuration, formatRelativeTime, formatFileSize } from "../utils/format";
+  import { globalPlayer, playerState } from "../stores/globalPlayer";
 
   let { track, bandSlug, onRetry, onDelete }: {
     track: {
@@ -63,6 +64,41 @@
   onclick={open}
 >
   <div class="flex items-start justify-between gap-4">
+    {#if track.status === "ready"}
+      <div class="flex items-center shrink-0 mt-0.5">
+        <button
+          onclick={(e) => {
+            e.stopPropagation();
+            globalPlayer.play({ id: track.id, title: track.title, bandSlug });
+          }}
+          class="w-8 h-8 flex items-center justify-center text-text-muted hover:text-accent transition-colors"
+        >
+          {#if $playerState.track?.id === track.id && $playerState.playing}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="4" width="4" height="16"/>
+              <rect x="14" y="4" width="4" height="16"/>
+            </svg>
+          {:else}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5,3 19,12 5,21"/>
+            </svg>
+          {/if}
+        </button>
+        <button
+          onclick={(e) => {
+            e.stopPropagation();
+            globalPlayer.enqueue({ id: track.id, title: track.title, bandSlug });
+          }}
+          class="w-6 h-6 flex items-center justify-center text-text-muted/0 group-hover:text-text-muted/40 hover:!text-accent transition-colors"
+          title="Add to queue"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+      </div>
+    {/if}
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-3">
         <h3 class="text-base font-semibold tracking-wider text-text-primary truncate group-hover:text-accent transition-colors font-display">

@@ -154,10 +154,7 @@ func (h *CommentHandler) verifyTrackAccess(r *http.Request, trackID uuid.UUID) e
 	if track == nil {
 		return errForbidden
 	}
-	isMember, _, err := h.queries.IsBandMember(r.Context(), track.BandID, user.ID)
-	if err != nil {
-		return err
-	}
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), track.BandID, user.ID, user.IsAdmin)
 	if !isMember {
 		return errForbidden
 	}

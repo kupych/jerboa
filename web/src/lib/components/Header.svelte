@@ -79,7 +79,7 @@
   <div class="fixed inset-0 z-40" onclick={() => (notifOpen = false)}></div>
 {/if}
 
-<header class="border-b border-border bg-bg-secondary">
+<header class="border-b border-border bg-bg-secondary" style="box-shadow: 0 1px 0 0 rgba(6, 182, 212, 0.08);">
   <nav class="flex items-center justify-between h-14 md:h-20 mx-4 md:mx-12">
     <div class="flex items-center gap-3 md:gap-4 min-w-0">
       <button
@@ -103,7 +103,7 @@
             </svg>
           </button>
           {#if bandMenuOpen}
-            <div class="absolute top-full left-0 mt-2 bg-bg-elevated border border-border z-50 min-w-[200px] py-1">
+            <div class="absolute top-full left-0 mt-2 bg-bg-elevated border border-border z-50 min-w-[200px] py-1 animate-dropdown">
               {#each $bands as band}
                 <button
                   onclick={() => switchBand(band.slug)}
@@ -149,7 +149,7 @@
         </div>
       {/if}
 
-      <span class="hidden lg:inline text-[9px] font-mono font-semibold tracking-[0.15em] text-text-muted/20 select-none mt-0.5">SYS·AUD·01</span>
+      <span class="hidden lg:inline text-[9px] font-mono font-semibold tracking-[0.15em] text-text-muted/30 select-none mt-0.5">SYS·AUD·01</span>
     </div>
 
     <div class="flex items-center gap-4 md:gap-5">
@@ -182,7 +182,7 @@
           {/if}
         </button>
         {#if notifOpen}
-          <div class="absolute top-full right-0 mt-2 bg-bg-elevated border border-border z-50 min-w-[280px] max-w-[340px] max-h-[400px] overflow-y-auto py-1">
+          <div class="absolute top-full right-0 mt-2 bg-bg-elevated border border-border z-50 min-w-[280px] max-w-[340px] max-h-[400px] overflow-y-auto py-1 animate-dropdown">
             {#each $activityFeed as item}
               <button
                 onclick={() => activityClick(item)}

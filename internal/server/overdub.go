@@ -46,8 +46,8 @@ func (h *OverdubHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -81,8 +81,8 @@ func (h *OverdubHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -197,8 +197,8 @@ func (h *OverdubHandler) UpdateOffset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -235,8 +235,8 @@ func (h *OverdubHandler) Vote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || !isMember {
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
@@ -281,8 +281,8 @@ func (h *OverdubHandler) Bounce(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || role != "admin" {
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if role != "admin" {
 		http.Error(w, `{"error":"admin only"}`, http.StatusForbidden)
 		return
 	}
@@ -556,8 +556,8 @@ func (h *OverdubHandler) RestoreOriginal(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || role != "admin" {
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if role != "admin" {
 		http.Error(w, `{"error":"admin only"}`, http.StatusForbidden)
 		return
 	}
@@ -642,8 +642,8 @@ func (h *OverdubHandler) PurgeBounceVersions(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || role != "admin" {
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if role != "admin" {
 		http.Error(w, `{"error":"admin only"}`, http.StatusForbidden)
 		return
 	}
@@ -685,8 +685,8 @@ func (h *OverdubHandler) Scrub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, role, err := h.queries.IsBandMember(r.Context(), band.ID, user.ID)
-	if err != nil || role != "admin" {
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if role != "admin" {
 		http.Error(w, `{"error":"admin only"}`, http.StatusForbidden)
 		return
 	}

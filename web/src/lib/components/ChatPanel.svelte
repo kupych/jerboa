@@ -95,7 +95,7 @@
 
 <!-- Panel -->
 <div
-  class="fixed top-0 right-0 h-full w-80 max-w-[85vw] bg-bg-secondary border-l border-border z-50 flex flex-col transition-transform duration-200 ease-out {open ? 'translate-x-0' : 'translate-x-full'}"
+  class="fixed top-0 right-0 h-full w-80 max-w-[85vw] bg-bg-secondary border-l border-border z-50 flex flex-col transition-transform {open ? 'translate-x-0 duration-200 ease-out' : 'translate-x-full duration-150 ease-in'}"
 >
   <!-- Header -->
   <div class="flex items-center justify-between px-5 h-16 border-b border-border shrink-0">
@@ -152,7 +152,7 @@
         <button
           onclick={send}
           disabled={sending || !input.trim()}
-          class="px-3 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors"
+          class="px-3 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors border border-accent"
         >go</button>
       </div>
     </div>

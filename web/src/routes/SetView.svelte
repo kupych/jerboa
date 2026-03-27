@@ -364,8 +364,8 @@
     <!-- Breadcrumb -->
     <div class="text-[11px] font-mono font-semibold tracking-[0.2em] text-text-muted/30 uppercase select-none flex items-center gap-1.5 mb-8">
       <button onclick={() => navigate(`/band/${slug}`)} class="hover:text-accent/60 transition-colors py-1">{slug.toUpperCase()}</button>
-      <span>/</span>
-      <span class="text-text-muted/50">SET:{set.name.replace(/\s+/g, "").toUpperCase()}</span>
+      <span class="text-text-muted/20">&rsaquo;</span>
+      <span class="text-text-muted/50">{set.name.toUpperCase()}</span>
     </div>
 
     <!-- Set header -->
@@ -430,7 +430,7 @@
         <div class="flex items-start justify-between">
           <div>
             <div class="flex items-center gap-3">
-              <h2 class="text-2xl font-bold tracking-wider font-display">{set.name}</h2>
+              <h1 class="text-2xl font-bold tracking-wider font-display">{set.name}</h1>
               <span class="label-sm text-accent bg-accent/10 px-2 py-0.5 font-mono" title={setTypeLabel(set.set_type)}>{setTypeCode(set.set_type)}</span>
             </div>
             <div class="flex items-center gap-3 mt-3 label-sm text-text-muted">
@@ -500,21 +500,25 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="bg-bg-surface border p-4 flex items-center gap-4 group transition-colors {tagging && taggingItemIndex === index ? 'border-accent bg-accent/5' : 'border-border'}"
+              class="bg-bg-surface border p-3 flex items-center gap-4 group transition-colors {tagging && taggingItemIndex === index ? 'border-accent bg-accent/5' : 'border-border'}"
               onclick={() => { if (tagging) selectTaggingItem(index); }}
             >
               <!-- Position & reorder -->
-              <div class="flex flex-col gap-1 shrink-0">
+              <div class="flex flex-col shrink-0">
                 <button
                   onclick={(e) => { e.stopPropagation(); moveItem(index, index - 1); }}
                   disabled={index === 0}
-                  class="label-sm text-text-muted hover:text-accent disabled:opacity-20 transition-colors"
-                >&uarr;</button>
+                  class="text-text-muted hover:text-accent disabled:opacity-20 transition-colors p-0.5"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="18 15 12 9 6 15"/></svg>
+                </button>
                 <button
                   onclick={(e) => { e.stopPropagation(); moveItem(index, index + 1); }}
                   disabled={index === set.items.length - 1}
-                  class="label-sm text-text-muted hover:text-accent disabled:opacity-20 transition-colors"
-                >&darr;</button>
+                  class="text-text-muted hover:text-accent disabled:opacity-20 transition-colors p-0.5"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
               </div>
 
               <!-- Number -->
