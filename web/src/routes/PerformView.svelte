@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { api, apiPost } from "../lib/api";
+  import { api, apiPost, apiPatch, apiPut } from "../lib/api";
   import { navigate } from "../lib/stores/router";
   import ChordProLyrics from "../lib/components/ChordProLyrics.svelte";
+  import PerformRecorder from "../lib/components/PerformRecorder.svelte";
+  import type { SongMarker } from "../lib/components/PerformRecorder.svelte";
 
   let { slug, setId = undefined }: { slug: string; setId?: string } = $props();
 
@@ -49,6 +51,14 @@
   let currentIndex = $state(0);
   let showChords = $state(true);
   let showList = $state(false);
+
+  // Recording
+  let recorder = $state<PerformRecorder | undefined>(undefined);
+  let isRec = $state(false);
+  let recordedTrackId: string | null = null;
+  let recordedMarkers: SongMarker[] = [];
+  let recordedDurationMs = 0;
+  let savingRecording = $state(false);
 
   let items = $derived(freestyle ? playedItems : (data?.items ?? []));
   let currentItem = $derived(items[currentIndex] ?? null);
@@ -103,12 +113,29 @@
       exit();
     } else if (e.key === "c") {
       showChords = !showChords;
+    } else if (e.key === "r") {
+      toggleRecording();
     }
+  }
+
+  // Helper: display name of item at a given index (for recording markers)
+  function itemNameAt(index: number): string {
+    const item = items[index];
+    if (!item) return "";
+    return item.song_name || item.custom_name || `Song ${item.position + 1}`;
+  }
+
+  // Helper: song_id of item at index (only available in freestyle where allSongs is loaded)
+  function itemSongId(index: number): string | undefined {
+    const item = items[index];
+    if (!item || !item.song_name) return undefined;
+    return allSongs.find((s) => s.name === item.song_name)?.id;
   }
 
   function next() {
     if (currentIndex < totalItems - 1) {
       currentIndex++;
+      recorder?.markSong(currentIndex, itemNameAt(currentIndex), itemSongId(currentIndex));
       scrollTop();
     } else if (freestyle) {
       openPicker();
@@ -118,12 +145,14 @@
   function prev() {
     if (currentIndex > 0) {
       currentIndex--;
+      recorder?.markSong(currentIndex, itemNameAt(currentIndex), itemSongId(currentIndex));
       scrollTop();
     }
   }
 
   function goTo(index: number) {
     currentIndex = index;
+    recorder?.markSong(currentIndex, itemNameAt(currentIndex), itemSongId(currentIndex));
     showList = false;
     scrollTop();
   }
@@ -132,7 +161,12 @@
     document.getElementById("perform-lyrics")?.scrollTo(0, 0);
   }
 
-  function exit() {
+  async function exit() {
+    if (recorder?.isRecording()) {
+      recorder.stopRecording();
+      // Give the upload a moment to start before navigating
+      await new Promise((r) => setTimeout(r, 300));
+    }
     if (setId) {
       navigate(`/band/${slug}/set/${setId}`);
     } else {
@@ -158,7 +192,79 @@
     ];
     currentIndex = playedItems.length - 1;
     showPicker = false;
+    recorder?.markSong(currentIndex, song.name, song.id);
     scrollTop();
+  }
+
+  // Build timestamp map from markers: position -> { startMs, endMs }
+  // First occurrence of each position wins (handles revisited songs)
+  function markersToTimestamps(markers: SongMarker[], durationMs: number): Map<number, { startMs: number; endMs: number }> {
+    const seen = new Map<number, { startMs: number; endMs: number }>();
+    for (let i = 0; i < markers.length; i++) {
+      const m = markers[i];
+      if (!seen.has(m.index)) {
+        const endMs = i + 1 < markers.length ? markers[i + 1].startMs : durationMs;
+        seen.set(m.index, { startMs: m.startMs, endMs });
+      }
+    }
+    return seen;
+  }
+
+  function handleRecordingStopped({ trackId, markers: m, durationMs }: { trackId: string; markers: SongMarker[]; durationMs: number }) {
+    recordedTrackId = trackId;
+    recordedMarkers = m;
+    recordedDurationMs = durationMs;
+    isRec = false;
+
+    // Set mode: immediately assign track + timestamps to existing set
+    if (setId) {
+      saveRecordingToSet(setId, trackId, m, durationMs);
+    }
+  }
+
+  async function saveRecordingToSet(sid: string, trackId: string, markers: SongMarker[], durationMs: number) {
+    savingRecording = true;
+    try {
+      // 1. Assign track to set
+      await apiPatch(`/api/bands/${slug}/tracks/${trackId}/set`, { set_id: sid });
+
+      // 2. Fetch current set items (need song_ids and positions)
+      interface SetDetail { items: Array<{ position: number; song_id?: string; custom_name: string; notes: string; start_ms?: number; end_ms?: number }> }
+      const setDetail = await api<SetDetail>(`/api/bands/${slug}/sets/${sid}`);
+      const timestamps = markersToTimestamps(markers, durationMs);
+
+      // 3. Merge timestamps into items
+      const updatedItems = setDetail.items.map((item) => {
+        const ts = timestamps.get(item.position);
+        return {
+          song_id: item.song_id || null,
+          custom_name: item.custom_name || "",
+          notes: item.notes || "",
+          start_ms: ts?.startMs ?? item.start_ms ?? null,
+          end_ms: ts?.endMs ?? item.end_ms ?? null,
+        };
+      });
+
+      await apiPut(`/api/bands/${slug}/sets/${sid}/items`, { items: updatedItems });
+    } catch {
+      // Non-fatal: track is uploaded, just couldn't write timestamps
+    } finally {
+      savingRecording = false;
+    }
+  }
+
+  async function toggleRecording() {
+    if (!recorder) return;
+    if (recorder.isRecording()) {
+      recorder.stopRecording();
+    } else {
+      isRec = true;
+      await recorder.startRecording();
+      // Mark the currently visible song as the first marker
+      if (currentItem) {
+        recorder.markSong(currentIndex, itemNameAt(currentIndex), itemSongId(currentIndex));
+      }
+    }
   }
 
   async function saveAsSet() {
@@ -179,6 +285,25 @@
           };
         }),
       });
+
+      // If a recording exists, assign it and write timestamps
+      if (recordedTrackId) {
+        const timestamps = markersToTimestamps(recordedMarkers, recordedDurationMs);
+        await apiPatch(`/api/bands/${slug}/tracks/${recordedTrackId}/set`, { set_id: set.id });
+        const itemsWithTs = playedItems.map((item, i) => {
+          const song = allSongs.find((s) => s.name === item.song_name);
+          const ts = timestamps.get(i);
+          return {
+            song_id: song?.id || null,
+            custom_name: song ? "" : item.song_name,
+            notes: "",
+            start_ms: ts?.startMs ?? null,
+            end_ms: ts?.endMs ?? null,
+          };
+        });
+        await apiPut(`/api/bands/${slug}/sets/${set.id}/items`, { items: itemsWithTs });
+      }
+
       navigate(`/band/${slug}/set/${set.id}`);
     } finally {
       saving = false;
@@ -250,8 +375,25 @@
           onclick={() => showChords = !showChords}
           class="label-sm transition-colors {showChords ? 'text-accent' : 'text-text-muted/40 hover:text-text-muted'}"
         >chords</button>
+        <button
+          onclick={toggleRecording}
+          class="label-sm transition-colors flex items-center gap-1.5 {isRec ? 'text-red-400' : 'text-text-muted/40 hover:text-text-muted'}"
+          title="{isRec ? 'stop recording' : 'start recording'} (r)"
+        >
+          <span class="w-1.5 h-1.5 rounded-full {isRec ? 'bg-red-400 animate-pulse' : 'bg-current'}"></span>
+          rec
+        </button>
+        {#if savingRecording}
+          <span class="label-sm text-text-muted/40 animate-pulse">saving...</span>
+        {/if}
       </div>
     </div>
+
+    <PerformRecorder
+      bind:this={recorder}
+      bandSlug={slug}
+      onStopped={handleRecordingStopped}
+    />
 
     {#if totalItems === 0 && !showPicker}
       <!-- Freestyle: no songs picked yet -->

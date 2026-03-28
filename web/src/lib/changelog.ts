@@ -6,6 +6,20 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "0.11.0",
+    date: "2026-03-27",
+    summary: [
+      "Persistent global player — play and queue tracks from anywhere, playback continues across pages",
+      "Play and enqueue buttons on every track card",
+      "Added recording and track tagging to Perform mode, to save those sweet sweet jams",
+      "Collapsible player bar with queue management, shuffle, loop modes",
+      "New car mode (Play All): it really whips the llama's ass",
+      "Pending invites now shown in band roster",
+      "Song view: takes section redesigned with inline playback",
+      "Desktop layout and spacing improvements across BandView",
+    ],
+  },
+  {
     version: "0.10.0",
     date: "2026-03-26",
     summary: [
