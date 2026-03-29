@@ -3,8 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -229,6 +232,43 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	track, err := h.queries.GetTrack(r.Context(), trackID)
 	if err != nil || track == nil || track.BandID != band.ID {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// Section download: extract a time range via ffmpeg and send as WAV
+	startParam := r.URL.Query().Get("start_ms")
+	endParam := r.URL.Query().Get("end_ms")
+	if startParam != "" && endParam != "" && r.URL.Query().Get("dl") == "1" {
+		startMs, err1 := strconv.ParseInt(startParam, 10, 64)
+		endMs, err2 := strconv.ParseInt(endParam, 10, 64)
+		if err1 != nil || err2 != nil || endMs <= startMs {
+			http.Error(w, `{"error":"invalid start_ms/end_ms"}`, http.StatusBadRequest)
+			return
+		}
+		startSec := float64(startMs) / 1000.0
+		durSec := float64(endMs-startMs) / 1000.0
+
+		dlTitle := r.URL.Query().Get("title")
+		if dlTitle == "" {
+			dlTitle = track.Title
+		}
+		filename := fmt.Sprintf("%s.wav", dlTitle)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		w.Header().Set("Content-Type", "audio/wav")
+
+		cmd := exec.CommandContext(r.Context(), "ffmpeg",
+			"-ss", fmt.Sprintf("%.3f", startSec),
+			"-t", fmt.Sprintf("%.3f", durSec),
+			"-i", track.FilePath,
+			"-ac", "2",
+			"-ar", "48000",
+			"-f", "wav",
+			"pipe:1",
+		)
+		cmd.Stdout = w
+		if err := cmd.Run(); err != nil {
+			slog.Error("section download: ffmpeg", "error", err, "track", trackID)
+		}
 		return
 	}
 

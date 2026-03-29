@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -538,6 +539,223 @@ func (h *OverdubHandler) doBounceToNew(parent, overdub *models.Track, band *mode
 		Type:    "activity.update",
 		Payload: map[string]string{"band_id": band.ID.String()},
 	})
+}
+
+// BounceMix bounces the parent track together with multiple selected overdubs.
+func (h *OverdubHandler) BounceMix(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	trackID, err := uuid.Parse(chi.URLParam(r, "trackID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid track id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if role != "admin" {
+		http.Error(w, `{"error":"admin only"}`, http.StatusForbidden)
+		return
+	}
+
+	parent, err := h.queries.GetTrack(r.Context(), trackID)
+	if err != nil || parent == nil || parent.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		OverdubIDs []uuid.UUID `json:"overdub_ids"`
+		ToNewTrack bool        `json:"to_new_track"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+	if len(req.OverdubIDs) == 0 {
+		http.Error(w, `{"error":"no overdubs selected"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Fetch all selected overdubs and verify they belong to this parent
+	var overdubs []*models.Track
+	for _, oid := range req.OverdubIDs {
+		od, err := h.queries.GetTrack(r.Context(), oid)
+		if err != nil || od == nil || od.OverdubOf == nil || *od.OverdubOf != trackID {
+			http.Error(w, fmt.Sprintf(`{"error":"overdub %s not found"}`, oid), http.StatusNotFound)
+			return
+		}
+		overdubs = append(overdubs, od)
+	}
+
+	go h.doBounceMix(parent, overdubs, band, user, req.ToNewTrack)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "bouncing"})
+}
+
+func (h *OverdubHandler) doBounceMix(parent *models.Track, overdubs []*models.Track, band *models.Band, user *models.User, toNew bool) {
+	ctx := context.Background()
+
+	tmpDir, err := os.MkdirTemp("", "bounce-mix-*")
+	if err != nil {
+		slog.Error("bounce-mix: create temp dir", "error", err)
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	outPath := filepath.Join(tmpDir, "bounced.wav")
+
+	// Build ffmpeg args: -i parent -i od1 -i od2 ... -filter_complex "..."
+	// Normalize offsets: if any overdub has a negative offset, shift the parent forward.
+	var minOffset int64
+	for _, od := range overdubs {
+		if od.OffsetMS < minOffset {
+			minOffset = od.OffsetMS
+		}
+	}
+	parentDelay := int64(0)
+	if minOffset < 0 {
+		parentDelay = -minOffset
+	}
+
+	args := []string{"-i", parent.FilePath}
+	for _, od := range overdubs {
+		args = append(args, "-i", od.FilePath)
+	}
+
+	// Build filter: apply adelay to any input that needs it, then amix all.
+	// Input 0 = parent, inputs 1..N = overdubs.
+	numInputs := 1 + len(overdubs)
+	var filterParts []string
+	var mixLabels []string
+
+	// Parent
+	if parentDelay > 0 {
+		filterParts = append(filterParts, fmt.Sprintf("[0]adelay=%d|%d[p]", parentDelay, parentDelay))
+		mixLabels = append(mixLabels, "[p]")
+	} else {
+		mixLabels = append(mixLabels, "[0]")
+	}
+
+	// Overdubs
+	for i, od := range overdubs {
+		ffIdx := i + 1
+		delay := parentDelay + od.OffsetMS
+		if delay > 0 {
+			label := fmt.Sprintf("[d%d]", i)
+			filterParts = append(filterParts, fmt.Sprintf("[%d]adelay=%d|%d%s", ffIdx, delay, delay, label))
+			mixLabels = append(mixLabels, label)
+		} else {
+			mixLabels = append(mixLabels, fmt.Sprintf("[%d]", ffIdx))
+		}
+	}
+
+	mixFilter := strings.Join(mixLabels, "") + fmt.Sprintf("amix=inputs=%d:duration=longest:normalize=0", numInputs)
+	filterParts = append(filterParts, mixFilter)
+	filter := strings.Join(filterParts, ";")
+
+	slog.Info("bounce-mix: ffmpeg filter", "inputs", numInputs, "filter", filter)
+
+	args = append(args, "-filter_complex", filter, "-ac", "2", "-ar", "48000", "-y", outPath)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	output, err := cmd.CombinedOutput()
+	slog.Info("bounce-mix: ffmpeg done", "exit_err", err, "output", string(output))
+	if err != nil {
+		return
+	}
+
+	storedPath, fileSize, err := h.store.Import(band.ID, "bounced.wav", outPath)
+	if err != nil {
+		slog.Error("bounce-mix: import", "error", err)
+		return
+	}
+
+	if toNew {
+		// Create as a new independent track
+		newTrack := &models.Track{
+			BandID:     band.ID,
+			Title:      parent.Title + " (mix)",
+			UploadedBy: user.ID,
+			FilePath:   storedPath,
+			FileSize:   fileSize,
+			Status:     "processing",
+		}
+		if parent.SongID != nil {
+			newTrack.SongID = parent.SongID
+		}
+		if err := h.queries.CreateTrack(ctx, newTrack); err != nil {
+			h.store.Delete(storedPath)
+			slog.Error("bounce-mix: create track", "error", err)
+			return
+		}
+
+		// Mark all selected overdubs as bounced
+		for _, od := range overdubs {
+			h.queries.UpdateBouncedTo(ctx, od.ID, &newTrack.ID)
+		}
+
+		meta, err := h.processor.Probe(ctx, storedPath)
+		if err != nil {
+			slog.Error("bounce-mix: probe", "error", err)
+			h.queries.UpdateTrackError(ctx, newTrack.ID)
+			return
+		}
+		peaks, err := h.processor.GeneratePeaks(ctx, storedPath)
+		if err != nil {
+			slog.Error("bounce-mix: peaks", "error", err)
+			h.queries.UpdateTrackError(ctx, newTrack.ID)
+			return
+		}
+		h.queries.UpdateTrackProcessed(ctx, newTrack.ID, peaks, meta.DurationMS, meta.Format, meta.SampleRate)
+		slog.Info("bounce-mix: complete (new track)", "parent_id", parent.ID, "new_id", newTrack.ID)
+		h.hub.Broadcast("band:"+band.ID.String(), WSMessage{Type: "track.ready", Payload: map[string]any{"track_id": newTrack.ID}})
+	} else {
+		// In-place: snapshot original, replace parent file, mark overdubs bounced
+		existingOriginal := h.queries.GetPreBounceID(ctx, parent.ID)
+		if existingOriginal == nil {
+			snapshot := &models.Track{
+				BandID:     band.ID,
+				Title:      parent.Title + " (original)",
+				UploadedBy: parent.UploadedBy,
+				FilePath:   parent.FilePath,
+				FileSize:   parent.FileSize,
+				Status:     "ready",
+			}
+			if err := h.queries.CreateTrack(ctx, snapshot); err == nil {
+				h.queries.UpdateTrackProcessed(ctx, snapshot.ID, parent.WaveformData, parent.DurationMS, parent.Format, parent.SampleRate)
+				h.queries.UpdateBouncedTo(ctx, snapshot.ID, &parent.ID)
+			}
+		}
+
+		h.queries.UpdateTrackFile(ctx, parent.ID, storedPath, fileSize)
+		for _, od := range overdubs {
+			h.queries.UpdateBouncedTo(ctx, od.ID, &parent.ID)
+		}
+
+		meta, err := h.processor.Probe(ctx, storedPath)
+		if err != nil {
+			slog.Error("bounce-mix: probe", "error", err)
+			h.queries.UpdateTrackError(ctx, parent.ID)
+			return
+		}
+		peaks, err := h.processor.GeneratePeaks(ctx, storedPath)
+		if err != nil {
+			slog.Error("bounce-mix: peaks", "error", err)
+			h.queries.UpdateTrackError(ctx, parent.ID)
+			return
+		}
+		h.queries.UpdateTrackProcessed(ctx, parent.ID, peaks, meta.DurationMS, meta.Format, meta.SampleRate)
+		slog.Info("bounce-mix: complete (in-place)", "parent_id", parent.ID)
+	}
+
+	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{Type: "track.ready", Payload: map[string]any{"track_id": parent.ID}})
+	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{Type: "activity.update", Payload: map[string]string{"band_id": band.ID.String()}})
 }
 
 // RestoreOriginal rolls back a track to its pre-bounce original state.

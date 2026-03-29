@@ -339,7 +339,7 @@ func (h *AuthHandler) VerifyMagicLink(w http.ResponseWriter, r *http.Request) {
 	})
 
 	slog.Info("magic link login", "email", linkEmail)
-	http.Redirect(w, r, h.baseURL, http.StatusFound)
+	http.Redirect(w, r, h.baseURL+"/auth/open", http.StatusFound)
 }
 
 func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {

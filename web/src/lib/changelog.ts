@@ -6,6 +6,16 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "0.12.0",
+    date: "2026-03-29",
+    summary: [
+      "Multi-track mixer! Record overdubs and play them back with mute/solo/gain controls — great for vocal harmony practice ;)",
+      "Selective bounce: bounce only unmuted tracks to a new track or in-place",
+      "Song view: download individual takes from set recordings with proper song names in the filename",
+      "Unfucked magic link for PWA"
+    ],
+  },
+  {
     version: "0.11.0",
     date: "2026-03-27",
     summary: [

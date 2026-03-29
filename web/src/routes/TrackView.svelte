@@ -6,6 +6,7 @@
   import WaveformPlayer from "../lib/components/WaveformPlayer.svelte";
   import CommentList from "../lib/components/CommentList.svelte";
   import Recorder from "../lib/components/Recorder.svelte";
+  import MultiTrackMixer, { type MixerTrack } from "../lib/components/MultiTrackMixer.svelte";
 
   let { slug, trackId }: { slug: string; trackId: string } = $props();
 
@@ -105,7 +106,6 @@
   let voting = $state(false);
   let bouncing = $state(false);
   let scrubbing = $state(false);
-  let confirmDeleteOd = $state<string | null>(null);
   let deletingOd = $state(false);
   let punchInMs = $state(0);
   let showOverdubUpload = $state(false);
@@ -114,15 +114,31 @@
   let uploadingOverdub = $state(false);
   let playerRef: any;
 
-  let previewingId = $state<string | null>(null);
-  let previewLoading = $state(false);
-  let previewCtx: AudioContext | null = null;
-  let previewSources: AudioBufferSourceNode[] = [];
-  let previewTimeout: ReturnType<typeof setTimeout> | null = null;
-  let parentGain: GainNode | null = null;
-  let overdubGain: GainNode | null = null;
-  let parentVol = $state(1);
-  let overdubVol = $state(1);
+  let mixerTracks = $derived<MixerTrack[]>(
+    track
+      ? [
+          {
+            id: track.id,
+            title: track.title,
+            duration_ms: track.duration_ms,
+            offset_ms: 0,
+            isParent: true,
+            streamUrl: `/api/bands/${slug}/tracks/${trackId}/stream`,
+          },
+          ...overdubs.map((od) => ({
+            id: od.id,
+            title: od.title,
+            duration_ms: od.duration_ms,
+            offset_ms: od.offset_ms,
+            isParent: false,
+            streamUrl: `/api/bands/${slug}/tracks/${od.id}/stream`,
+            uploader: od.uploader,
+            vote_count: od.vote_count,
+            user_voted: od.user_voted,
+          })),
+        ]
+      : []
+  );
   let highlight = $state(false);
   let isAdmin = $derived(
     members.some((m) => m.user.id === $currentUser?.id && m.role === "admin")
@@ -402,7 +418,7 @@
     deletingOd = true;
     try {
       await apiDelete(`/api/bands/${slug}/tracks/${overdubId}`);
-      confirmDeleteOd = null;
+
       await loadOverdubs();
     } finally {
       deletingOd = false;
@@ -427,6 +443,28 @@
     });
     const od = overdubs.find((o) => o.id === overdubId);
     if (od) od.offset_ms = offsetMs;
+  }
+
+  async function renameTrack(id: string, title: string) {
+    await apiPatch(`/api/bands/${slug}/tracks/${id}/meta`, { title });
+    if (id === trackId && track) {
+      track.title = title;
+    } else {
+      const od = overdubs.find((o) => o.id === id);
+      if (od) od.title = title;
+    }
+  }
+
+  async function bounceMix(overdubIds: string[], toNew: boolean) {
+    bouncing = true;
+    try {
+      await apiPost(`/api/bands/${slug}/tracks/${trackId}/overdubs/bounce-mix`, {
+        overdub_ids: overdubIds,
+        to_new_track: toNew,
+      });
+    } finally {
+      bouncing = false;
+    }
   }
 
   async function scrubOverdubs(keepId?: string) {
@@ -473,86 +511,6 @@
     } finally {
       uploadingOverdub = false;
     }
-  }
-
-  // Cache decoded buffers so re-previewing with different offset is instant
-  let previewBuffers: { parentBuf: AudioBuffer; overdubBuf: AudioBuffer; overdubId: string } | null = null;
-
-  async function previewOverdub(od: Overdub) {
-    stopPreview();
-    previewLoading = true;
-    previewingId = od.id;
-    try {
-      previewCtx = new AudioContext();
-
-      // Reuse cached buffers if same overdub
-      let parentBuf: AudioBuffer, overdubBuf: AudioBuffer;
-      if (previewBuffers && previewBuffers.overdubId === od.id) {
-        parentBuf = previewBuffers.parentBuf;
-        overdubBuf = previewBuffers.overdubBuf;
-      } else {
-        [parentBuf, overdubBuf] = await Promise.all([
-          fetch(streamUrl).then((r) => r.arrayBuffer()).then((b) => previewCtx!.decodeAudioData(b)),
-          fetch(`/api/bands/${slug}/tracks/${od.id}/stream`).then((r) => r.arrayBuffer()).then((b) => previewCtx!.decodeAudioData(b)),
-        ]);
-        previewBuffers = { parentBuf, overdubBuf, overdubId: od.id };
-      }
-
-      const parentSrc = previewCtx.createBufferSource();
-      parentSrc.buffer = parentBuf;
-      parentGain = previewCtx.createGain();
-      parentGain.gain.value = parentVol;
-      parentSrc.connect(parentGain);
-      parentGain.connect(previewCtx.destination);
-
-      const overdubSrc = previewCtx.createBufferSource();
-      overdubSrc.buffer = overdubBuf;
-      overdubGain = previewCtx.createGain();
-      overdubGain.gain.value = overdubVol;
-      overdubSrc.connect(overdubGain);
-      overdubGain.connect(previewCtx.destination);
-
-      previewSources = [parentSrc, overdubSrc];
-      const offsetSec = od.offset_ms / 1000;
-
-      if (offsetSec >= 0) {
-        // Positive: delay the overdub
-        parentSrc.start(0);
-        overdubSrc.start(previewCtx.currentTime + offsetSec);
-      } else {
-        // Negative: delay the parent
-        parentSrc.start(previewCtx.currentTime + Math.abs(offsetSec));
-        overdubSrc.start(0);
-      }
-
-      // Auto-stop when the longer one ends
-      const maxDur = Math.max(parentBuf.duration + Math.max(0, -offsetSec), overdubBuf.duration + Math.max(0, offsetSec));
-      previewTimeout = setTimeout(() => {
-        if (previewingId === od.id) stopPreview();
-      }, maxDur * 1000 + 200);
-    } catch {
-      stopPreview();
-    } finally {
-      previewLoading = false;
-    }
-  }
-
-  function stopPreview() {
-    if (previewTimeout) {
-      clearTimeout(previewTimeout);
-      previewTimeout = null;
-    }
-    for (const src of previewSources) {
-      try { src.stop(); } catch {}
-    }
-    previewSources = [];
-    parentGain = null;
-    overdubGain = null;
-    if (previewCtx) {
-      previewCtx.close();
-      previewCtx = null;
-    }
-    previewingId = null;
   }
 
   // @mention autocomplete
@@ -1208,162 +1166,27 @@
           </div>
         {/if}
 
-        {#if previewingId}
-          <div class="flex items-center gap-4 mb-4 bg-bg-surface border border-border p-3">
-            <span class="label-sm text-text-muted shrink-0">mix</span>
-            <span class="label-sm text-text-muted shrink-0">track</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={parentVol}
-              oninput={(e) => {
-                parentVol = parseFloat((e.target as HTMLInputElement).value);
-                if (parentGain) parentGain.gain.value = parentVol;
-              }}
-              class="flex-1 h-1 accent-accent cursor-pointer"
-            />
-            <span class="label-sm font-mono text-text-muted w-8">{Math.round(parentVol * 100)}%</span>
-            <span class="label-sm text-text-muted shrink-0">overdub</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={overdubVol}
-              oninput={(e) => {
-                overdubVol = parseFloat((e.target as HTMLInputElement).value);
-                if (overdubGain) overdubGain.gain.value = overdubVol;
-              }}
-              class="flex-1 h-1 accent-accent cursor-pointer"
-            />
-            <span class="label-sm font-mono text-text-muted w-8">{Math.round(overdubVol * 100)}%</span>
-          </div>
-        {/if}
-
         {#if overdubs.length > 0}
-          <div class="space-y-3">
-            {#each overdubs as od}
-              {@const offsetPct = track.duration_ms > 0 ? (od.offset_ms / track.duration_ms) * 100 : 0}
-              {@const widthPct = track.duration_ms > 0 ? (od.duration_ms / track.duration_ms) * 100 : 100}
-              <div class="bg-bg-surface border border-border p-4">
-                <div class="flex items-center justify-between gap-4 mb-3">
-                  <div class="flex items-center gap-3 min-w-0">
-                    <span class="text-sm font-semibold text-text-primary font-display tracking-wide truncate">{od.title}</span>
-                    <span class="label-sm text-text-muted">{od.uploader?.display_name || od.uploader?.email}</span>
-                    {#if od.offset_ms > 0}
-                      <span class="label-sm text-text-muted font-mono">+{formatDuration(od.offset_ms)}</span>
-                    {/if}
-                  </div>
-                  <div class="flex items-center gap-3 shrink-0">
-                    <span class="label-sm font-mono text-text-muted">{formatDuration(od.duration_ms)}</span>
-                    {#if previewingId === od.id}
-                      <button
-                        onclick={stopPreview}
-                        class="label-sm text-red-400 hover:text-red-500 transition-colors"
-                      >stop</button>
-                    {:else}
-                      <button
-                        onclick={() => previewOverdub(od)}
-                        disabled={previewLoading}
-                        class="label-sm text-accent hover:text-accent-hover transition-colors"
-                      >{previewLoading && previewingId === od.id ? "..." : "preview"}</button>
-                    {/if}
-                    <a
-                      href={`/api/bands/${slug}/tracks/${od.id}/stream?dl=1`}
-                      class="label-sm text-accent hover:text-accent-hover transition-colors"
-                    >dl</a>
-                  </div>
-                </div>
+          <MultiTrackMixer
+            tracks={mixerTracks}
+            {isAdmin}
+            bandSlug={slug}
+            parentTrackId={trackId}
+            onOffsetChange={(id, ms) => adjustOffset(id, ms)}
+            onRename={(id, title) => renameTrack(id, title)}
+            onDelete={(id) => deleteOverdub(id)}
+            onVote={(id) => voteOverdub(id)}
+            onBounceMix={(ids, toNew) => bounceMix(ids, toNew)}
+            onRefresh={() => loadOverdubs()}
+          />
 
-                <!-- Offset-aligned mini waveform indicator -->
-                <div class="relative h-2 bg-bg-primary mb-3">
-                  <div
-                    class="absolute top-0 h-full bg-accent/30"
-                    style="left: {offsetPct}%; width: {Math.min(widthPct, 100 - offsetPct)}%"
-                  ></div>
-                </div>
-
-                <!-- Offset adjustment -->
-                <div class="flex items-center gap-3 mb-3">
-                  <span class="label-sm text-text-muted shrink-0">offset</span>
-                  <input
-                    type="number"
-                    step="10"
-                    value={od.offset_ms}
-                    onchange={(e) => {
-                      const val = parseInt((e.target as HTMLInputElement).value);
-                      if (!isNaN(val)) {
-                        const o = overdubs.find((x) => x.id === od.id);
-                        if (o) o.offset_ms = val;
-                        adjustOffset(od.id, val);
-                        if (previewingId === od.id) previewOverdub(od);
-                      }
-                    }}
-                    class="w-20 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
-                  />
-                  <span class="label-sm text-text-muted">ms</span>
-                </div>
-
-                <!-- Vote + admin controls -->
-                <div class="flex items-center gap-4 flex-wrap">
-                  <button
-                    onclick={() => voteOverdub(od.user_voted ? null : od.id)}
-                    disabled={voting}
-                    class="label-sm transition-colors flex items-center gap-1.5 {od.user_voted ? 'text-accent' : 'text-text-muted hover:text-accent'}"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill={od.user_voted ? "currentColor" : "none"} stroke="currentColor" stroke-width="2">
-                      <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
-                      <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
-                    </svg>
-                    {od.vote_count}
-                  </button>
-
-                  {#if isAdmin}
-                    <button
-                      onclick={() => bounceOverdub(od.id, true)}
-                      disabled={bouncing}
-                      class="label-sm text-text-muted hover:text-accent transition-colors"
-                    >{bouncing ? "bouncing..." : "bounce to new"}</button>
-                    <button
-                      onclick={() => bounceOverdub(od.id)}
-                      disabled={bouncing}
-                      class="label-sm text-text-muted hover:text-accent transition-colors"
-                    >bounce in-place</button>
-                  {/if}
-
-                  {#if confirmDeleteOd === od.id}
-                    <span class="flex items-center gap-2">
-                      <span class="label-sm text-danger">delete?</span>
-                      <button
-                        onclick={() => deleteOverdub(od.id)}
-                        disabled={deletingOd}
-                        class="label-sm text-danger hover:text-red-300 transition-colors"
-                      >{deletingOd ? "..." : "yes"}</button>
-                      <button
-                        onclick={() => (confirmDeleteOd = null)}
-                        class="label-sm text-text-muted hover:text-text-secondary transition-colors"
-                      >no</button>
-                    </span>
-                  {:else}
-                    <button
-                      onclick={() => (confirmDeleteOd = od.id)}
-                      class="label-sm text-text-muted hover:text-danger transition-colors"
-                    >delete</button>
-                  {/if}
-                </div>
-              </div>
-            {/each}
-
-            {#if isAdmin && overdubs.length > 1}
-              <button
-                onclick={() => scrubOverdubs()}
-                disabled={scrubbing}
-                class="label-sm text-red-400/60 hover:text-red-400 transition-colors"
-              >{scrubbing ? "scrubbing..." : "scrub all overdubs"}</button>
-            {/if}
-          </div>
+          {#if isAdmin && overdubs.length > 1}
+            <button
+              onclick={() => scrubOverdubs()}
+              disabled={scrubbing}
+              class="label-sm text-red-400/60 hover:text-red-400 transition-colors mt-3"
+            >{scrubbing ? "scrubbing..." : "scrub all overdubs"}</button>
+          {/if}
         {:else if !showOverdubRecord}
           <p class="text-sm text-text-muted italic">no overdubs yet</p>
         {/if}

@@ -3,9 +3,13 @@
   "short_name": "Jerboa",
   "description": "Band collaboration platform",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#131313",
   "theme_color": "#131313",
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
   "icons": [
     {
       "src": "/icon-192.png",

@@ -20,6 +20,7 @@
   import AdminView from "./routes/AdminView.svelte";
   import PerformView from "./routes/PerformView.svelte";
   import Changelog from "./routes/Changelog.svelte";
+  import AuthOpen from "./routes/AuthOpen.svelte";
 
   let onboardName = $state("");
   let onboardSaving = $state(false);
@@ -101,6 +102,8 @@
     <div class="label text-danger">access denied</div>
     <div class="text-sm text-text-muted">you need an invite to join jerboa</div>
   </div>
+{:else if $route.isAuthOpen}
+  <AuthOpen />
 {:else if !$user}
   <Login />
 {:else if needsOnboarding}

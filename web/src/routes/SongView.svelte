@@ -684,10 +684,14 @@
                   </div>
                 </div>
 
-                <div class="flex items-center gap-3 label-sm text-text-muted font-mono shrink-0">
-                  <span>{formatDuration(takeDurationMs)}</span>
+                <div class="flex items-center gap-3 label-sm text-text-muted shrink-0">
+                  <span class="font-mono">{formatDuration(takeDurationMs)}</span>
                   <span>{take.uploader?.display_name || take.uploader?.email || ""}</span>
-                  <span>{formatRelativeTime(take.created_at)}</span>
+                  <a
+                    href={`/api/bands/${slug}/tracks/${take.track_id}/stream?dl=1&start_ms=${take.start_ms}&end_ms=${take.end_ms}&title=${encodeURIComponent(`${song?.name ?? "take"} (${take.set_name})`)}`}
+                    class="text-accent hover:text-accent-hover transition-colors"
+                  >dl</a>
+                  <span class="font-mono">{formatRelativeTime(take.created_at)}</span>
                 </div>
               </div>
 
