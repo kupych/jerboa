@@ -408,6 +408,9 @@ func (h *TrackHandler) UpdateTags(w http.ResponseWriter, r *http.Request) {
 	if req.Tags == nil {
 		req.Tags = []string{}
 	}
+	for i, tag := range req.Tags {
+		req.Tags[i] = strings.ToLower(strings.TrimSpace(tag))
+	}
 
 	if err := h.queries.UpdateTrackTags(r.Context(), trackID, req.Tags); err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)

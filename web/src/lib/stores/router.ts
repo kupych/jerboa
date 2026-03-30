@@ -32,6 +32,8 @@ export const route = derived(path, ($path) => {
     isSet: parts[0] === "band" && parts[2] === "set" && parts.length === 4,
     // /band/:slug/set/:id/perform OR /band/:slug/perform (freestyle)
     isPerform: parts[0] === "band" && ((parts[2] === "set" && parts[4] === "perform") || (parts[2] === "perform" && parts.length === 3)),
+    // /band/:slug/tag/:tag
+    isTag: parts[0] === "band" && parts[2] === "tag" && parts.length === 4,
     // /band/:slug/car
     isCar: parts[0] === "band" && parts[2] === "car",
     // /invite/:token
@@ -50,6 +52,7 @@ export const route = derived(path, ($path) => {
     trackId: parts[0] === "band" && parts[2] === "track" ? parts[3] : null,
     songId: parts[0] === "band" && parts[2] === "song" ? parts[3] : null,
     setId: parts[0] === "band" && parts[2] === "set" ? parts[3] : null,
+    tagName: parts[0] === "band" && parts[2] === "tag" ? decodeURIComponent(parts[3]) : null,
     inviteToken: parts[0] === "invite" ? parts[1] : null,
   };
 });

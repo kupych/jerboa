@@ -71,13 +71,28 @@
   let songs = $state<Song[]>([]);
   let sets = $state<SetSummary[]>([]);
   let loading = $state(true);
-  let viewTab = $state<"songs" | "sets">("songs");
+  let viewTab = $state<"songs" | "sets" | "tags">("songs");
   let showInviteUrl = $state("");
   let generatingInvite = $state(false);
   let inviteEmail = $state("");
   let showInviteForm = $state(false);
   let newSongName = $state("");
   let creatingSong = $state(false);
+
+  // All unique tags across all tracks, with their associated takes
+  let taggedTracks = $derived(
+    (() => {
+      const m = new Map<string, Track[]>();
+      for (const t of tracks) {
+        if (!t.tags?.length) continue;
+        for (const tag of t.tags) {
+          if (!m.has(tag)) m.set(tag, []);
+          m.get(tag)!.push(t);
+        }
+      }
+      return new Map([...m.entries()].sort(([a], [b]) => a.localeCompare(b)));
+    })()
+  );
   let newSetName = $state("");
   let newSetType = $state("rehearsal");
   let creatingSet = $state(false);
@@ -554,6 +569,12 @@
         onclick={() => (viewTab = "sets")}
         class="label transition-colors {viewTab === 'sets' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
       >sets</button>
+      {#if taggedTracks.size > 0}
+        <button
+          onclick={() => (viewTab = "tags")}
+          class="label transition-colors {viewTab === 'tags' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+        >tags</button>
+      {/if}
 
       {#if viewTab === "songs"}
         <form onsubmit={(e) => { e.preventDefault(); createSong(); }} class="ml-auto flex gap-2">
@@ -565,7 +586,7 @@
             class="bg-transparent border border-accent/30 px-3 py-1 label-sm text-text-secondary placeholder:text-accent/70 focus:outline-none focus:border-accent focus:bg-accent/[0.03] transition-colors w-40"
           />
         </form>
-      {:else}
+      {:else if viewTab === "sets"}
         <form onsubmit={(e) => { e.preventDefault(); createSet(); }} class="ml-auto flex gap-2">
           <select
             bind:value={newSetType}
@@ -610,7 +631,7 @@
           no songs yet
         </div>
       {/if}
-    {:else}
+    {:else if viewTab === "sets"}
       {#if sets.length > 0}
         <div class="space-y-1 mb-4">
           {#each sets as set}
@@ -640,6 +661,25 @@
           no sets yet
         </div>
       {/if}
+    {/if}
+
+    {#if viewTab === "tags"}
+      <div class="space-y-1 mb-4">
+        {#each [...taggedTracks.entries()] as [tag, tagTracks]}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="bg-bg-surface border border-border border-l-2 border-l-transparent hover:border-l-accent hover:border-accent/40 px-4 py-3 transition-all cursor-pointer group flex items-center justify-between"
+            onclick={() => navigate(`/band/${slug}/tag/${encodeURIComponent(tag)}`)}
+          >
+            <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors">{tag}</h4>
+            <div class="flex items-center gap-3">
+              <span class="label-sm text-text-muted group-hover:text-accent transition-colors">{tagTracks.length} {tagTracks.length === 1 ? 'take' : 'takes'}</span>
+              <span class="label-sm text-text-muted/0 group-hover:text-accent transition-colors">&rsaquo;</span>
+            </div>
+          </div>
+        {/each}
+      </div>
     {/if}
 
     <!-- Ungrouped tracks -->

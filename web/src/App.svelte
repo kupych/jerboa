@@ -21,6 +21,7 @@
   import PerformView from "./routes/PerformView.svelte";
   import Changelog from "./routes/Changelog.svelte";
   import AuthOpen from "./routes/AuthOpen.svelte";
+  import TagView from "./routes/TagView.svelte";
 
   let onboardName = $state("");
   let onboardSaving = $state(false);
@@ -154,6 +155,8 @@
       <SetView slug={$route.bandSlug!} setId={$route.setId!} />
     {:else if $route.isSong}
       <SongView slug={$route.bandSlug!} songId={$route.songId!} />
+    {:else if $route.isTag}
+      <TagView slug={$route.bandSlug!} tag={$route.tagName!} />
     {:else if $route.bandSlug}
       <BandView slug={$route.bandSlug} />
     {:else}
