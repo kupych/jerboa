@@ -113,6 +113,9 @@
   let uploadOffsetMs = $state(0);
   let uploadingOverdub = $state(false);
   let playerRef: any;
+  let mixerRef: any;
+  let mixerPositionMs = $state(0);
+  let mixerPlaying = $state(false);
 
   let mixerTracks = $derived<MixerTrack[]>(
     track
@@ -1018,7 +1021,7 @@
 
     <!-- Player -->
     {#if track.status === "ready"}
-      <div class="mb-10">
+      <div class="{overdubs.length > 0 ? '' : 'mb-10'}">
         {#key streamVersion}
           <WaveformPlayer
             bind:this={playerRef}
@@ -1028,6 +1031,12 @@
             comments={timedComments}
             onTimestampClick={handleTimestampClick}
             onCommentClick={scrollToComment}
+            seamlessBottom={overdubs.length > 0}
+            externalPositionMs={overdubs.length > 0 ? mixerPositionMs : undefined}
+            externalPlaying={overdubs.length > 0 ? mixerPlaying : undefined}
+            onSeekRequest={overdubs.length > 0 ? (ms) => mixerRef?.seekTo(ms) : undefined}
+            onPlay={overdubs.length > 0 ? () => mixerRef?.playTrack() : undefined}
+            onPause={overdubs.length > 0 ? () => mixerRef?.pauseTrack() : undefined}
           />
         {/key}
       </div>
@@ -1046,8 +1055,38 @@
 
     <!-- Overdubs -->
     {#if track.status === "ready" && !track.overdub_of}
-      <div class="mb-10">
-        <div class="flex items-center justify-between mb-4">
+      <div class="{overdubs.length > 0 ? 'mb-10' : ''}"  >
+
+        <!-- Mixer (sits directly below waveform) -->
+        {#if overdubs.length > 0}
+          <MultiTrackMixer
+            bind:this={mixerRef}
+            tracks={mixerTracks}
+            {isAdmin}
+            bandSlug={slug}
+            parentTrackId={trackId}
+            hideSrc={true}
+            seamlessTop={true}
+            onPositionChange={(ms) => (mixerPositionMs = ms)}
+            onPlayingChange={(p) => (mixerPlaying = p)}
+            onOffsetChange={(id, ms) => adjustOffset(id, ms)}
+            onRename={(id, title) => renameTrack(id, title)}
+            onDelete={(id) => deleteOverdub(id)}
+            onVote={(id) => voteOverdub(id)}
+            onBounceMix={(ids, toNew) => bounceMix(ids, toNew)}
+            onRefresh={() => loadOverdubs()}
+          />
+          {#if isAdmin && overdubs.length > 1}
+            <button
+              onclick={() => scrubOverdubs()}
+              disabled={scrubbing}
+              class="label-sm text-red-400/60 hover:text-red-400 transition-colors mt-3"
+            >{scrubbing ? "scrubbing..." : "scrub all overdubs"}</button>
+          {/if}
+        {/if}
+
+        <!-- Controls footer -->
+        <div class="flex items-center justify-between mt-4">
           <h3 class="label text-text-secondary">overdubs ({overdubs.length})</h3>
           <div class="flex items-center gap-4">
             <div class="flex items-center gap-2">
@@ -1055,9 +1094,7 @@
                 onclick={calibrate}
                 disabled={calibrating}
                 class="label-sm text-text-muted hover:text-accent transition-colors"
-              >
-                {calibrating ? "calibrating..." : "calibrate"}
-              </button>
+              >{calibrating ? "calibrating..." : "calibrate"}</button>
               <input
                 type="number"
                 step="1"
@@ -1076,9 +1113,7 @@
             <button
               onclick={() => { showOverdubUpload = !showOverdubUpload; if (showOverdubUpload) showOverdubRecord = false; }}
               class="label-sm text-text-muted hover:text-accent transition-colors"
-            >
-              {showOverdubUpload ? "cancel" : "upload"}
-            </button>
+            >{showOverdubUpload ? "cancel" : "upload"}</button>
             <button
               onclick={() => { showOverdubRecord = !showOverdubRecord; if (showOverdubRecord) showOverdubUpload = false; }}
               class="label-sm text-text-muted hover:text-accent transition-colors flex items-center gap-1.5"
@@ -1090,11 +1125,11 @@
         </div>
 
         {#if calibrationMsg}
-          <p class="label-sm text-text-muted mb-3">{calibrationMsg}</p>
+          <p class="label-sm text-text-muted mt-2">{calibrationMsg}</p>
         {/if}
 
         {#if showOverdubUpload}
-          <div class="mb-4 bg-bg-surface border border-border p-4 space-y-3">
+          <div class="mt-4 bg-bg-surface border border-border p-4 space-y-3">
             <p class="label-sm text-text-muted">upload a pre-recorded overdub file. set the offset to where it aligns in the parent track.</p>
             <div class="flex items-center gap-4 flex-wrap">
               <input
@@ -1114,7 +1149,7 @@
                 <span class="label-sm text-text-muted">ms</span>
               </div>
               <button
-                onclick={() => { uploadOffsetMs = playerRef?.getCurrentTimeMs() ?? 0; }}
+                onclick={() => { uploadOffsetMs = mixerPositionMs || (playerRef?.getCurrentTimeMs() ?? 0); }}
                 class="label-sm text-accent hover:text-accent-hover transition-colors"
               >use player position</button>
               <button
@@ -1127,7 +1162,7 @@
         {/if}
 
         {#if showOverdubRecord}
-          <div class="mb-4 bg-bg-surface border border-border p-4 space-y-3">
+          <div class="mt-4 bg-bg-surface border border-border p-4 space-y-3">
             <div class="flex items-center gap-4 flex-wrap">
               <span class="label-sm text-text-muted">punch in at:</span>
               <div class="flex items-center gap-2">
@@ -1140,7 +1175,7 @@
                 <span class="label-sm text-text-muted">ms</span>
               </div>
               <button
-                onclick={() => { punchInMs = playerRef?.getCurrentTimeMs() ?? 0; }}
+                onclick={() => { punchInMs = mixerPositionMs || (playerRef?.getCurrentTimeMs() ?? 0); }}
                 class="label-sm text-accent hover:text-accent-hover transition-colors"
               >use player position</button>
               {#if punchInMs > 0}
@@ -1164,31 +1199,6 @@
               bpm={track?.song?.bpm ?? 0}
             />
           </div>
-        {/if}
-
-        {#if overdubs.length > 0}
-          <MultiTrackMixer
-            tracks={mixerTracks}
-            {isAdmin}
-            bandSlug={slug}
-            parentTrackId={trackId}
-            onOffsetChange={(id, ms) => adjustOffset(id, ms)}
-            onRename={(id, title) => renameTrack(id, title)}
-            onDelete={(id) => deleteOverdub(id)}
-            onVote={(id) => voteOverdub(id)}
-            onBounceMix={(ids, toNew) => bounceMix(ids, toNew)}
-            onRefresh={() => loadOverdubs()}
-          />
-
-          {#if isAdmin && overdubs.length > 1}
-            <button
-              onclick={() => scrubOverdubs()}
-              disabled={scrubbing}
-              class="label-sm text-red-400/60 hover:text-red-400 transition-colors mt-3"
-            >{scrubbing ? "scrubbing..." : "scrub all overdubs"}</button>
-          {/if}
-        {:else if !showOverdubRecord}
-          <p class="text-sm text-text-muted italic">no overdubs yet</p>
         {/if}
       </div>
     {/if}

@@ -14,6 +14,12 @@
     onTimestampClick = undefined,
     onCommentClick = undefined,
     minPxPerMin = 0,
+    seamlessBottom = false,
+    externalPositionMs = undefined,
+    externalPlaying = undefined,
+    onSeekRequest = undefined,
+    onPlay = undefined,
+    onPause = undefined,
   }: {
     src: string;
     peaks?: number[];
@@ -24,7 +30,15 @@
     onTimestampClick?: (ms: number) => void;
     onCommentClick?: (commentId: string) => void;
     minPxPerMin?: number;
+    seamlessBottom?: boolean;
+    externalPositionMs?: number;
+    externalPlaying?: boolean;
+    onSeekRequest?: (ms: number) => void;
+    onPlay?: () => void;
+    onPause?: () => void;
   } = $props();
+
+  const isExternallyControlled = $derived(externalPositionMs !== undefined);
 
   let container: HTMLDivElement;
   let scrollContainer: HTMLDivElement;
@@ -64,8 +78,19 @@
     wavesurfer.on("timeupdate", (t) => (currentTime = t));
     wavesurfer.on("decode", (d) => (totalDuration = d));
 
-    // Register media element for global keyboard shortcuts
-    player.setMediaElement(wavesurfer.getMediaElement());
+    // Only register for global keyboard shortcuts when not driven by an external player
+    if (!isExternallyControlled) {
+      player.setMediaElement(wavesurfer.getMediaElement());
+    }
+  });
+
+  // Sync waveform cursor to external position (throttled to ~10fps)
+  let lastSyncedMs = -999;
+  $effect(() => {
+    if (externalPositionMs === undefined || !wavesurfer || totalDuration <= 0) return;
+    if (Math.abs(externalPositionMs - lastSyncedMs) < 100) return;
+    lastSyncedMs = externalPositionMs;
+    wavesurfer.seekTo(Math.min(1, externalPositionMs / 1000 / totalDuration));
   });
 
   onDestroy(() => {
@@ -74,16 +99,24 @@
   });
 
   function togglePlay() {
-    wavesurfer?.playPause();
+    if (isExternallyControlled) {
+      externalPlaying ? onPause?.() : onPlay?.();
+    } else {
+      wavesurfer?.playPause();
+    }
   }
 
   function handleWaveformClick(e: MouseEvent) {
-    if (!onTimestampClick || !wavesurfer || totalDuration <= 0) return;
-    // Calculate position from click coordinates
+    if (!wavesurfer || totalDuration <= 0) return;
     const rect = container.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const ratio = Math.max(0, Math.min(1, x / rect.width));
     const ms = Math.round(ratio * totalDuration * 1000);
+    if (onSeekRequest) {
+      onSeekRequest(ms);
+      return;
+    }
+    if (!onTimestampClick) return;
     if (clickToTag || e.altKey) {
       onTimestampClick(ms);
     }
@@ -180,14 +213,15 @@
   onDestroy(() => { if (scrollRaf) cancelAnimationFrame(scrollRaf); });
 </script>
 
-<div class="bg-bg-surface border border-border p-6">
+<div class="bg-bg-surface border border-border p-6 {seamlessBottom ? 'border-b-0 pb-4' : ''}">
   <!-- Transport -->
   <div class="flex items-center gap-5 mb-5">
+    {#if !isExternallyControlled}
     <button
       onclick={togglePlay}
       class="w-10 h-10 flex items-center justify-center bg-accent hover:bg-accent-hover text-bg-primary transition-colors"
     >
-      {#if isPlaying}
+      {#if isExternallyControlled ? externalPlaying : isPlaying}
         <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
           <rect x="1" y="1" width="3.5" height="10"/>
           <rect x="7.5" y="1" width="3.5" height="10"/>
@@ -198,16 +232,17 @@
         </svg>
       {/if}
     </button>
+    {/if}
 
     <div class="label-sm text-text-secondary font-mono tabular-nums">
-      {formatTimestamp(currentTime * 1000)}
+      {formatTimestamp(isExternallyControlled ? (externalPositionMs ?? 0) : currentTime * 1000)}
       <span class="text-text-muted mx-1">/</span>
       {formatDuration(totalDuration * 1000)}
     </div>
 
     {#if onTimestampClick && !clickToTag}
       <button
-        onclick={() => onTimestampClick!(Math.round(currentTime * 1000))}
+        onclick={() => onTimestampClick!(isExternallyControlled ? (externalPositionMs ?? 0) : Math.round(currentTime * 1000))}
         class="ml-auto label text-marker hover:text-marker-hover transition-colors flex items-center gap-2"
         title="Add comment at current position"
       >

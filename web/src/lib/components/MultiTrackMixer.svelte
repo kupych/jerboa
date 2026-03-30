@@ -19,24 +19,37 @@
     isAdmin = false,
     bandSlug,
     parentTrackId,
+    hideSrc = false,
+    seamlessTop = false,
     onOffsetChange,
     onRename,
     onDelete,
     onVote,
     onBounceMix,
     onRefresh,
+    onPositionChange,
+    onPlayingChange,
   }: {
     tracks: MixerTrack[];
     isAdmin?: boolean;
     bandSlug: string;
     parentTrackId: string;
+    hideSrc?: boolean;
+    seamlessTop?: boolean;
     onOffsetChange?: (id: string, ms: number) => void;
     onRename?: (id: string, title: string) => void;
     onDelete?: (id: string) => void;
     onVote?: (overdubId: string | null) => void;
     onBounceMix?: (overdubIds: string[], toNew: boolean) => void;
     onRefresh?: () => void;
+    onPositionChange?: (ms: number) => void;
+    onPlayingChange?: (playing: boolean) => void;
   } = $props();
+
+  export function seekTo(ms: number) { commitSeek(ms); }
+  export function playTrack() { play(); }
+  export function pauseTrack() { pause(); }
+  export function stopTrack() { stop(); }
 
   // === Audio engine ===
   let audioCtx: AudioContext | null = null;
@@ -242,6 +255,7 @@
       if (!userSeeking) {
         const elapsed = (audioCtx.currentTime - playStartCtxTime) * 1000;
         positionMs = Math.min(playStartMs + elapsed, totalMs);
+        onPositionChange?.(positionMs);
       }
       rafId = requestAnimationFrame(loop);
     });
@@ -303,6 +317,8 @@
     setTimeout(() => { bouncing = false; }, 2000);
   }
 
+  $effect(() => { onPlayingChange?.(playing); });
+
   // Invalidate buffers when tracks change (new overdub, etc.)
   $effect(() => {
     const currentIds = new Set(tracks.map((t) => t.id));
@@ -318,65 +334,116 @@
   });
 </script>
 
-<div class="border border-border bg-bg-surface">
-  <!-- Transport bar -->
-  <div class="flex items-center gap-3 px-4 py-2.5 border-b border-border/50">
-    <!-- Play/Pause -->
-    <button
-      onclick={playing ? pause : play}
-      disabled={loading}
-      title={playing ? "pause" : "play"}
-      class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-40 shrink-0"
-    >
-      {#if loading}
-        <div class="w-3 h-3 border border-accent/60 border-t-accent animate-spin"></div>
-      {:else if playing}
-        <!-- Pause icon -->
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-          <rect x="5" y="3" width="4" height="18"/>
-          <rect x="15" y="3" width="4" height="18"/>
-        </svg>
-      {:else}
-        <!-- Play icon -->
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-          <polygon points="6,3 20,12 6,21"/>
-        </svg>
-      {/if}
-    </button>
-
-    <!-- Stop -->
-    <button
-      onclick={stop}
-      disabled={!playing && seekMs === 0}
-      title="stop"
-      class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-20 shrink-0"
-    >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-        <rect x="4" y="4" width="16" height="16" rx="1"/>
-      </svg>
-    </button>
-
-    {#if loadError}
-      <span class="label-sm text-danger">{loadError}</span>
-    {:else}
-      <span class="label-sm font-mono text-text-muted tabular-nums shrink-0">
-        {formatDuration(positionMs)} / {formatDuration(totalMs)}
-      </span>
-      <input
-        type="range"
-        min="0"
-        max={totalMs || 1}
-        value={positionMs}
-        step="100"
-        oninput={(e) => { userSeeking = true; positionMs = parseFloat((e.target as HTMLInputElement).value); }}
-        onchange={(e) => commitSeek(parseFloat((e.target as HTMLInputElement).value))}
-        class="flex-1 h-1 accent-accent cursor-pointer"
-      />
+<div class="border border-border bg-bg-surface {seamlessTop ? 'border-t-0' : ''}">
+  <!-- Source volume + transport row (when integrated with waveform) -->
+  {#if hideSrc}
+    {@const srcTrack = tracks.find((t) => t.isParent)}
+    {#if srcTrack}
+      <div class="flex items-center gap-3 px-4 py-2.5 border-b border-border/50">
+        <!-- Play/Pause -->
+        <button
+          onclick={playing ? pause : play}
+          disabled={loading}
+          title={playing ? "pause" : "play"}
+          class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-40 shrink-0"
+        >
+          {#if loading}
+            <div class="w-3 h-3 border border-accent/60 border-t-accent animate-spin"></div>
+          {:else if playing}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="5" y="3" width="4" height="18"/>
+              <rect x="15" y="3" width="4" height="18"/>
+            </svg>
+          {:else}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="6,3 20,12 6,21"/>
+            </svg>
+          {/if}
+        </button>
+        <!-- Stop -->
+        <button
+          onclick={stop}
+          disabled={!playing && seekMs === 0}
+          title="stop"
+          class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-20 shrink-0"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="4" y="4" width="16" height="16" rx="1"/>
+          </svg>
+        </button>
+        <span class="label-sm text-text-muted shrink-0">src</span>
+        {#if loadError}
+          <span class="label-sm text-danger">{loadError}</span>
+        {:else}
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={gainValues[srcTrack.id] ?? 1}
+            oninput={(e) => setGainVal(srcTrack.id, parseFloat((e.target as HTMLInputElement).value))}
+            class="flex-1 h-1 accent-accent cursor-pointer"
+          />
+          <span class="w-7 label-sm font-mono text-text-muted text-right shrink-0">
+            {Math.round((gainValues[srcTrack.id] ?? 1) * 100)}
+          </span>
+        {/if}
+      </div>
     {/if}
-  </div>
+  {:else}
+    <!-- Standalone transport bar (when not integrated with waveform) -->
+    <div class="flex items-center gap-3 px-4 py-2.5 border-b border-border/50">
+      <button
+        onclick={playing ? pause : play}
+        disabled={loading}
+        title={playing ? "pause" : "play"}
+        class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-40 shrink-0"
+      >
+        {#if loading}
+          <div class="w-3 h-3 border border-accent/60 border-t-accent animate-spin"></div>
+        {:else if playing}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="5" y="3" width="4" height="18"/>
+            <rect x="15" y="3" width="4" height="18"/>
+          </svg>
+        {:else}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="6,3 20,12 6,21"/>
+          </svg>
+        {/if}
+      </button>
+      <button
+        onclick={stop}
+        disabled={!playing && seekMs === 0}
+        title="stop"
+        class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-20 shrink-0"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="4" y="4" width="16" height="16" rx="1"/>
+        </svg>
+      </button>
+      {#if loadError}
+        <span class="label-sm text-danger">{loadError}</span>
+      {:else}
+        <span class="label-sm font-mono text-text-muted tabular-nums shrink-0">
+          {formatDuration(positionMs)} / {formatDuration(totalMs)}
+        </span>
+        <input
+          type="range"
+          min="0"
+          max={totalMs || 1}
+          value={positionMs}
+          step="100"
+          oninput={(e) => { userSeeking = true; positionMs = parseFloat((e.target as HTMLInputElement).value); }}
+          onchange={(e) => commitSeek(parseFloat((e.target as HTMLInputElement).value))}
+          class="flex-1 h-1 accent-accent cursor-pointer"
+        />
+      {/if}
+    </div>
+  {/if}
 
   <!-- Track rows -->
-  {#each tracks as t (t.id)}
+  {#each tracks.filter((t) => !(hideSrc && t.isParent)) as t (t.id)}
     {@const isMuted = muted.has(t.id)}
     {@const isSolo = soloId === t.id}
     {@const isDimmed = soloId !== null && soloId !== t.id}
