@@ -28,6 +28,20 @@
   let retrying = $state(false);
   let deleting = $state(false);
 
+  const prefetched = new Set<string>();
+  function prefetch() {
+    if (track.status !== "ready") return;
+    const url = `/api/bands/${bandSlug}/tracks/${track.id}/stream`;
+    if (prefetched.has(url)) return;
+    prefetched.add(url);
+    fetch(url, { priority: "low" } as RequestInit).catch(() => {});
+  }
+
+  function openAndPrefetch() {
+    prefetch();
+    open();
+  }
+
   function open() {
     if (track.status === "error") return;
     navigate(`/band/${bandSlug}/track/${track.id}`);
@@ -61,7 +75,8 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="bg-bg-surface border border-border px-4 py-3 transition-colors {track.status === 'error' ? '' : 'hover:border-accent/40 cursor-pointer'} group"
-  onclick={open}
+  onclick={openAndPrefetch}
+  onmouseenter={prefetch}
 >
   <div class="flex items-start justify-between gap-4">
     {#if track.status === "ready"}
