@@ -446,7 +446,7 @@
   }
 
   async function renameTrack(id: string, title: string) {
-    await apiPatch(`/api/bands/${slug}/tracks/${id}/meta`, { title });
+    await apiPatch(`/api/bands/${slug}/tracks/${id}`, { title });
     if (id === trackId && track) {
       track.title = title;
     } else {
