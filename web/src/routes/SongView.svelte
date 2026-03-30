@@ -550,72 +550,68 @@
           <!-- Direct takes -->
           {#each directTracks as track}
             <div class="bg-bg-surface border border-border">
-              <div class="flex items-center gap-4 p-4">
-                {#if track.status === "ready"}
-                  <div class="flex items-center shrink-0">
-                    <button
-                      onclick={() => togglePlay(track.id)}
-                      class="w-8 h-8 flex items-center justify-center text-text-muted hover:text-accent transition-colors"
-                    >
-                      {#if $playerState.track?.id === track.id && $playerState.playing}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <rect x="6" y="4" width="4" height="16"/>
-                          <rect x="14" y="4" width="4" height="16"/>
+              <div class="flex flex-col p-4 gap-1">
+                <!-- Top row: play + title -->
+                <div class="flex items-center gap-2 min-w-0">
+                  {#if track.status === "ready"}
+                    <div class="flex items-center shrink-0">
+                      <button
+                        onclick={() => togglePlay(track.id)}
+                        class="w-8 h-8 flex items-center justify-center text-text-muted hover:text-accent transition-colors"
+                      >
+                        {#if $playerState.track?.id === track.id && $playerState.playing}
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="4" width="4" height="16"/>
+                            <rect x="14" y="4" width="4" height="16"/>
+                          </svg>
+                        {:else}
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5,3 19,12 5,21"/>
+                          </svg>
+                        {/if}
+                      </button>
+                      <button
+                        onclick={() => globalPlayer.enqueue({ id: track.id, title: track.title, bandSlug: slug, songName: song?.name })}
+                        class="w-6 h-6 flex items-center justify-center text-text-muted/0 hover:text-accent transition-colors"
+                        title="Add to queue"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                          <line x1="12" y1="5" x2="12" y2="19"/>
+                          <line x1="5" y1="12" x2="19" y2="12"/>
                         </svg>
+                      </button>
+                    </div>
+                  {:else}
+                    <div class="w-8 h-8 flex items-center justify-center shrink-0">
+                      {#if track.status === "processing"}
+                        <div class="w-2 h-2 bg-accent animate-pulse"></div>
                       {:else}
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                          <polygon points="5,3 19,12 5,21"/>
-                        </svg>
+                        <span class="label-sm text-danger">!</span>
                       {/if}
-                    </button>
-                    <button
-                      onclick={() => globalPlayer.enqueue({ id: track.id, title: track.title, bandSlug: slug, songName: song?.name })}
-                      class="w-6 h-6 flex items-center justify-center text-text-muted/0 hover:text-accent transition-colors"
-                      title="Add to queue"
-                    >
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                        <line x1="12" y1="5" x2="12" y2="19"/>
-                        <line x1="5" y1="12" x2="19" y2="12"/>
-                      </svg>
-                    </button>
-                  </div>
-                {:else}
-                  <div class="w-8 h-8 flex items-center justify-center shrink-0">
-                    {#if track.status === "processing"}
-                      <div class="w-2 h-2 bg-accent animate-pulse"></div>
-                    {:else}
-                      <span class="label-sm text-danger">!</span>
-                    {/if}
-                  </div>
-                {/if}
-
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <button
-                      onclick={() => navigate(`/band/${slug}/track/${track.id}`)}
-                      class="text-sm font-semibold text-text-primary hover:text-accent transition-colors truncate text-left font-display tracking-wide"
-                    >{track.title}</button>
-                    {#if track.tags?.length}
-                      {#each track.tags as tag}
-                        <span class="label-sm text-accent border border-accent/30 px-1.5 py-0.5">{tag}</span>
-                      {/each}
-                    {/if}
-                  </div>
-                  {#if track.personnel?.length}
-                    <div class="flex items-center gap-2 mt-1 flex-wrap">
-                      {#each track.personnel as p}
-                        <span class="label-sm text-text-muted">{p.user.display_name || p.user.email}{#if p.role} · {p.role}{/if}</span>
-                      {/each}
                     </div>
                   {/if}
+                  <button
+                    onclick={() => navigate(`/band/${slug}/track/${track.id}`)}
+                    class="flex-1 min-w-0 text-sm font-semibold text-text-primary hover:text-accent transition-colors truncate text-left font-display tracking-wide"
+                  >{track.title}</button>
                 </div>
-
-                <div class="flex items-center gap-3 label-sm text-text-muted font-mono shrink-0">
+                <!-- Bottom row: meta + tags + personnel, indented past play button -->
+                <div class="flex items-center gap-2 flex-wrap pl-[3.5rem] label-sm text-text-muted">
                   {#if track.status === "ready"}
-                    <span>{formatDuration(track.duration_ms)}</span>
+                    <span class="font-mono">{formatDuration(track.duration_ms)}</span>
                   {/if}
                   <span>{track.uploader?.display_name || track.uploader?.email || ""}</span>
                   <span>{formatRelativeTime(track.created_at)}</span>
+                  {#if track.tags?.length}
+                    {#each track.tags as tag}
+                      <span class="text-accent border border-accent/30 px-1.5 py-0.5">{tag}</span>
+                    {/each}
+                  {/if}
+                  {#if track.personnel?.length}
+                    {#each track.personnel as p}
+                      <span>{p.user.display_name || p.user.email}{#if p.role} · {p.role}{/if}</span>
+                    {/each}
+                  {/if}
                 </div>
               </div>
 
@@ -641,56 +637,52 @@
             {@const isExpanded = expandedTakeId === take.set_item_id}
             {@const filteredComments = isExpanded ? getFilteredComments(take) : []}
             <div class="bg-bg-surface border border-border">
-              <div class="flex items-center gap-4 p-4">
-                <button
-                  onclick={() => togglePlay(take.track_id, take.set_item_id, take.start_ms, take.end_ms)}
-                  class="w-8 h-8 flex items-center justify-center text-text-muted hover:text-accent transition-colors shrink-0"
-                >
-                  {#if playingKey === take.set_item_id && audioEl && !audioEl.paused}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                      <rect x="6" y="4" width="4" height="16"/>
-                      <rect x="14" y="4" width="4" height="16"/>
-                    </svg>
-                  {:else}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                      <polygon points="5,3 19,12 5,21"/>
-                    </svg>
-                  {/if}
-                </button>
-
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <button
-                      onclick={() => navigate(`/band/${slug}/${take.set_id ? "set/" + take.set_id : "take/" + take.track_id}`)}
-                      class="text-sm font-semibold text-text-primary hover:text-accent transition-colors truncate text-left font-display tracking-wide"
-                    >{take.track_title}</button>
-                    <button
-                      onclick={() => navigate(`/band/${slug}/set/${take.set_id}`)}
-                      class="label-sm text-text-muted bg-bg-primary border border-border px-1.5 py-0.5 hover:text-accent hover:border-accent/40 transition-colors"
-                    >{take.set_name}</button>
-                    <span class="label-sm text-accent bg-accent/10 px-1.5 py-0.5" title={setTypeLabel(take.set_type)}>{setTypeLabel(take.set_type)}</span>
-                    {#if take.tags?.length}
-                      {#each take.tags as tag}
-                        <span class="label-sm text-accent border border-accent/30 px-1.5 py-0.5">{tag}</span>
-                      {/each}
+              <div class="flex flex-col p-4 gap-1">
+                <!-- Top row: play + title -->
+                <div class="flex items-center gap-2 min-w-0">
+                  <button
+                    onclick={() => togglePlay(take.track_id, take.set_item_id, take.start_ms, take.end_ms)}
+                    class="w-8 h-8 flex items-center justify-center text-text-muted hover:text-accent transition-colors shrink-0"
+                  >
+                    {#if playingKey === take.set_item_id && audioEl && !audioEl.paused}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="6" y="4" width="4" height="16"/>
+                        <rect x="14" y="4" width="4" height="16"/>
+                      </svg>
+                    {:else}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5,3 19,12 5,21"/>
+                      </svg>
                     {/if}
-                  </div>
-                  <div class="flex items-center gap-2 mt-1 flex-wrap">
-                    <span class="label-sm text-text-muted font-mono">{formatDuration(take.start_ms)} — {formatDuration(take.end_ms)}</span>
-                    <button
-                      onclick={() => toggleTakeComments(take)}
-                      class="label-sm text-text-muted hover:text-accent transition-colors"
-                    >{isExpanded ? "hide comments" : "comments"}</button>
-                  </div>
+                  </button>
+                  <button
+                    onclick={() => navigate(`/band/${slug}/${take.set_id ? "set/" + take.set_id : "take/" + take.track_id}`)}
+                    class="flex-1 min-w-0 text-sm font-semibold text-text-primary hover:text-accent transition-colors truncate text-left font-display tracking-wide"
+                  >{take.track_title}</button>
                 </div>
-
-                <div class="flex items-center gap-3 label-sm text-text-muted shrink-0">
+                <!-- Bottom row: meta, indented past play button -->
+                <div class="flex items-center gap-2 flex-wrap pl-10 label-sm text-text-muted">
+                  <button
+                    onclick={() => navigate(`/band/${slug}/set/${take.set_id}`)}
+                    class="bg-bg-primary border border-border px-1.5 py-0.5 hover:text-accent hover:border-accent/40 transition-colors"
+                  >{take.set_name}</button>
+                  <span class="text-accent bg-accent/10 px-1.5 py-0.5">{setTypeLabel(take.set_type)}</span>
+                  {#if take.tags?.length}
+                    {#each take.tags as tag}
+                      <span class="text-accent border border-accent/30 px-1.5 py-0.5">{tag}</span>
+                    {/each}
+                  {/if}
+                  <span class="font-mono">{formatDuration(take.start_ms)} — {formatDuration(take.end_ms)}</span>
                   <span class="font-mono">{formatDuration(takeDurationMs)}</span>
                   <span>{take.uploader?.display_name || take.uploader?.email || ""}</span>
                   <a
                     href={`/api/bands/${slug}/tracks/${take.track_id}/stream?dl=1&start_ms=${take.start_ms}&end_ms=${take.end_ms}&title=${encodeURIComponent(`${song?.name ?? "take"} (${take.set_name})`)}`}
                     class="text-accent hover:text-accent-hover transition-colors"
                   >dl</a>
+                  <button
+                    onclick={() => toggleTakeComments(take)}
+                    class="hover:text-accent transition-colors"
+                  >{isExpanded ? "hide comments" : "comments"}</button>
                   <span class="font-mono">{formatRelativeTime(take.created_at)}</span>
                 </div>
               </div>
