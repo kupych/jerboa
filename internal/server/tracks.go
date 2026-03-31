@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -21,11 +22,12 @@ import (
 )
 
 type TrackHandler struct {
-	queries   *db.Queries
-	store     *storage.Store
-	processor *audio.Processor
-	hub       *Hub
-	maxBytes  int64
+	queries      *db.Queries
+	store        *storage.Store
+	processor    *audio.Processor
+	hub          *Hub
+	maxBytes     int64
+	transcoding  sync.Map // keyed by opus path, prevents duplicate background transcodes
 }
 
 func NewTrackHandler(queries *db.Queries, store *storage.Store, processor *audio.Processor, hub *Hub, maxUploadMB int64) *TrackHandler {
@@ -36,6 +38,21 @@ func NewTrackHandler(queries *db.Queries, store *storage.Store, processor *audio
 		hub:       hub,
 		maxBytes:  maxUploadMB * 1024 * 1024,
 	}
+}
+
+func (h *TrackHandler) lazyTranscode(filePath string) {
+	opusPath := opusSibling(filePath)
+	if _, inProgress := h.transcoding.LoadOrStore(opusPath, true); inProgress {
+		return
+	}
+	go func() {
+		defer h.transcoding.Delete(opusPath)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if err := h.processor.TranscodeToOpus(ctx, filePath, opusPath); err != nil {
+			slog.Error("lazy transcode", "file", filePath, "error", err)
+		}
+	}()
 }
 
 func (h *TrackHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -160,6 +177,12 @@ func (h *TrackHandler) processTrack(trackID uuid.UUID, filePath string, bandID u
 		return
 	}
 
+	if h.processor.NeedsTranscode(meta.Format) {
+		if err := h.processor.TranscodeToOpus(ctx, filePath, opusSibling(filePath)); err != nil {
+			slog.Error("transcode track", "id", trackID, "error", err)
+		}
+	}
+
 	// Notify connected clients
 	h.hub.Broadcast("band:"+bandID.String(), WSMessage{
 		Type: "track.ready",
@@ -272,21 +295,37 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f, err := h.store.Open(track.FilePath)
+	isDownload := r.URL.Query().Get("dl") == "1"
+
+	// For streaming, prefer the Opus sibling if it exists on disk.
+	// Downloads always get the original file (WAV/FLAC/etc).
+	servePath := track.FilePath
+	useOpus := false
+	if !isDownload {
+		if opus := opusSibling(track.FilePath); fileExists(opus) {
+			servePath = opus
+			useOpus = true
+		} else if h.processor.NeedsTranscode(track.Format) {
+			h.lazyTranscode(track.FilePath)
+		}
+	}
+
+	f, err := h.store.Open(servePath)
 	if err != nil {
 		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
 		return
 	}
 	defer f.Close()
 
-	// Download mode
-	if r.URL.Query().Get("dl") == "1" {
+	if isDownload {
 		ext := ".audio"
 		if i := strings.LastIndex(track.FilePath, "."); i >= 0 {
 			ext = track.FilePath[i:]
 		}
 		filename := track.Title + ext
 		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	} else if useOpus {
+		w.Header().Set("Content-Type", "audio/ogg; codecs=opus")
 	}
 
 	// Use file's real modtime so bounced tracks bust the browser cache
@@ -296,7 +335,7 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// http.ServeContent handles Range requests, Content-Type, caching
-	http.ServeContent(w, r, track.FilePath, modTime, f)
+	http.ServeContent(w, r, servePath, modTime, f)
 }
 
 func (h *TrackHandler) UpdateMeta(w http.ResponseWriter, r *http.Request) {
@@ -459,6 +498,7 @@ func (h *TrackHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	if filePath != "" {
 		h.store.Delete(filePath)
+		h.store.Delete(opusSibling(filePath))
 	}
 
 	w.WriteHeader(http.StatusNoContent)

@@ -14,6 +14,14 @@ type ctxKey string
 
 const userCtxKey ctxKey = "user"
 
+// opusSibling returns the path of the Opus transcode alongside the original file.
+func opusSibling(filePath string) string {
+	if i := strings.LastIndex(filePath, "."); i >= 0 {
+		return filePath[:i] + ".opus"
+	}
+	return filePath + ".opus"
+}
+
 func UserFrom(ctx context.Context) *models.User {
 	u, _ := ctx.Value(userCtxKey).(*models.User)
 	return u

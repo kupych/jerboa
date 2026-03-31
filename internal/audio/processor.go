@@ -141,6 +141,30 @@ func (p *Processor) GeneratePeaks(ctx context.Context, filePath string) (json.Ra
 	return json.Marshal(peaks)
 }
 
+// NeedsTranscode returns true for lossless formats that should be transcoded to Opus for streaming.
+func (p *Processor) NeedsTranscode(format string) bool {
+	if strings.HasPrefix(format, "pcm_") {
+		return true
+	}
+	return format == "flac" || format == "alac"
+}
+
+// TranscodeToOpus encodes srcPath to Opus (Ogg container) at 128kbps VBR and writes to dstPath.
+func (p *Processor) TranscodeToOpus(ctx context.Context, srcPath, dstPath string) error {
+	cmd := exec.CommandContext(ctx, p.ffmpegPath,
+		"-i", srcPath,
+		"-c:a", "libopus",
+		"-b:a", "128k",
+		"-vbr", "on",
+		"-y",
+		dstPath,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg transcode: %w: %s", err, out)
+	}
+	return nil
+}
+
 func (p *Processor) IsSupported(filename string) bool {
 	ext := strings.ToLower(filename)
 	for _, e := range []string{".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a", ".aiff", ".aif", ".wma", ".opus", ".webm"} {

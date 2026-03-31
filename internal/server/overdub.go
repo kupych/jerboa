@@ -830,6 +830,7 @@ func (h *OverdubHandler) RestoreOriginal(w http.ResponseWriter, r *http.Request)
 		}
 		if filePath != "" {
 			h.store.Delete(filePath)
+			h.store.Delete(opusSibling(filePath))
 		}
 	}
 
@@ -881,6 +882,7 @@ func (h *OverdubHandler) PurgeBounceVersions(w http.ResponseWriter, r *http.Requ
 		}
 		if filePath != "" {
 			h.store.Delete(filePath)
+			h.store.Delete(opusSibling(filePath))
 		}
 	}
 
@@ -935,6 +937,7 @@ func (h *OverdubHandler) Scrub(w http.ResponseWriter, r *http.Request) {
 		}
 		if filePath != "" {
 			h.store.Delete(filePath)
+			h.store.Delete(opusSibling(filePath))
 		}
 	}
 
