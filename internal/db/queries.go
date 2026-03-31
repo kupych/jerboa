@@ -1016,11 +1016,12 @@ func (q *Queries) ListSetTakesBySong(ctx context.Context, bandID, songID uuid.UU
 
 func (q *Queries) ListSetsBySong(ctx context.Context, bandID, songID uuid.UUID) ([]models.Set, error) {
 	rows, err := q.pool.Query(ctx, `
-		SELECT DISTINCT s.id, s.band_id, s.name, s.set_type, s.recorded_at, s.notes, s.created_at,
+		SELECT s.id, s.band_id, s.name, s.set_type, s.recorded_at, s.notes, s.created_at,
 		       (SELECT count(*) FROM set_items WHERE set_id = s.id)
 		FROM sets s
 		JOIN set_items si ON si.set_id = s.id
 		WHERE s.band_id = $1 AND si.song_id = $2
+		GROUP BY s.id
 		ORDER BY COALESCE(s.recorded_at, s.created_at::date) DESC
 	`, bandID, songID)
 	if err != nil {
