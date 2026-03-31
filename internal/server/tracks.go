@@ -21,22 +21,30 @@ import (
 	"jerboa/internal/storage"
 )
 
+const maxConcurrentTranscodes = 2
+
 type TrackHandler struct {
-	queries      *db.Queries
-	store        *storage.Store
-	processor    *audio.Processor
-	hub          *Hub
-	maxBytes     int64
-	transcoding  sync.Map // keyed by opus path, prevents duplicate background transcodes
+	queries     *db.Queries
+	store       *storage.Store
+	processor   *audio.Processor
+	hub         *Hub
+	maxBytes    int64
+	transcoding sync.Map    // keyed by opus path, prevents duplicate background transcodes
+	transcodeSem chan struct{} // limits concurrent ffmpeg processes
 }
 
 func NewTrackHandler(queries *db.Queries, store *storage.Store, processor *audio.Processor, hub *Hub, maxUploadMB int64) *TrackHandler {
+	sem := make(chan struct{}, maxConcurrentTranscodes)
+	for i := 0; i < maxConcurrentTranscodes; i++ {
+		sem <- struct{}{}
+	}
 	return &TrackHandler{
-		queries:   queries,
-		store:     store,
-		processor: processor,
-		hub:       hub,
-		maxBytes:  maxUploadMB * 1024 * 1024,
+		queries:      queries,
+		store:        store,
+		processor:    processor,
+		hub:          hub,
+		maxBytes:     maxUploadMB * 1024 * 1024,
+		transcodeSem: sem,
 	}
 }
 
@@ -47,6 +55,16 @@ func (h *TrackHandler) lazyTranscode(filePath string) {
 	}
 	go func() {
 		defer h.transcoding.Delete(opusPath)
+		// Wait for a slot — drops the goroutine if none available within a second
+		// so burst requests don't queue unbounded work
+		select {
+		case <-h.transcodeSem:
+		case <-time.After(time.Second):
+			h.transcoding.Delete(opusPath)
+			return
+		}
+		defer func() { h.transcodeSem <- struct{}{} }()
+
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		if err := h.processor.TranscodeToOpus(ctx, filePath, opusPath); err != nil {
