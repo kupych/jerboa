@@ -1,5 +1,4 @@
 <script lang="ts">
-  import html2canvas from "html2canvas";
   import { uploadFile } from "../api";
 
   let open = $state(false);
@@ -13,6 +12,7 @@
   async function captureAndOpen() {
     capturing = true;
     try {
+      const { default: html2canvas } = await import("html2canvas");
       const canvas = await html2canvas(document.body, {
         backgroundColor: "#131313",
         scale: 1,

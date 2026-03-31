@@ -985,7 +985,7 @@ func (q *Queries) ListSetTracks(ctx context.Context, setID uuid.UUID) ([]models.
 func (q *Queries) ListSetTakesBySong(ctx context.Context, bandID, songID uuid.UUID) ([]models.SetTake, error) {
 	rows, err := q.pool.Query(ctx, `
 		SELECT si.id, s.id, s.name, s.set_type, si.start_ms, si.end_ms,
-		       t.id, t.title, t.waveform_data, t.duration_ms, t.format, t.file_size,
+		       t.id, t.title, t.duration_ms, t.format, t.file_size,
 		       t.tags, t.recorded_at, t.created_at,
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
 		FROM set_items si
@@ -1006,7 +1006,7 @@ func (q *Queries) ListSetTakesBySong(ctx context.Context, bandID, songID uuid.UU
 		var st models.SetTake
 		var u models.User
 		if err := rows.Scan(&st.SetItemID, &st.SetID, &st.SetName, &st.SetType, &st.StartMS, &st.EndMS,
-			&st.TrackID, &st.TrackTitle, &st.WaveformData, &st.DurationMS, &st.Format, &st.FileSize,
+			&st.TrackID, &st.TrackTitle, &st.DurationMS, &st.Format, &st.FileSize,
 			&st.Tags, &st.RecordedAt, &st.CreatedAt,
 			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt); err != nil {
 			return nil, err

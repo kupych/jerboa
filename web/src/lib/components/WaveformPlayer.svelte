@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import WaveSurfer from "wavesurfer.js";
+  import type WaveSurfer from "wavesurfer.js";
   import { formatTimestamp, formatDuration } from "../utils/format";
   import { player } from "../stores/player";
 
@@ -48,7 +48,8 @@
   let totalDuration = $state(duration / 1000);
   let hoveredComment = $state<string | null>(null);
 
-  onMount(() => {
+  onMount(async () => {
+    const { default: WaveSurfer } = await import("wavesurfer.js");
     wavesurfer = WaveSurfer.create({
       container,
       waveColor: getComputedStyle(document.documentElement)
