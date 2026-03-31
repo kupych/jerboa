@@ -463,14 +463,17 @@ func (q *Queries) CreateSong(ctx context.Context, bandID uuid.UUID, name string)
 
 func (q *Queries) ListSongs(ctx context.Context, bandID uuid.UUID) ([]models.Song, error) {
 	rows, err := q.pool.Query(ctx, `
-		SELECT s.id, s.band_id, s.name, s.lyrics, s.tabs, s.notes, s.bpm, s.created_at,
-			(SELECT count(*) FROM tracks t WHERE t.song_id = s.id) +
-			(SELECT count(DISTINCT si.set_id) FROM set_items si
-				JOIN sets st ON st.id = si.set_id
-				JOIN tracks t ON t.set_id = si.set_id
-				WHERE si.song_id = s.id) AS take_count
+		SELECT s.id, s.band_id, s.name, s.notes, s.bpm, s.created_at,
+			COUNT(DISTINCT t.id) +
+			COUNT(DISTINCT CASE WHEN st.id IS NOT NULL THEN si.set_id END) AS take_count
 		FROM songs s
-		WHERE s.band_id = $1 ORDER BY s.name
+		LEFT JOIN tracks t ON t.song_id = s.id
+		LEFT JOIN set_items si ON si.song_id = s.id
+		LEFT JOIN sets st ON st.id = si.set_id
+			AND EXISTS (SELECT 1 FROM tracks WHERE set_id = st.id)
+		WHERE s.band_id = $1
+		GROUP BY s.id
+		ORDER BY s.name
 	`, bandID)
 	if err != nil {
 		return nil, err
@@ -480,7 +483,7 @@ func (q *Queries) ListSongs(ctx context.Context, bandID uuid.UUID) ([]models.Son
 	var songs []models.Song
 	for rows.Next() {
 		var s models.Song
-		if err := rows.Scan(&s.ID, &s.BandID, &s.Name, &s.Lyrics, &s.Tabs, &s.Notes, &s.BPM, &s.CreatedAt, &s.TakeCount); err != nil {
+		if err := rows.Scan(&s.ID, &s.BandID, &s.Name, &s.Notes, &s.BPM, &s.CreatedAt, &s.TakeCount); err != nil {
 			return nil, err
 		}
 		songs = append(songs, s)
@@ -584,7 +587,7 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Track, error) {
 	rows, err := q.pool.Query(ctx, `
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
-		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
+		       t.duration_ms, t.format, t.sample_rate, t.file_size,
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
 		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to, t.created_at,
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
@@ -607,7 +610,7 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 		var songID *uuid.UUID
 		var songName *string
 		if err := rows.Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
-			&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
+			&t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
 			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
 			&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo, &t.CreatedAt,
 			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
