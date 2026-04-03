@@ -149,7 +149,7 @@
         </div>
       {/if}
 
-      <span class="hidden lg:inline text-[9px] font-mono font-semibold tracking-[0.15em] text-text-muted/30 select-none mt-0.5">SYS·AUD·01</span>
+      <span class="hidden lg:inline text-[9px] font-mono font-semibold tracking-[0.15em] text-text-muted/30 select-none mt-0.5">SYS·AUD·01·{version}</span>
     </div>
 
     <div class="flex items-center gap-4 md:gap-5">

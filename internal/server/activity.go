@@ -37,7 +37,7 @@ func (h *ActivityHandler) Unread(w http.ResponseWriter, r *http.Request) {
 func (h *ActivityHandler) Feed(w http.ResponseWriter, r *http.Request) {
 	user := UserFrom(r.Context())
 
-	items, err := h.queries.GetActivityFeed(r.Context(), user.ID, 30)
+	items, err := h.queries.GetActivityFeed(r.Context(), user.ID, 12)
 	if err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
