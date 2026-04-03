@@ -542,6 +542,13 @@
 
   $effect(() => { onPlayingChange?.(playing); });
 
+  // Auto-load buffers for tracks with unknown duration (WebM/MediaRecorder files often have duration_ms=0 in DB)
+  $effect(() => {
+    if (!loading && tracks.some((t) => t.duration_ms === 0 && !bufferCache.has(t.id))) {
+      loadMissing();
+    }
+  });
+
   $effect(() => {
     const currentIds = new Set(tracks.map((t) => t.id));
     for (const id of [...bufferCache.keys()]) {

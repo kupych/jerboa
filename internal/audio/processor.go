@@ -52,6 +52,7 @@ func (p *Processor) Probe(ctx context.Context, filePath string) (*Metadata, erro
 		} `json:"format"`
 		Streams []struct {
 			CodecType  string `json:"codec_type"`
+			Duration   string `json:"duration"`
 			SampleRate string `json:"sample_rate"`
 			CodecName  string `json:"codec_name"`
 		} `json:"streams"`
@@ -71,6 +72,12 @@ func (p *Processor) Probe(ctx context.Context, filePath string) (*Metadata, erro
 		if s.CodecType == "audio" {
 			meta.SampleRate, _ = strconv.Atoi(s.SampleRate)
 			meta.Format = s.CodecName
+			// WebM/MediaRecorder files often omit format-level duration; fall back to stream duration
+			if meta.DurationMS <= 0 {
+				if d, err := strconv.ParseFloat(s.Duration, 64); err == nil && d > 0 {
+					meta.DurationMS = int64(d * 1000)
+				}
+			}
 			break
 		}
 	}
