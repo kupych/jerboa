@@ -11,7 +11,7 @@
   import MiniPlayer from "../lib/components/MiniPlayer.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
   import Recorder from "../lib/components/Recorder.svelte";
-  import { setTypeCode, setTypeLabel, formatRelativeTime } from "../lib/utils/format";
+  import { setTypeCode, setTypeLabel, formatRelativeTime, formatDuration } from "../lib/utils/format";
 
   let { slug }: { slug: string } = $props();
 
