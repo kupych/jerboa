@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -1389,6 +1390,97 @@ func (q *Queries) GetActivityFeed(ctx context.Context, userID uuid.UUID, limit i
 		if err := rows.Scan(&a.Type, &a.ActorName, &a.Subject, &a.BandSlug, &a.BandName, &a.LinkID, &a.CreatedAt); err != nil {
 			return nil, err
 		}
+		items = append(items, a)
+	}
+	return items, nil
+}
+
+func downsamplePeaks(peaks []float64, n int) []float64 {
+	if len(peaks) == 0 {
+		return nil
+	}
+	if len(peaks) <= n {
+		return peaks
+	}
+	out := make([]float64, n)
+	for i := range out {
+		out[i] = peaks[i*len(peaks)/n]
+	}
+	return out
+}
+
+func (q *Queries) GetBandActivity(ctx context.Context, bandID, userID uuid.UUID, limit int) ([]models.ActivityItem, error) {
+	rows, err := q.pool.Query(ctx, `
+		WITH last_seen AS (
+			SELECT COALESCE(last_seen_at, '-infinity'::timestamptz) AS ts
+			FROM band_members WHERE band_id = $1 AND user_id = $2
+		)
+		SELECT type, actor_name, subject, link_id, stream_id, created_at,
+		       waveform_data, duration_ms, preview, timestamp_ms,
+		       created_at > (SELECT ts FROM last_seen) AS is_new
+		FROM (
+			SELECT 'track' AS type, u.display_name AS actor_name, t.title AS subject,
+			       t.id::text AS link_id, t.id::text AS stream_id, t.created_at,
+			       t.waveform_data, t.duration_ms, NULL::text AS preview, NULL::bigint AS timestamp_ms
+			FROM tracks t
+			JOIN users u ON t.uploaded_by = u.id
+			WHERE t.band_id = $1 AND t.overdub_of IS NULL AND t.bounced_to IS NULL
+		UNION ALL
+			SELECT 'overdub', u.display_name, p.title,
+			       p.id::text, t.id::text, t.created_at,
+			       t.waveform_data, t.duration_ms, NULL::text, NULL::bigint
+			FROM tracks t
+			JOIN users u ON t.uploaded_by = u.id
+			JOIN tracks p ON t.overdub_of = p.id
+			WHERE t.band_id = $1
+		UNION ALL
+			SELECT 'comment', u.display_name, t.title,
+			       t.id::text, ''::text, c.created_at,
+			       NULL::jsonb, NULL::bigint, LEFT(c.body, 140), c.timestamp_ms
+			FROM comments c
+			JOIN users u ON c.user_id = u.id
+			JOIN tracks t ON c.track_id = t.id
+			WHERE t.band_id = $1
+		UNION ALL
+			SELECT 'song', '', s.name,
+			       s.id::text, ''::text, s.created_at,
+			       NULL::jsonb, NULL::bigint, NULL::text, NULL::bigint
+			FROM songs s
+			WHERE s.band_id = $1
+		) q
+		ORDER BY created_at DESC
+		LIMIT $3
+	`, bandID, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []models.ActivityItem
+	for rows.Next() {
+		var a models.ActivityItem
+		var rawWaveform []byte
+		var durMs, tsMs *int64
+		var preview *string
+		if err := rows.Scan(
+			&a.Type, &a.ActorName, &a.Subject, &a.LinkID, &a.StreamID, &a.CreatedAt,
+			&rawWaveform, &durMs, &preview, &tsMs, &a.IsNew,
+		); err != nil {
+			return nil, err
+		}
+		if rawWaveform != nil {
+			var peaks []float64
+			if json.Unmarshal(rawWaveform, &peaks) == nil {
+				a.Peaks = downsamplePeaks(peaks, 60)
+			}
+		}
+		if durMs != nil {
+			a.DurationMs = *durMs
+		}
+		if preview != nil {
+			a.Preview = *preview
+		}
+		a.TimestampMs = tsMs
 		items = append(items, a)
 	}
 	return items, nil

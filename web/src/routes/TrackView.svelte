@@ -1085,43 +1085,41 @@
           {/if}
         {/if}
 
-        <!-- Controls footer -->
-        <div class="flex items-center justify-between mt-4">
-          <h3 class="label text-text-secondary">overdubs ({overdubs.length})</h3>
-          <div class="flex items-center gap-4">
-            <div class="flex items-center gap-2">
-              <button
-                onclick={calibrate}
-                disabled={calibrating}
-                class="label-sm text-text-muted hover:text-accent transition-colors"
-              >{calibrating ? "calibrating..." : "calibrate"}</button>
-              <input
-                type="number"
-                step="1"
-                value={calibratedLatency ?? 0}
-                onchange={(e) => {
-                  const val = parseInt((e.target as HTMLInputElement).value);
-                  if (!isNaN(val)) {
-                    calibratedLatency = val;
-                    localStorage.setItem("overdub-latency-ms", String(val));
-                  }
-                }}
-                class="w-16 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
-              />
-              <span class="label-sm text-text-muted">ms</span>
-            </div>
+        <!-- Recording controls -->
+        <div class="flex items-center gap-4 flex-wrap border border-border bg-bg-surface px-4 py-2.5 mt-3">
+          <div class="flex items-center gap-2">
             <button
-              onclick={() => { showOverdubUpload = !showOverdubUpload; if (showOverdubUpload) showOverdubRecord = false; }}
+              onclick={calibrate}
+              disabled={calibrating}
               class="label-sm text-text-muted hover:text-accent transition-colors"
-            >{showOverdubUpload ? "cancel" : "upload"}</button>
-            <button
-              onclick={() => { showOverdubRecord = !showOverdubRecord; if (showOverdubRecord) showOverdubUpload = false; }}
-              class="label-sm text-text-muted hover:text-accent transition-colors flex items-center gap-1.5"
-            >
-              <div class="w-2 h-2 rounded-full bg-red-400/60"></div>
-              {showOverdubRecord ? "cancel" : "record"}
-            </button>
+            >{calibrating ? "calibrating..." : "calibrate"}</button>
+            <input
+              type="number"
+              step="1"
+              value={calibratedLatency ?? 0}
+              onchange={(e) => {
+                const val = parseInt((e.target as HTMLInputElement).value);
+                if (!isNaN(val)) {
+                  calibratedLatency = val;
+                  localStorage.setItem("overdub-latency-ms", String(val));
+                }
+              }}
+              class="w-16 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
+            />
+            <span class="label-sm text-text-muted">ms</span>
           </div>
+          <div class="w-px h-4 bg-border/50 hidden sm:block"></div>
+          <button
+            onclick={() => { showOverdubUpload = !showOverdubUpload; if (showOverdubUpload) showOverdubRecord = false; }}
+            class="label-sm text-text-muted hover:text-accent transition-colors"
+          >{showOverdubUpload ? "cancel" : "upload"}</button>
+          <button
+            onclick={() => { showOverdubRecord = !showOverdubRecord; if (showOverdubRecord) showOverdubUpload = false; }}
+            class="label-sm text-text-muted hover:text-accent transition-colors flex items-center gap-1.5"
+          >
+            <div class="w-2 h-2 rounded-full bg-red-400/60"></div>
+            {showOverdubRecord ? "cancel" : "record"}
+          </button>
         </div>
 
         {#if calibrationMsg}

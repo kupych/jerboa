@@ -29,6 +29,7 @@
     onRefresh,
     onPositionChange,
     onPlayingChange,
+    onTrimChange,
   }: {
     tracks: MixerTrack[];
     isAdmin?: boolean;
@@ -44,6 +45,7 @@
     onRefresh?: () => void;
     onPositionChange?: (ms: number) => void;
     onPlayingChange?: (playing: boolean) => void;
+    onTrimChange?: (id: string, startMs: number, endMs: number) => void;
   } = $props();
 
   export function seekTo(ms: number) { commitSeek(ms); }
@@ -54,6 +56,8 @@
   // === Audio engine ===
   let audioCtx: AudioContext | null = null;
   let bufferCache = new Map<string, AudioBuffer>();
+  const canvasMap = new Map<string, HTMLCanvasElement>();
+  const laneMap = new Map<string, HTMLDivElement>();
   let activeSources: AudioBufferSourceNode[] = [];
   let activeGains = new Map<string, GainNode>();
   let autoStopTimer: ReturnType<typeof setTimeout> | null = null;
@@ -67,12 +71,13 @@
   let rafId = 0;
   let playStartCtxTime = 0;
   let playStartMs = 0;
-  let userSeeking = false; // plain flag — NOT reactive, so no re-render during drag
+  let userSeeking = false;
 
   // === Per-track state ===
   let muted = $state(new Set<string>());
   let soloId = $state<string | null>(null);
   let gainValues = $state<Record<string, number>>({});
+  let trimValues = $state<Record<string, { startMs: number; endMs: number }>>({});
 
   // === UI state ===
   let editingId = $state<string | null>(null);
@@ -80,15 +85,126 @@
   let confirmDeleteId = $state<string | null>(null);
   let bouncing = $state(false);
 
-  // Init gains for new tracks
+  // === Peaks (computed from AudioBuffer, not reactive) ===
+  const peaksCache = new Map<string, Float32Array>();
+  let peaksVersion = $state(0); // increment to trigger canvas redraws
+
+  // Init gains and trims for new tracks
   $effect(() => {
-    let changed = false;
-    const next = { ...gainValues };
+    let gChanged = false, tChanged = false;
+    const nextG = { ...gainValues };
+    const nextT = { ...trimValues };
     for (const t of tracks) {
-      if (!(t.id in next)) { next[t.id] = 1; changed = true; }
+      if (!(t.id in nextG)) { nextG[t.id] = 1; gChanged = true; }
+      if (!(t.id in nextT)) {
+        nextT[t.id] = { startMs: 0, endMs: t.duration_ms > 0 ? t.duration_ms : 9999999 };
+        tChanged = true;
+      }
     }
-    if (changed) gainValues = next;
+    if (gChanged) gainValues = nextG;
+    if (tChanged) trimValues = nextT;
   });
+
+  // Redraw canvases when peaks load or trim changes
+  $effect(() => {
+    peaksVersion; // subscribe
+    for (const t of tracks) {
+      const canvas = canvasMap.get(t.id);
+      const peaks = peaksCache.get(t.id);
+      if (canvas && peaks) redrawCanvas(t.id);
+    }
+  });
+
+  // Also redraw when trimValues change
+  $effect(() => {
+    const _tv = trimValues; // subscribe
+    for (const t of tracks) {
+      const canvas = canvasMap.get(t.id);
+      const peaks = peaksCache.get(t.id);
+      if (canvas && peaks) redrawCanvas(t.id);
+    }
+  });
+
+  // === Waveform rendering ===
+  function extractPeaks(buffer: AudioBuffer, n: number): Float32Array {
+    const nch = buffer.numberOfChannels;
+    const len = buffer.length;
+    const blockSize = Math.max(1, Math.floor(len / n));
+    const peaks = new Float32Array(n);
+    const channels = Array.from({ length: nch }, (_, i) => buffer.getChannelData(i));
+    for (let i = 0; i < n; i++) {
+      let max = 0;
+      const s = i * blockSize;
+      const e = Math.min(s + blockSize, len);
+      for (let j = s; j < e; j++) {
+        for (const ch of channels) {
+          const v = Math.abs(ch[j]);
+          if (v > max) max = v;
+        }
+      }
+      peaks[i] = max;
+    }
+    return peaks;
+  }
+
+  function redrawCanvas(id: string) {
+    const canvas = canvasMap.get(id);
+    const peaks = peaksCache.get(id);
+    if (!canvas || !peaks) return;
+
+    const t = tracks.find((t) => t.id === id);
+    const dur = t ? trackDuration(t) : 0;
+    const trim = trimValues[id];
+    const startFrac = dur > 0 && trim ? trim.startMs / dur : 0;
+    const endFrac = dur > 0 && trim ? Math.min(trim.endMs, dur) / dur : 1;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    const ctx2d = canvas.getContext("2d");
+    if (!ctx2d) return;
+    ctx2d.clearRect(0, 0, w, h);
+
+    const style = getComputedStyle(document.documentElement);
+    const waveActive = style.getPropertyValue("--color-waveform-progress").trim() || "#5b9cf6";
+    const waveDim = style.getPropertyValue("--color-waveform").trim() || "#334155";
+
+    const barW = w / peaks.length;
+    ctx2d.fillStyle = waveActive;
+    for (let i = 0; i < peaks.length; i++) {
+      const frac = i / peaks.length;
+      if (frac < startFrac || frac > endFrac) continue;
+      const bh = Math.max(2, peaks[i] * h * 0.85);
+      const y = (h - bh) / 2;
+      ctx2d.fillRect(
+        Math.floor(i * barW),
+        Math.floor(y),
+        Math.max(1, Math.ceil(barW) - 1),
+        Math.ceil(bh)
+      );
+    }
+  }
+
+  function initCanvas(node: HTMLCanvasElement, id: string) {
+    canvasMap.set(id, node);
+    if (peaksCache.get(id)) redrawCanvas(id);
+    return {
+      update(newId: string) {
+        canvasMap.delete(id);
+        id = newId;
+        canvasMap.set(id, node);
+        if (peaksCache.get(id)) redrawCanvas(id);
+      },
+      destroy() { canvasMap.delete(id); },
+    };
+  }
+
+  function initLane(node: HTMLDivElement, id: string) {
+    laneMap.set(id, node);
+    return {
+      update(newId: string) { laneMap.delete(id); id = newId; laneMap.set(id, node); },
+      destroy() { laneMap.delete(id); },
+    };
+  }
 
   // === Timeline math ===
   function timelineShift(ts: MixerTrack[]): number {
@@ -101,7 +217,6 @@
     return t.isParent ? shift : shift + t.offset_ms;
   }
 
-  // Use buffer duration if track metadata not yet processed or suspiciously short
   function trackDuration(t: MixerTrack): number {
     const buf = bufferCache.get(t.id);
     if (buf) return buf.duration * 1000;
@@ -117,6 +232,48 @@
         })()
   );
 
+  // Full clip position (ignoring trim) — for visual background
+  function fullClipStartPct(t: MixerTrack): number {
+    if (totalMs <= 0) return 0;
+    const shift = timelineShift(tracks);
+    return (trackPos(t, shift) / totalMs) * 100;
+  }
+
+  function fullClipWidthPct(t: MixerTrack): number {
+    if (totalMs <= 0) return 0;
+    return (trackDuration(t) / totalMs) * 100;
+  }
+
+  // Trim handle positions as % of clip width
+  function trimStartPct(t: MixerTrack): number {
+    const dur = trackDuration(t);
+    if (dur <= 0) return 0;
+    const trim = trimValues[t.id];
+    return trim ? (trim.startMs / dur) * 100 : 0;
+  }
+
+  function trimEndPct(t: MixerTrack): number {
+    const dur = trackDuration(t);
+    if (dur <= 0) return 100;
+    const trim = trimValues[t.id];
+    return trim ? (Math.min(trim.endMs, dur) / dur) * 100 : 100;
+  }
+
+  let playheadPct = $derived(totalMs > 0 ? (positionMs / totalMs) * 100 : 0);
+
+  let timeMarkers = $derived(
+    totalMs <= 0
+      ? []
+      : (() => {
+          const secs = totalMs / 1000;
+          const intervals = [5, 10, 15, 30, 60, 120, 300, 600];
+          const step = intervals.find((s) => secs / s <= 8) ?? 600;
+          const marks: number[] = [];
+          for (let s = step; s < secs; s += step) marks.push(s * 1000);
+          return marks;
+        })()
+  );
+
   function effectiveGain(id: string): number {
     if (soloId !== null && soloId !== id) return 0;
     if (muted.has(id)) return 0;
@@ -129,6 +286,7 @@
       audioCtx = new AudioContext();
       bufferCache.clear();
       activeGains.clear();
+      peaksCache.clear();
     }
     return audioCtx;
   }
@@ -147,8 +305,19 @@
           const ab = await fetch(t.streamUrl).then((r) => r.arrayBuffer());
           const buf = await ctx.decodeAudioData(ab);
           bufferCache.set(t.id, buf);
+          peaksCache.set(t.id, extractPeaks(buf, 400));
+          // Fix endMs now that we have real duration
+          const dur = buf.duration * 1000;
+          const existing = trimValues[t.id];
+          if (!existing || existing.endMs > dur || existing.endMs === 9999999) {
+            trimValues = {
+              ...trimValues,
+              [t.id]: { startMs: existing?.startMs ?? 0, endMs: dur },
+            };
+          }
         })
       );
+      peaksVersion++;
       return true;
     } catch {
       loadError = "failed to load one or more tracks";
@@ -158,7 +327,7 @@
     }
   }
 
-  // === Playback ===
+  // === Playback (trim-aware) ===
   async function play() {
     if (playing) return;
     if (!(await loadMissing())) return;
@@ -180,10 +349,20 @@
       if (!buf) continue;
       const tpos = trackPos(t, shift);
       const dur = trackDuration(t);
-      if (dur <= 0 || from >= tpos + dur) continue;
+      if (dur <= 0) continue;
 
-      const ctxDelay = Math.max(0, tpos - from) / 1000;
-      const bufOffset = Math.max(0, from - tpos) / 1000;
+      const trim = trimValues[t.id];
+      const startTrim = trim?.startMs ?? 0;
+      const endTrim = trim ? Math.min(trim.endMs, dur) : dur;
+      const clipStart = tpos + startTrim;
+      const clipEnd = tpos + endTrim;
+
+      if (from >= clipEnd) continue;
+
+      const ctxDelay = Math.max(0, clipStart - from) / 1000;
+      const bufOffset = (startTrim + Math.max(0, from - clipStart)) / 1000;
+      const duration = (clipEnd - Math.max(from, clipStart)) / 1000;
+      if (duration <= 0) continue;
 
       const gainNode = ctx.createGain();
       gainNode.gain.value = effectiveGain(t.id);
@@ -193,7 +372,7 @@
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.connect(gainNode);
-      src.start(now + ctxDelay, bufOffset);
+      src.start(now + ctxDelay, bufOffset, duration);
       activeSources.push(src);
     }
 
@@ -201,7 +380,14 @@
     positionMs = from;
     startRaf();
 
-    const remaining = Math.max(0, totalMs - from);
+    // Auto-stop at effective end (respects trims)
+    const effectiveEnd = tracks.reduce((max, t) => {
+      const dur = trackDuration(t);
+      const trim = trimValues[t.id];
+      const endTrim = trim ? Math.min(trim.endMs, dur) : dur;
+      return Math.max(max, trackPos(t, timelineShift(tracks)) + endTrim);
+    }, 0);
+    const remaining = Math.max(0, effectiveEnd - from);
     autoStopTimer = setTimeout(() => {
       stopSources();
       playing = false;
@@ -223,16 +409,12 @@
     stopAll();
   }
 
-  // Seek committed by slider release or click
   function commitSeek(ms: number) {
     userSeeking = false;
     const to = Math.max(0, Math.min(ms, totalMs));
     seekMs = to;
     positionMs = to;
-    if (playing) {
-      stopAll();
-      play();
-    }
+    if (playing) { stopAll(); play(); }
   }
 
   function stopSources() {
@@ -284,28 +466,70 @@
     if (gn && audioCtx) gn.gain.setValueAtTime(effectiveGain(id), audioCtx.currentTime);
   }
 
-  // === Inline rename ===
-  function startRename(t: MixerTrack) {
-    editingId = t.id;
-    editingTitle = t.title;
-  }
-
+  function startRename(t: MixerTrack) { editingId = t.id; editingTitle = t.title; }
   function commitRename() {
-    if (editingId && editingTitle.trim() && onRename) {
-      onRename(editingId, editingTitle.trim());
-    }
+    if (editingId && editingTitle.trim() && onRename) onRename(editingId, editingTitle.trim());
     editingId = null;
   }
+  function cancelRename() { editingId = null; }
 
-  function cancelRename() {
-    editingId = null;
+  // === Trim drag ===
+  type TrimDrag = { id: string; side: "left" | "right"; startX: number; origMs: number };
+  let trimDrag: TrimDrag | null = null;
+
+  function startTrimDrag(e: PointerEvent, id: string, side: "left" | "right") {
+    e.preventDefault();
+    e.stopPropagation();
+    const trim = trimValues[id];
+    const dur = trackDuration(tracks.find((t) => t.id === id)!);
+    trimDrag = {
+      id, side,
+      startX: e.clientX,
+      origMs: side === "left" ? (trim?.startMs ?? 0) : (trim ? Math.min(trim.endMs, dur) : dur),
+    };
+    window.addEventListener("pointermove", onTrimMove);
+    window.addEventListener("pointerup", onTrimUp, { once: true });
+  }
+
+  function onTrimMove(e: PointerEvent) {
+    if (!trimDrag || totalMs <= 0) return;
+    const t = tracks.find((t) => t.id === trimDrag!.id);
+    if (!t) return;
+    const dur = trackDuration(t);
+
+    // px → ms using any visible lane as reference for total width
+    const anyLane = laneMap.values().next().value as HTMLDivElement | undefined;
+    if (!anyLane) return;
+    const laneW = anyLane.getBoundingClientRect().width;
+    if (laneW <= 0) return;
+
+    const dMs = ((e.clientX - trimDrag.startX) * totalMs) / laneW;
+    const existing = trimValues[trimDrag.id] ?? { startMs: 0, endMs: dur };
+    const next = { ...existing };
+
+    if (trimDrag.side === "left") {
+      next.startMs = Math.max(0, Math.min(trimDrag.origMs + dMs, next.endMs - 100));
+    } else {
+      next.endMs = Math.max(next.startMs + 100, Math.min(trimDrag.origMs + dMs, dur));
+    }
+    trimValues = { ...trimValues, [trimDrag.id]: next };
+
+    const peaks = peaksCache.get(trimDrag.id);
+    if (peaks) redrawCanvas(trimDrag.id);
+  }
+
+  function onTrimUp() {
+    if (trimDrag) {
+      const trim = trimValues[trimDrag.id];
+      if (trim) onTrimChange?.(trimDrag.id, trim.startMs, trim.endMs);
+    }
+    trimDrag = null;
+    window.removeEventListener("pointermove", onTrimMove);
   }
 
   // === Bounce ===
   function getUnmutedOverdubIds(): string[] {
-    return tracks
-      .filter((t) => !t.isParent && !muted.has(t.id))
-      .map((t) => t.id);
+    return tracks.filter((t) => !t.isParent && !muted.has(t.id)).map((t) => t.id);
   }
 
   function doBounce(toNew: boolean) {
@@ -313,17 +537,15 @@
     if (ids.length === 0) return;
     bouncing = true;
     onBounceMix?.(ids, toNew);
-    // Reset after a short delay (the bounce runs async server-side)
     setTimeout(() => { bouncing = false; }, 2000);
   }
 
   $effect(() => { onPlayingChange?.(playing); });
 
-  // Invalidate buffers when tracks change (new overdub, etc.)
   $effect(() => {
     const currentIds = new Set(tracks.map((t) => t.id));
-    for (const id of bufferCache.keys()) {
-      if (!currentIds.has(id)) bufferCache.delete(id);
+    for (const id of [...bufferCache.keys()]) {
+      if (!currentIds.has(id)) { bufferCache.delete(id); peaksCache.delete(id); }
     }
   });
 
@@ -331,263 +553,310 @@
     cancelAnimationFrame(rafId);
     stopSources();
     audioCtx?.close();
+    window.removeEventListener("pointermove", onTrimMove);
   });
+
+  let visibleTracks = $derived(hideSrc ? tracks.filter((t) => !t.isParent) : tracks);
+  let srcTrack = $derived(tracks.find((t) => t.isParent));
 </script>
 
 <div class="border border-border bg-bg-surface {seamlessTop ? 'border-t-0' : ''}">
-  <!-- Source volume + transport row (when integrated with waveform) -->
-  {#if hideSrc}
-    {@const srcTrack = tracks.find((t) => t.isParent)}
-    {#if srcTrack}
-      <div class="flex items-center gap-3 px-4 py-2.5 border-b border-border/50">
-        <!-- Play/Pause -->
-        <button
-          onclick={playing ? pause : play}
-          disabled={loading}
-          title={playing ? "pause" : "play"}
-          class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-40 shrink-0"
-        >
-          {#if loading}
-            <div class="w-3 h-3 border border-accent/60 border-t-accent animate-spin"></div>
-          {:else if playing}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="5" y="3" width="4" height="18"/>
-              <rect x="15" y="3" width="4" height="18"/>
-            </svg>
-          {:else}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <polygon points="6,3 20,12 6,21"/>
-            </svg>
-          {/if}
-        </button>
-        <!-- Stop -->
-        <button
-          onclick={stop}
-          disabled={!playing && seekMs === 0}
-          title="stop"
-          class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-20 shrink-0"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="4" y="4" width="16" height="16" rx="1"/>
-          </svg>
-        </button>
-        <span class="label-sm text-text-muted shrink-0">src</span>
-        {#if loadError}
-          <span class="label-sm text-danger">{loadError}</span>
-        {:else}
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={gainValues[srcTrack.id] ?? 1}
-            oninput={(e) => setGainVal(srcTrack.id, parseFloat((e.target as HTMLInputElement).value))}
-            class="flex-1 h-1 accent-accent cursor-pointer"
-          />
-          <span class="w-7 label-sm font-mono text-text-muted text-right shrink-0">
-            {Math.round((gainValues[srcTrack.id] ?? 1) * 100)}
-          </span>
-        {/if}
-      </div>
-    {/if}
-  {:else}
-    <!-- Standalone transport bar (when not integrated with waveform) -->
-    <div class="flex items-center gap-3 px-4 py-2.5 border-b border-border/50">
-      <button
-        onclick={playing ? pause : play}
-        disabled={loading}
-        title={playing ? "pause" : "play"}
-        class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-40 shrink-0"
-      >
-        {#if loading}
-          <div class="w-3 h-3 border border-accent/60 border-t-accent animate-spin"></div>
-        {:else if playing}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="5" y="3" width="4" height="18"/>
-            <rect x="15" y="3" width="4" height="18"/>
-          </svg>
-        {:else}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="6,3 20,12 6,21"/>
-          </svg>
-        {/if}
-      </button>
-      <button
-        onclick={stop}
-        disabled={!playing && seekMs === 0}
-        title="stop"
-        class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-20 shrink-0"
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-          <rect x="4" y="4" width="16" height="16" rx="1"/>
-        </svg>
-      </button>
-      {#if loadError}
-        <span class="label-sm text-danger">{loadError}</span>
-      {:else}
-        <span class="label-sm font-mono text-text-muted tabular-nums shrink-0">
-          {formatDuration(positionMs)} / {formatDuration(totalMs)}
-        </span>
-        <input
-          type="range"
-          min="0"
-          max={totalMs || 1}
-          value={positionMs}
-          step="100"
-          oninput={(e) => { userSeeking = true; positionMs = parseFloat((e.target as HTMLInputElement).value); }}
-          onchange={(e) => commitSeek(parseFloat((e.target as HTMLInputElement).value))}
-          class="flex-1 h-1 accent-accent cursor-pointer"
-        />
-      {/if}
-    </div>
-  {/if}
-
-  <!-- Track rows -->
-  {#each tracks.filter((t) => !(hideSrc && t.isParent)) as t (t.id)}
-    {@const isMuted = muted.has(t.id)}
-    {@const isSolo = soloId === t.id}
-    {@const isDimmed = soloId !== null && soloId !== t.id}
-    <div
-      class="flex flex-col px-4 py-2 border-b border-border/30 last:border-0 transition-opacity {isDimmed ? 'opacity-40' : ''}"
+  <!-- Transport bar -->
+  <div class="flex items-center gap-2 px-3 py-2 border-b border-border/50">
+    <button
+      onclick={playing ? pause : play}
+      disabled={loading}
+      class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-40 shrink-0"
+      title={playing ? "pause" : "play"}
     >
-      <!-- Top row: M S + track name -->
-      <div class="flex items-center gap-2 min-w-0">
-        <!-- Mute -->
+      {#if loading}
+        <div class="w-3 h-3 border border-accent/60 border-t-accent animate-spin"></div>
+      {:else if playing}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="5" y="3" width="4" height="18"/>
+          <rect x="15" y="3" width="4" height="18"/>
+        </svg>
+      {:else}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="6,3 20,12 6,21"/>
+        </svg>
+      {/if}
+    </button>
+
+    <button
+      onclick={stop}
+      disabled={!playing && seekMs === 0}
+      class="w-7 h-7 flex items-center justify-center text-text-secondary hover:text-accent transition-colors disabled:opacity-20 shrink-0"
+      title="stop"
+    >
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+        <rect x="4" y="4" width="16" height="16" rx="1"/>
+      </svg>
+    </button>
+
+    <span class="label-sm font-mono text-text-muted tabular-nums shrink-0">
+      {formatDuration(positionMs)} / {formatDuration(totalMs)}
+    </span>
+
+    {#if loadError}
+      <span class="label-sm text-danger ml-1">{loadError}</span>
+    {/if}
+
+    {#if hideSrc && srcTrack}
+      <span class="label-sm text-text-muted shrink-0 ml-auto">src</span>
+      <input
+        type="range" min="0" max="1" step="0.05"
+        value={gainValues[srcTrack.id] ?? 1}
+        oninput={(e) => setGainVal(srcTrack!.id, parseFloat((e.target as HTMLInputElement).value))}
+        class="w-20 h-1 accent-accent cursor-pointer shrink-0"
+      />
+      <span class="w-6 label-sm font-mono text-text-muted text-right shrink-0">
+        {Math.round((gainValues[srcTrack.id] ?? 1) * 100)}
+      </span>
+    {/if}
+  </div>
+
+  <!-- Mobile track list (< sm) -->
+  <div class="sm:hidden">
+    {#each visibleTracks as t (t.id)}
+      {@const isMuted = muted.has(t.id)}
+      {@const isSolo = soloId === t.id}
+      {@const isDimmed = soloId !== null && soloId !== t.id}
+      <div class="flex items-center gap-2 px-3 py-2.5 border-b border-border/20 last:border-0 transition-opacity {isDimmed ? 'opacity-35' : ''}">
         <button
           onclick={() => toggleMute(t.id)}
           title={isMuted ? "unmute" : "mute"}
-          class="w-6 h-6 label-sm font-mono border shrink-0 transition-colors {isMuted
-            ? 'bg-bg-primary border-border text-text-muted line-through'
-            : 'border-accent/60 text-accent hover:border-accent'}"
+          class="w-7 h-7 text-[10px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isMuted
+            ? 'bg-bg-primary border-border text-text-muted/50'
+            : 'border-accent/40 text-accent/70 hover:border-accent hover:text-accent'}"
         >M</button>
-
-        <!-- Solo -->
         <button
           onclick={() => toggleSolo(t.id)}
           title={isSolo ? "unsolo" : "solo"}
-          class="w-6 h-6 label-sm font-mono border shrink-0 transition-colors {isSolo
+          class="w-7 h-7 text-[10px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isSolo
             ? 'border-amber-400 bg-amber-400/10 text-amber-400'
-            : 'border-border text-text-muted hover:border-amber-400/60 hover:text-amber-400/60'}"
+            : 'border-border text-text-muted/50 hover:border-amber-400/60 hover:text-amber-400/60'}"
         >S</button>
 
-        {#if t.isParent}
-          <span class="label-sm bg-accent/10 text-accent px-1.5 shrink-0">src</span>
-        {/if}
+        <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+          {#if t.isParent}
+            <span class="font-semibold text-accent/50 leading-none" style="font-size: 8px; letter-spacing: 0.08em;">SRC</span>
+          {/if}
+          <span class="truncate text-sm font-semibold font-display tracking-wide {isMuted ? 'text-text-muted/50' : 'text-text-primary'}">{t.title}</span>
+        </div>
 
-        {#if editingId === t.id}
-          <input
-            type="text"
-            bind:value={editingTitle}
-            onblur={commitRename}
-            onkeydown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") cancelRename(); }}
-            autofocus
-            class="flex-1 min-w-0 bg-bg-primary border border-accent px-1.5 py-0.5 text-sm font-semibold text-text-primary font-display tracking-wide focus:outline-none"
-          />
-        {:else}
-          <button
-            onclick={() => startRename(t)}
-            title="click to rename"
-            class="flex-1 min-w-0 text-sm font-semibold font-display tracking-wide truncate text-left {isMuted ? 'text-text-muted' : 'text-text-primary'} hover:text-accent transition-colors"
-          >{t.title}</button>
-        {/if}
-      </div>
-
-      <!-- Bottom row: controls (indented past M+S) -->
-      <div class="flex items-center gap-2 mt-1.5 pl-16">
-        {#if !t.isParent}
-          <input
-            type="number"
-            step="10"
-            value={t.offset_ms}
-            onchange={(e) => {
-              const val = parseInt((e.target as HTMLInputElement).value);
-              if (!isNaN(val)) onOffsetChange?.(t.id, val);
-            }}
-            class="w-16 bg-bg-primary border border-border px-1 py-0.5 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors shrink-0"
-          />
-          <span class="label-sm text-text-muted shrink-0">ms</span>
-        {/if}
-
-        <!-- Gain slider -->
         <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
+          type="range" min="0" max="1" step="0.05"
           value={gainValues[t.id] ?? 1}
           oninput={(e) => setGainVal(t.id, parseFloat((e.target as HTMLInputElement).value))}
-          class="flex-1 h-1 accent-accent cursor-pointer"
+          class="w-20 h-1 accent-accent cursor-pointer shrink-0"
         />
-        <span class="w-7 label-sm font-mono text-text-muted text-right shrink-0">
+        <span class="w-7 label-sm font-mono text-text-muted/60 text-right shrink-0">
           {Math.round((gainValues[t.id] ?? 1) * 100)}
         </span>
+      </div>
+    {/each}
+  </div>
 
-        <!-- Row actions -->
-        <div class="flex items-center gap-2 shrink-0">
-          {#if !t.isParent}
-            <!-- Vote -->
-            <button
-              onclick={() => onVote?.(t.user_voted ? null : t.id)}
-              title="vote"
-              class="label-sm transition-colors flex items-center gap-0.5 {t.user_voted ? 'text-accent' : 'text-text-muted hover:text-accent'}"
+  <!-- Desktop timeline (≥ sm) -->
+  <div class="hidden sm:block relative">
+    <!-- Time ruler -->
+    {#if totalMs > 0}
+      <div class="flex h-5 border-b border-border/20 bg-bg-primary/20 select-none">
+        <!-- Left panel placeholder -->
+        <div class="w-[168px] shrink-0 border-r border-border/20"></div>
+        <!-- Ruler ticks -->
+        <div class="flex-1 relative overflow-hidden">
+          {#each timeMarkers as ms}
+            <div
+              class="absolute top-0 h-full flex items-center gap-0.5"
+              style="left: {(ms / totalMs) * 100}%"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill={t.user_voted ? "currentColor" : "none"} stroke="currentColor" stroke-width="2">
-                <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
-                <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
-              </svg>
-              {t.vote_count || ""}
-            </button>
-          {/if}
+              <div class="w-px h-2.5 bg-border/40 shrink-0"></div>
+              <span class="font-mono text-text-muted/40 font-semibold" style="font-size: 9px;">{formatDuration(ms)}</span>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
 
-          <!-- Download -->
-          <a
-            href={`/api/bands/${bandSlug}/tracks/${t.id}/stream?dl=1`}
-            title="download"
-            class="label-sm text-text-muted hover:text-accent transition-colors"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-          </a>
+    <!-- Track rows -->
+    {#each visibleTracks as t (t.id)}
+      {@const isMuted = muted.has(t.id)}
+      {@const isSolo = soloId === t.id}
+      {@const isDimmed = soloId !== null && soloId !== t.id}
+      {@const dur = trackDuration(t)}
+      <div class="flex items-stretch border-b border-border/20 last:border-0 h-[52px] transition-opacity {isDimmed ? 'opacity-35' : ''}">
 
-          {#if !t.isParent}
-            <!-- Delete -->
-            {#if confirmDeleteId === t.id}
-              <button
-                onclick={() => { onDelete?.(t.id); confirmDeleteId = null; }}
-                class="label-sm text-danger hover:text-red-300 transition-colors"
-              >yes</button>
-              <button
-                onclick={() => confirmDeleteId = null}
-                class="label-sm text-text-muted hover:text-text-secondary transition-colors"
-              >no</button>
+        <!-- Left: controls panel -->
+        <div class="w-[168px] shrink-0 flex items-center gap-1.5 px-2 border-r border-border/20">
+          <!-- M/S -->
+          <button
+            onclick={() => toggleMute(t.id)}
+            title={isMuted ? "unmute" : "mute"}
+            class="w-5 h-5 text-[9px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isMuted
+              ? 'bg-bg-primary border-border text-text-muted/50'
+              : 'border-accent/40 text-accent/70 hover:border-accent hover:text-accent'}"
+          >M</button>
+          <button
+            onclick={() => toggleSolo(t.id)}
+            title={isSolo ? "unsolo" : "solo"}
+            class="w-5 h-5 text-[9px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isSolo
+              ? 'border-amber-400 bg-amber-400/10 text-amber-400'
+              : 'border-border text-text-muted/50 hover:border-amber-400/60 hover:text-amber-400/60'}"
+          >S</button>
+
+          <!-- Name -->
+          <div class="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
+            {#if t.isParent}
+              <span class="font-semibold text-accent/50 leading-none" style="font-size: 8px; letter-spacing: 0.08em;">SRC</span>
+            {/if}
+            {#if editingId === t.id}
+              <input
+                type="text"
+                bind:value={editingTitle}
+                onblur={commitRename}
+                onkeydown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") cancelRename(); }}
+                autofocus
+                class="w-full bg-bg-primary border border-accent px-1 py-0 text-xs font-semibold text-text-primary focus:outline-none leading-tight"
+              />
             {:else}
               <button
-                onclick={() => confirmDeleteId = t.id}
-                title="delete"
-                class="text-text-muted hover:text-danger transition-colors"
+                ondblclick={() => startRename(t)}
+                title="double-click to rename"
+                class="truncate text-left text-xs font-semibold font-display tracking-wide leading-tight {isMuted ? 'text-text-muted/50' : 'text-text-primary'} hover:text-accent transition-colors"
+              >{t.title}</button>
+            {/if}
+          </div>
+
+          <!-- Gain -->
+          <div class="flex flex-col items-end gap-0.5 shrink-0">
+            <input
+              type="range" min="0" max="1" step="0.05"
+              value={gainValues[t.id] ?? 1}
+              oninput={(e) => setGainVal(t.id, parseFloat((e.target as HTMLInputElement).value))}
+              class="w-14 h-0.5 accent-accent cursor-pointer"
+            />
+            <span class="font-mono text-text-muted/50 font-semibold tabular-nums leading-none" style="font-size: 8px;">
+              {Math.round((gainValues[t.id] ?? 1) * 100)}
+            </span>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex flex-col items-center justify-center gap-1.5 shrink-0 pl-1">
+            {#if !t.isParent}
+              <button
+                onclick={() => onVote?.(t.user_voted ? null : t.id)}
+                title="vote"
+                class="transition-colors {t.user_voted ? 'text-accent' : 'text-text-muted/30 hover:text-accent/70'}"
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                <svg width="9" height="9" viewBox="0 0 24 24" fill={t.user_voted ? "currentColor" : "none"} stroke="currentColor" stroke-width="2.5">
+                  <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
                 </svg>
               </button>
             {/if}
+            <a
+              href={`/api/bands/${bandSlug}/tracks/${t.id}/stream?dl=1`}
+              title="download"
+              class="text-text-muted/30 hover:text-accent/70 transition-colors"
+            >
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </a>
+            {#if !t.isParent}
+              {#if confirmDeleteId === t.id}
+                <div class="flex items-center gap-1">
+                  <button onclick={() => { onDelete?.(t.id); confirmDeleteId = null; }} class="label-sm text-danger hover:text-red-300 transition-colors px-0.5">y</button>
+                  <button onclick={() => confirmDeleteId = null} class="label-sm text-text-muted hover:text-text-secondary transition-colors px-0.5">n</button>
+                </div>
+              {:else}
+                <button onclick={() => confirmDeleteId = t.id} title="delete" class="text-text-muted/30 hover:text-danger transition-colors">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              {/if}
+            {/if}
+          </div>
+        </div>
+
+        <!-- Right: waveform lane -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <div
+          class="flex-1 relative overflow-hidden cursor-crosshair bg-bg-primary/10"
+          use:initLane={t.id}
+          onclick={(e) => {
+            const lane = laneMap.get(t.id);
+            if (!lane || totalMs <= 0) return;
+            const rect = lane.getBoundingClientRect();
+            commitSeek(Math.round(((e.clientX - rect.left) / rect.width) * totalMs));
+          }}
+        >
+          {#if totalMs > 0 && dur > 0}
+            <!-- Clip block (full duration, not trimmed — trim shown via waveform coloring) -->
+            <div
+              class="absolute top-1 bottom-1 rounded-sm overflow-hidden border border-border/30 bg-bg-elevated/30"
+              style="left: {fullClipStartPct(t)}%; width: {fullClipWidthPct(t)}%"
+            >
+              <!-- Waveform canvas fills the clip -->
+              <canvas
+                use:initCanvas={t.id}
+                width="400"
+                height="40"
+                class="w-full h-full block"
+              ></canvas>
+
+              <!-- Left trim handle -->
+              <div
+                class="absolute top-0 h-full w-3 cursor-ew-resize z-10 flex items-center justify-center group"
+                style="left: {trimStartPct(t)}%; transform: translateX(-50%)"
+                onpointerdown={(e) => startTrimDrag(e, t.id, "left")}
+              >
+                <div class="w-0.5 h-4/5 bg-white/50 group-hover:bg-white/90 rounded-full transition-colors"></div>
+              </div>
+
+              <!-- Right trim handle -->
+              <div
+                class="absolute top-0 h-full w-3 cursor-ew-resize z-10 flex items-center justify-center group"
+                style="left: {trimEndPct(t)}%; transform: translateX(-50%)"
+                onpointerdown={(e) => startTrimDrag(e, t.id, "right")}
+              >
+                <div class="w-0.5 h-4/5 bg-white/50 group-hover:bg-white/90 rounded-full transition-colors"></div>
+              </div>
+            </div>
+          {:else if dur > 0}
+            <!-- Loading placeholder -->
+            <div
+              class="absolute top-1 bottom-1 border border-border/20 bg-bg-elevated/10 flex items-center px-2"
+              style="left: {fullClipStartPct(t)}%; width: {fullClipWidthPct(t)}%"
+            >
+              <div class="w-full h-px bg-border/30"></div>
+            </div>
           {/if}
+
+          <!-- Playhead -->
+          <div
+            class="absolute top-0 bottom-0 w-px bg-white/40 pointer-events-none z-20"
+            style="left: {playheadPct}%"
+          ></div>
+
         </div>
       </div>
-    </div>
-  {/each}
+    {/each}
+  </div>
 
   <!-- Bounce controls (admin only) -->
   {#if isAdmin && tracks.filter((t) => !t.isParent).length > 0}
-    <div class="flex items-center gap-4 px-4 py-2.5 border-t border-border/50">
+    <div class="flex items-center gap-4 px-3 py-2 border-t border-border/50">
       <button
         onclick={() => doBounce(true)}
         disabled={bouncing || getUnmutedOverdubIds().length === 0}
         class="label-sm text-text-muted hover:text-accent transition-colors disabled:opacity-40"
-      >{bouncing ? "bouncing..." : "bounce unmuted → new track"}</button>
+      >{bouncing ? "bouncing..." : "bounce unmuted → new"}</button>
       <button
         onclick={() => doBounce(false)}
         disabled={bouncing || getUnmutedOverdubIds().length === 0}

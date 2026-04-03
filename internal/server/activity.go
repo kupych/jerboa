@@ -50,6 +50,35 @@ func (h *ActivityHandler) Feed(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(items)
 }
 
+func (h *ActivityHandler) BandFeed(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	items, err := h.queries.GetBandActivity(r.Context(), band.ID, user.ID, 40)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	if items == nil {
+		items = []models.ActivityItem{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(items)
+}
+
 func (h *ActivityHandler) MarkSeen(w http.ResponseWriter, r *http.Request) {
 	user := UserFrom(r.Context())
 	slug := chi.URLParam(r, "slug")

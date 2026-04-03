@@ -5,6 +5,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [
+  { 
+    version: "0.13.0",
+    date: "2026-04-04",
+    summary: [
+      "Activity feed - see what you're band's been up to at a glance",
+      "Some UX enhancements to hopefully make navigation a little easier"
+    ]
+  },
   {
     version: "0.12.3",
     date: "2026-03-30",

@@ -235,13 +235,23 @@ type UnreadCount struct {
 }
 
 type ActivityItem struct {
-	Type      string    `json:"type"`      // track, comment, chat, song
-	ActorName string    `json:"actor_name"`
-	Subject   string    `json:"subject"`
-	BandSlug  string    `json:"band_slug"`
-	BandName  string    `json:"band_name"`
-	LinkID    string    `json:"link_id,omitempty"` // track ID for navigation
-	CreatedAt time.Time `json:"created_at"`
+	Type        string    `json:"type"`      // track, overdub, comment, song
+	ActorName   string    `json:"actor_name"`
+	Subject     string    `json:"subject"`
+	BandSlug    string    `json:"band_slug"`
+	BandName    string    `json:"band_name"`
+	LinkID      string    `json:"link_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	// track/overdub only
+	Peaks      []float64 `json:"peaks,omitempty"`
+	DurationMs int64     `json:"duration_ms,omitempty"`
+	// comment only
+	Preview     string `json:"preview,omitempty"`
+	TimestampMs *int64 `json:"timestamp_ms,omitempty"`
+	// separate stream target (overdubs stream the overdub, not the parent)
+	StreamID string `json:"stream_id,omitempty"`
+	// unseen since last visit
+	IsNew bool `json:"is_new"`
 }
 
 type Comment struct {

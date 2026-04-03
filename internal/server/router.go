@@ -117,6 +117,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		// Activity / Unread
 		r.Get("/api/activity/unread", activityH.Unread)
 		r.Get("/api/activity/feed", activityH.Feed)
+		r.Get("/api/bands/{slug}/activity", activityH.BandFeed)
 		r.Post("/api/bands/{slug}/seen", activityH.MarkSeen)
 
 		// Comments

@@ -8,9 +8,10 @@
   import { loadBands } from "../lib/stores/bands";
   import { colorSchemes, applyColorScheme } from "../lib/colorSchemes";
   import TrackCard from "../lib/components/TrackCard.svelte";
+  import MiniPlayer from "../lib/components/MiniPlayer.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
   import Recorder from "../lib/components/Recorder.svelte";
-  import { setTypeCode, setTypeLabel } from "../lib/utils/format";
+  import { setTypeCode, setTypeLabel, formatRelativeTime } from "../lib/utils/format";
 
   let { slug }: { slug: string } = $props();
 
@@ -70,8 +71,58 @@
   let tracks = $state<Track[]>([]);
   let songs = $state<Song[]>([]);
   let sets = $state<SetSummary[]>([]);
+  interface ActivityItem {
+    type: "track" | "overdub" | "comment" | "song";
+    actor_name: string;
+    subject: string;
+    link_id: string;
+    created_at: string;
+    peaks?: number[];
+    duration_ms?: number;
+    preview?: string;
+    timestamp_ms?: number;
+    stream_id?: string;
+    is_new: boolean;
+  }
+
+  interface FeedGroup {
+    key: string;
+    type: ActivityItem["type"];
+    actor_name: string;
+    subject: string;
+    link_id: string;
+    latest_at: string;
+    has_new: boolean;
+    items: ActivityItem[];
+  }
+
+  function groupFeedItems(items: ActivityItem[]): FeedGroup[] {
+    const groups: FeedGroup[] = [];
+    for (const item of items) {
+      const key = `${item.type}|${item.actor_name}|${item.subject}`;
+      const last = groups[groups.length - 1];
+      if (last && last.key === key) {
+        last.items.push(item);
+        if (item.is_new) last.has_new = true;
+      } else {
+        groups.push({ key, type: item.type, actor_name: item.actor_name, subject: item.subject, link_id: item.link_id, latest_at: item.created_at, has_new: item.is_new, items: [item] });
+      }
+    }
+    return groups;
+  }
+
   let loading = $state(true);
-  let viewTab = $state<"songs" | "sets" | "tags">("songs");
+  let feedItems = $state<ActivityItem[]>([]);
+  let expandedGroups = $state(new Set<string>());
+  let viewTab = $state<"feed" | "songs" | "sets" | "tags">("feed");
+
+  let feedGroups = $derived(groupFeedItems(feedItems));
+
+  function toggleGroup(key: string) {
+    const next = new Set(expandedGroups);
+    next.has(key) ? next.delete(key) : next.add(key);
+    expandedGroups = next;
+  }
   let showInviteUrl = $state("");
   let generatingInvite = $state(false);
   let inviteEmail = $state("");
@@ -117,7 +168,6 @@
   $effect(() => {
     slug; // track dependency
     loadData();
-    markBandSeen(slug);
   });
 
   $effect(() => {
@@ -134,12 +184,14 @@
   async function loadData() {
     loading = true;
     try {
-      [band, tracks, songs, sets] = await Promise.all([
+      [band, tracks, songs, sets, feedItems] = await Promise.all([
         api<BandDetail>(`/api/bands/${slug}`),
         api<Track[]>(`/api/bands/${slug}/tracks`),
         api<Song[]>(`/api/bands/${slug}/songs`),
         api<SetSummary[]>(`/api/bands/${slug}/sets`),
+        api<ActivityItem[]>(`/api/bands/${slug}/activity`),
       ]);
+      markBandSeen(slug);
     } finally {
       loading = false;
     }
@@ -562,6 +614,10 @@
     <!-- Tab toggle -->
     <div class="flex items-center gap-6 mb-2">
       <button
+        onclick={() => (viewTab = "feed")}
+        class="label transition-colors {viewTab === 'feed' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+      >activity</button>
+      <button
         onclick={() => (viewTab = "songs")}
         class="label transition-colors {viewTab === 'songs' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
       >songs</button>
@@ -608,7 +664,138 @@
       {/if}
     </div>
 
-    {#if viewTab === "songs"}
+    {#if viewTab === "feed"}
+      {#if feedGroups.length === 0}
+        <div class="text-center py-12 label text-text-muted mb-4">no activity yet</div>
+      {:else}
+        <div class="space-y-px mb-4">
+          {#each feedGroups as group (group.key + group.latest_at)}
+            {@const n = group.items.length}
+            {@const expanded = expandedGroups.has(group.key + group.latest_at)}
+            {@const solo = n === 1}
+            {@const item = group.items[0]}
+
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="bg-bg-surface border border-border border-l-2 border-l-transparent transition-all {solo && item.link_id ? 'hover:border-l-accent hover:border-accent/40 group cursor-pointer' : !solo ? 'hover:border-accent/20' : ''}">
+
+              <!-- Header row -->
+              <div
+                class="flex items-start gap-3 px-4 py-3 {!solo ? 'cursor-pointer' : ''}"
+                onclick={() => solo ? (item.link_id && navigate(`/band/${slug}/track/${item.link_id}`)) : toggleGroup(group.key + group.latest_at)}
+              >
+                <!-- New dot -->
+                <div class="shrink-0 mt-1.5 w-1.5 h-1.5 {group.has_new ? 'bg-accent' : 'bg-transparent'} rounded-full -ml-1 mr-0.5"></div>
+
+                <!-- Icon -->
+                <div class="shrink-0 mt-0.5 text-text-muted/40">
+                  {#if group.type === "track"}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                  {:else if group.type === "overdub"}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/>
+                    </svg>
+                  {:else if group.type === "comment"}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  {:else if group.type === "song"}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                    </svg>
+                  {/if}
+                </div>
+
+                <!-- Summary text -->
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-start justify-between gap-2">
+                    <p class="text-sm text-text-secondary leading-snug">
+                      {#if group.type === "track"}
+                        <span class="font-semibold text-text-primary">{group.actor_name}</span>
+                        {solo ? "recorded a new take for" : `recorded ${n} takes for`}
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/track/${group.link_id}`); }}>'{group.subject}'</span>
+                      {:else if group.type === "overdub"}
+                        <span class="font-semibold text-text-primary">{group.actor_name}</span>
+                        {solo ? "added an overdub to" : `added ${n} overdubs to`}
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/track/${group.link_id}`); }}>'{group.subject}'</span>
+                      {:else if group.type === "comment"}
+                        <span class="font-semibold text-text-primary">{group.actor_name}</span>
+                        {solo ? "left a comment on" : `left ${n} comments on`}
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/track/${group.link_id}`); }}>'{group.subject}'</span>{#if solo && item.timestamp_ms != null} at {formatDuration(item.timestamp_ms)}{/if}
+                      {:else if group.type === "song"}
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/song/${group.link_id}`); }}>'{group.subject}'</span> added to songs
+                      {/if}
+                    </p>
+                    <div class="flex items-center gap-2 shrink-0">
+                      <span class="label-sm text-text-muted/40">{formatRelativeTime(group.latest_at)}</span>
+                      {#if !solo}
+                        <span class="label-sm text-text-muted/50 bg-bg-elevated px-1.5 py-0.5 tabular-nums">{n}</span>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-text-muted/50 transition-transform {expanded ? 'rotate-180' : ''}">
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      {/if}
+                    </div>
+                  </div>
+
+                  <!-- Solo item preview -->
+                  {#if solo}
+                    {#if (item.type === "track" || item.type === "overdub") && (item.stream_id || item.link_id)}
+                      <MiniPlayer
+                        src={`/api/bands/${slug}/tracks/${item.stream_id || item.link_id}/stream`}
+                        peaks={item.peaks ?? []}
+                        duration_ms={item.duration_ms ?? 0}
+                      />
+                    {:else if item.type === "comment" && item.preview}
+                      <p class="mt-1.5 text-sm text-text-muted italic border-l-2 border-border pl-2 leading-snug">"{item.preview}"</p>
+                    {/if}
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Expanded items -->
+              {#if !solo && expanded}
+                <div class="border-t border-border/30 divide-y divide-border/20">
+                  {#each group.items as item}
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div
+                      class="pl-10 pr-4 py-2.5 {item.link_id ? 'cursor-pointer hover:bg-bg-elevated/30 group/item' : ''}"
+                      onclick={() => item.link_id && navigate(`/band/${slug}/track/${item.link_id}`)}
+                    >
+                      <div class="flex items-center justify-between gap-2 mb-0.5">
+                        <span class="label-sm text-text-muted/50">{formatRelativeTime(item.created_at)}</span>
+                        {#if item.type === "comment" && item.timestamp_ms != null}
+                          <span class="label-sm text-text-muted/40">at {formatDuration(item.timestamp_ms)}</span>
+                        {/if}
+                      </div>
+                      {#if (item.type === "track" || item.type === "overdub") && (item.stream_id || item.link_id)}
+                        <MiniPlayer
+                          src={`/api/bands/${slug}/tracks/${item.stream_id || item.link_id}/stream`}
+                          peaks={item.peaks ?? []}
+                          duration_ms={item.duration_ms ?? 0}
+                        />
+                      {:else if item.type === "comment" && item.preview}
+                        <p class="text-sm text-text-muted italic border-l-2 border-border pl-2 leading-snug">"{item.preview}"</p>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+    {:else if viewTab === "songs"}
       {#if songs.length > 0}
         <div class="space-y-1 mb-4">
           {#each songs as song}
