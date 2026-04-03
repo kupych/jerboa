@@ -148,24 +148,34 @@ func (p *Processor) GeneratePeaks(ctx context.Context, filePath string) (json.Ra
 	return json.Marshal(peaks)
 }
 
-// NeedsTranscode returns true for lossless formats that should be transcoded to Opus for streaming.
+// NeedsTranscode returns true for formats that should be transcoded to Opus for streaming.
+// This includes lossless formats and WebM/Opus (MediaRecorder output), which needs
+// remuxing into an Ogg container for reliable AudioContext decoding.
 func (p *Processor) NeedsTranscode(format string) bool {
 	if strings.HasPrefix(format, "pcm_") {
 		return true
 	}
-	return format == "flac" || format == "alac"
+	return format == "flac" || format == "alac" || format == "opus"
 }
 
 // TranscodeToOpus encodes srcPath to Opus (Ogg container) at 128kbps VBR and writes to dstPath.
+// If the source is already Opus (e.g. a WebM/Opus MediaRecorder file), the audio stream is
+// copied without re-encoding to preserve quality and speed up processing.
 func (p *Processor) TranscodeToOpus(ctx context.Context, srcPath, dstPath string) error {
-	cmd := exec.CommandContext(ctx, p.ffmpegPath,
-		"-i", srcPath,
-		"-c:a", "libopus",
-		"-b:a", "128k",
-		"-vbr", "on",
-		"-y",
-		dstPath,
-	)
+	// Detect whether the source is already Opus so we can copy instead of re-encode.
+	// A copy remux fixes the container (WebM → Ogg) without any quality loss.
+	codec := "libopus"
+	extraArgs := []string{"-b:a", "128k", "-vbr", "on"}
+	meta, err := p.Probe(ctx, srcPath)
+	if err == nil && meta.Format == "opus" {
+		codec = "copy"
+		extraArgs = nil
+	}
+
+	args := []string{"-i", srcPath, "-vn", "-c:a", codec}
+	args = append(args, extraArgs...)
+	args = append(args, "-y", dstPath)
+	cmd := exec.CommandContext(ctx, p.ffmpegPath, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg transcode: %w: %s", err, out)
 	}

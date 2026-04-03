@@ -302,8 +302,13 @@
     try {
       await Promise.all(
         missing.map(async (t) => {
-          const ab = await fetch(t.streamUrl).then((r) => r.arrayBuffer());
+          // cache:'no-cache' sends a conditional request so the server can serve
+          // a newly-transcoded Ogg/Opus sibling instead of a stale WebM disk-cache hit.
+          const res = await fetch(t.streamUrl, { cache: "no-cache" });
+          if (!res.ok) throw new Error(`stream ${res.status}`);
+          const ab = await res.arrayBuffer();
           const buf = await ctx.decodeAudioData(ab);
+          if (buf.duration === 0) throw new Error(`decoded buffer has zero duration for ${t.id}`);
           bufferCache.set(t.id, buf);
           peaksCache.set(t.id, extractPeaks(buf, 400));
           // Fix endMs now that we have real duration
@@ -542,9 +547,14 @@
 
   $effect(() => { onPlayingChange?.(playing); });
 
-  // Auto-load buffers for tracks with unknown duration (WebM/MediaRecorder files often have duration_ms=0 in DB)
+  // Auto-load buffers for tracks with unknown duration (WebM/MediaRecorder files often have duration_ms=0 in DB).
+  // Only attempt once per set of track IDs to avoid infinite retry on decode failure.
+  let autoLoadedForIds = $state("");
   $effect(() => {
+    const ids = tracks.map((t) => t.id).join(",");
+    if (ids === autoLoadedForIds) return;
     if (!loading && tracks.some((t) => t.duration_ms === 0 && !bufferCache.has(t.id))) {
+      autoLoadedForIds = ids;
       loadMissing();
     }
   });

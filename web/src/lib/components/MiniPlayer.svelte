@@ -53,7 +53,8 @@
     if (peaksLoading || localPeaks.length > 0) return;
     peaksLoading = true;
     try {
-      const ab = await fetch(src).then((r) => r.arrayBuffer());
+      const res = await fetch(src, { cache: "no-cache" });
+      const ab = await res.arrayBuffer();
       const actx = new AudioContext();
       const buf = await actx.decodeAudioData(ab);
       actx.close();
