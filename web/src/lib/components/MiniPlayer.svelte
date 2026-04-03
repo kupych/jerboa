@@ -58,8 +58,7 @@
       const buf = await actx.decodeAudioData(ab);
       actx.close();
 
-      // Update duration from actual audio if server didn't have it
-      if (localDuration <= 0) localDuration = buf.duration * 1000;
+      localDuration = buf.duration * 1000;
 
       const n = 60;
       const ch = buf.getChannelData(0);
@@ -84,7 +83,7 @@
     if (!audio) {
       audio = new Audio(src);
       audio.addEventListener("loadedmetadata", () => {
-        if (localDuration <= 0 && audio) localDuration = audio.duration * 1000;
+        if (audio) localDuration = audio.duration * 1000;
       });
       audio.addEventListener("timeupdate", () => {
         currentMs = (audio?.currentTime ?? 0) * 1000;

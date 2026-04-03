@@ -1417,7 +1417,7 @@ func (q *Queries) GetBandActivity(ctx context.Context, bandID, userID uuid.UUID,
 		)
 		SELECT type, actor_name, subject, link_id, stream_id, created_at,
 		       waveform_data, duration_ms, preview, timestamp_ms,
-		       created_at > (SELECT ts FROM last_seen) AS is_new
+		       COALESCE(created_at > (SELECT ts FROM last_seen), false) AS is_new
 		FROM (
 			SELECT 'track' AS type, u.display_name AS actor_name, t.title AS subject,
 			       t.id::text AS link_id, t.id::text AS stream_id, t.created_at,

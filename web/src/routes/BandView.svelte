@@ -184,13 +184,18 @@
   async function loadData() {
     loading = true;
     try {
-      [band, tracks, songs, sets, feedItems] = await Promise.all([
+      const [bandRes, tracksRes, songsRes, setsRes, feedRes] = await Promise.allSettled([
         api<BandDetail>(`/api/bands/${slug}`),
         api<Track[]>(`/api/bands/${slug}/tracks`),
         api<Song[]>(`/api/bands/${slug}/songs`),
         api<SetSummary[]>(`/api/bands/${slug}/sets`),
         api<ActivityItem[]>(`/api/bands/${slug}/activity`),
       ]);
+      if (bandRes.status === "fulfilled") band = bandRes.value;
+      if (tracksRes.status === "fulfilled") tracks = tracksRes.value;
+      if (songsRes.status === "fulfilled") songs = songsRes.value;
+      if (setsRes.status === "fulfilled") sets = setsRes.value;
+      if (feedRes.status === "fulfilled") feedItems = feedRes.value;
       markBandSeen(slug);
     } finally {
       loading = false;
