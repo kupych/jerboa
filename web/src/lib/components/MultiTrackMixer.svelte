@@ -335,10 +335,15 @@
   // === Playback (trim-aware) ===
   async function play() {
     if (playing) return;
-    if (!(await loadMissing())) return;
-
+    // Create and resume the AudioContext synchronously within the user gesture BEFORE
+    // any awaits — Chrome's autoplay policy requires resume() to be called while the
+    // gesture token is still active. Awaiting loadMissing() (which does network fetches)
+    // would expire the token, leaving the context suspended and sources silent.
     const ctx = ensureCtx();
-    await ctx.resume();
+    void ctx.resume();
+
+    if (!(await loadMissing())) return;
+    await ctx.resume(); // ensure running (no-op if already resumed)
 
     const from = seekMs;
     const shift = timelineShift(tracks);
