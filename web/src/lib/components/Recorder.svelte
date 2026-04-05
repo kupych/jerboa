@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { uploadFile } from "../api";
   import { apiPatch } from "../api";
+  import { saveChunk, getPendingRecordings, clearRecording, type PendingRecording } from "../recordingStore";
 
   let {
     bandSlug,
@@ -40,6 +41,10 @@
   let error = $state("");
   let uploadProgress = $state(0);
 
+  let sessionId = "";
+  let pendingRecovery = $state<PendingRecording[]>([]);
+  let recoveringId = $state<string | null>(null);
+
   // Mic level visualization
   let level = $state(0);
   let audioCtx: AudioContext | null = null;
@@ -72,6 +77,7 @@
   }
 
   onMount(() => {
+    getPendingRecordings(bandSlug).then((r) => (pendingRecovery = r));
     return () => cleanup();
   });
 
@@ -167,8 +173,27 @@
     mediaRecorder = new MediaRecorder(recordStream!, mimeType ? { mimeType } : {});
     chunks = [];
 
+    const now = new Date();
+    const stamp = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}-${now.getDate().toString().padStart(2, "0")}_${now.getHours().toString().padStart(2, "0")}${now.getMinutes().toString().padStart(2, "0")}`;
+    const ext = mimeType.includes("mp4") ? ".m4a" : ".webm";
+    sessionId = `${bandSlug}-${Date.now()}`;
+    const session: PendingRecording = {
+      id: sessionId,
+      bandSlug,
+      songId,
+      overdubParentId,
+      offsetMs: punchInMs - latencyCompensation,
+      mimeType: mimeType || "audio/webm",
+      filename: `recording_${stamp}${ext}`,
+      timestamp: Date.now(),
+      chunks: [],
+    };
+
     mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
+      if (e.data.size > 0) {
+        chunks.push(e.data);
+        saveChunk(session, e.data).catch(() => {});
+      }
     };
 
     mediaRecorder.onstop = async () => {
@@ -178,37 +203,12 @@
       }
 
       const blob = new Blob(chunks, { type: mediaRecorder!.mimeType });
-      const ext = blob.type.includes("mp4") ? ".m4a" : ".webm";
-      const now = new Date();
-      const stamp = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}-${now.getDate().toString().padStart(2, "0")}_${now.getHours().toString().padStart(2, "0")}${now.getMinutes().toString().padStart(2, "0")}`;
-      const filename = `recording_${stamp}${ext}`;
+      const sid = sessionId;
 
       recState = "uploading";
       uploadProgress = 0;
       try {
-        const file = new File([blob], filename, { type: blob.type });
-
-        if (overdubParentId) {
-          const adjustedOffset = punchInMs - latencyCompensation;
-          await uploadFile(
-            `/api/bands/${bandSlug}/tracks/${overdubParentId}/overdubs`,
-            file,
-            { offset_ms: String(adjustedOffset) },
-            (pct) => (uploadProgress = pct),
-          );
-        } else {
-          const track = await uploadFile<{ id: string }>(
-            `/api/bands/${bandSlug}/tracks`,
-            file,
-            {},
-            (pct) => (uploadProgress = pct),
-          );
-          if (songId) {
-            await apiPatch(`/api/bands/${bandSlug}/tracks/${track.id}/song`, {
-              song_id: songId,
-            });
-          }
-        }
+        await doUpload(blob, mediaRecorder!.mimeType, sid);
         onRecorded();
       } catch (e: any) {
         error = e.message || "Upload failed";
@@ -245,6 +245,60 @@
       parentSource.connect(audioCtx.destination);
       parentSource.start(0, punchInMs / 1000);
     }
+  }
+
+  async function doUpload(blob: Blob, mimeType: string, sid: string, pending?: PendingRecording) {
+    const p = pending;
+    const ext = mimeType.includes("mp4") ? ".m4a" : ".webm";
+    const now = new Date();
+    const stamp = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}-${now.getDate().toString().padStart(2, "0")}_${now.getHours().toString().padStart(2, "0")}${now.getMinutes().toString().padStart(2, "0")}`;
+    const filename = p?.filename ?? `recording_${stamp}${ext}`;
+    const file = new File([blob], filename, { type: mimeType });
+    const parentId = p?.overdubParentId ?? overdubParentId;
+    const offset = p?.offsetMs ?? (punchInMs - latencyCompensation);
+    const sId = p?.songId ?? songId;
+
+    if (parentId) {
+      await uploadFile(
+        `/api/bands/${bandSlug}/tracks/${parentId}/overdubs`,
+        file,
+        { offset_ms: String(offset) },
+        (pct) => (uploadProgress = pct),
+      );
+    } else {
+      const track = await uploadFile<{ id: string }>(
+        `/api/bands/${bandSlug}/tracks`,
+        file,
+        {},
+        (pct) => (uploadProgress = pct),
+      );
+      if (sId) {
+        await apiPatch(`/api/bands/${bandSlug}/tracks/${track.id}/song`, { song_id: sId });
+      }
+    }
+    await clearRecording(sid);
+  }
+
+  async function recoverRecording(pending: PendingRecording) {
+    recoveringId = pending.id;
+    recState = "uploading";
+    uploadProgress = 0;
+    try {
+      const blob = new Blob(pending.chunks, { type: pending.mimeType });
+      await doUpload(blob, pending.mimeType, pending.id, pending);
+      pendingRecovery = pendingRecovery.filter((r) => r.id !== pending.id);
+      onRecorded();
+    } catch (e: any) {
+      error = e.message || "Recovery upload failed";
+    } finally {
+      recState = "idle";
+      recoveringId = null;
+    }
+  }
+
+  async function discardRecording(id: string) {
+    await clearRecording(id);
+    pendingRecovery = pendingRecovery.filter((r) => r.id !== id);
   }
 
   function stopRecording() {
@@ -300,6 +354,27 @@
     analyser = null;
   }
 </script>
+
+{#each pendingRecovery as pending}
+  <div class="border border-amber-400/40 bg-amber-400/5 px-4 py-3 mb-2 flex items-center justify-between gap-4">
+    <div class="min-w-0">
+      <p class="label-sm text-amber-400 font-semibold">recovered recording</p>
+      <p class="label-sm text-text-muted/60 truncate">{pending.filename} · {new Date(pending.timestamp).toLocaleString()}</p>
+    </div>
+    <div class="flex items-center gap-3 shrink-0">
+      <button
+        onclick={() => recoverRecording(pending)}
+        disabled={recState !== "idle"}
+        class="label-sm text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-40"
+      >{recoveringId === pending.id ? `${uploadProgress}%` : "upload"}</button>
+      <button
+        onclick={() => discardRecording(pending.id)}
+        disabled={recState !== "idle"}
+        class="label-sm text-text-muted/40 hover:text-red-400 transition-colors disabled:opacity-40"
+      >discard</button>
+    </div>
+  </div>
+{/each}
 
 {#if recState === "idle"}
   <button
