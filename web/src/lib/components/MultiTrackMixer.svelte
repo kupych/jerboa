@@ -232,18 +232,6 @@
         })()
   );
 
-  // Full clip position (ignoring trim) — for visual background
-  function fullClipStartPct(t: MixerTrack): number {
-    if (totalMs <= 0) return 0;
-    const shift = timelineShift(tracks);
-    return (trackPos(t, shift) / totalMs) * 100;
-  }
-
-  function fullClipWidthPct(t: MixerTrack): number {
-    if (totalMs <= 0) return 0;
-    return (trackDuration(t) / totalMs) * 100;
-  }
-
   // Trim handle positions as % of clip width
   function trimStartPct(t: MixerTrack): number {
     const dur = trackDuration(t);
@@ -259,7 +247,33 @@
     return trim ? (Math.min(trim.endMs, dur) / dur) * 100 : 100;
   }
 
-  let playheadPct = $derived(totalMs > 0 ? (positionMs / totalMs) * 100 : 0);
+  // === DAW pixel timeline ===
+  let pxPerSec = $state(100);
+  let scrollContainer = $state<HTMLDivElement | null>(null);
+  let timelineWidthPx = $derived(Math.max((totalMs / 1000) * pxPerSec, 200));
+
+  function fullClipStartPx(t: MixerTrack): number {
+    const shift = timelineShift(tracks);
+    return (trackPos(t, shift) / 1000) * pxPerSec;
+  }
+
+  function fullClipWidthPx(t: MixerTrack): number {
+    return (trackDuration(t) / 1000) * pxPerSec;
+  }
+
+  let playheadPx = $derived((positionMs / 1000) * pxPerSec);
+
+  // Auto-scroll playhead into view while playing
+  $effect(() => {
+    const px = playheadPx;
+    if (!playing || !scrollContainer) return;
+    const el = scrollContainer;
+    const panelW = 192;
+    const viewW = el.clientWidth - panelW;
+    const relX = px - el.scrollLeft;
+    if (relX > viewW * 0.8) el.scrollLeft = px - viewW * 0.3;
+    else if (relX < 0) el.scrollLeft = Math.max(0, px - 40);
+  });
 
   let timeMarkers = $derived(
     totalMs <= 0
@@ -507,13 +521,7 @@
     if (!t) return;
     const dur = trackDuration(t);
 
-    // px → ms using any visible lane as reference for total width
-    const anyLane = laneMap.values().next().value as HTMLDivElement | undefined;
-    if (!anyLane) return;
-    const laneW = anyLane.getBoundingClientRect().width;
-    if (laneW <= 0) return;
-
-    const dMs = ((e.clientX - trimDrag.startX) * totalMs) / laneW;
+    const dMs = ((e.clientX - trimDrag.startX) / pxPerSec) * 1000;
     const existing = trimValues[trimDrag.id] ?? { startMs: 0, endMs: dur };
     const next = { ...existing };
 
@@ -625,7 +633,7 @@
     {/if}
 
     {#if hideSrc && srcTrack}
-      <span class="label-sm text-text-muted shrink-0 ml-auto">src</span>
+      <span class="label-sm text-text-muted shrink-0 ml-2">src</span>
       <input
         type="range" min="0" max="1" step="0.05"
         value={gainValues[srcTrack.id] ?? 1}
@@ -636,6 +644,21 @@
         {Math.round((gainValues[srcTrack.id] ?? 1) * 100)}
       </span>
     {/if}
+
+    <!-- Zoom controls -->
+    <div class="hidden sm:flex items-center gap-1 ml-auto shrink-0">
+      <button
+        onclick={() => pxPerSec = Math.max(10, pxPerSec / 1.5)}
+        class="w-6 h-6 flex items-center justify-center text-text-muted/50 hover:text-accent transition-colors font-mono text-base leading-none"
+        title="zoom out"
+      >−</button>
+      <span class="label-sm font-mono text-text-muted/40 tabular-nums w-8 text-center">{Math.round(pxPerSec)}</span>
+      <button
+        onclick={() => pxPerSec = Math.min(800, pxPerSec * 1.5)}
+        class="w-6 h-6 flex items-center justify-center text-text-muted/50 hover:text-accent transition-colors font-mono text-base leading-none"
+        title="zoom in"
+      >+</button>
+    </div>
   </div>
 
   <!-- Mobile track list (< sm) -->
@@ -661,10 +684,7 @@
         >S</button>
 
         <div class="flex-1 min-w-0 flex flex-col gap-0.5">
-          {#if t.isParent}
-            <span class="font-semibold text-accent/50 leading-none" style="font-size: 8px; letter-spacing: 0.08em;">SRC</span>
-          {/if}
-          <span class="truncate text-sm font-semibold font-display tracking-wide {isMuted ? 'text-text-muted/50' : 'text-text-primary'}">{t.title}</span>
+          <span class="truncate text-sm font-semibold font-display tracking-wide {isMuted ? 'text-text-muted/50' : t.isParent ? 'text-accent/70' : 'text-text-primary'}">{t.title}</span>
         </div>
 
         <input
@@ -680,195 +700,194 @@
     {/each}
   </div>
 
-  <!-- Desktop timeline (≥ sm) -->
-  <div class="hidden sm:block relative">
-    <!-- Time ruler -->
-    {#if totalMs > 0}
-      <div class="flex h-5 border-b border-border/20 bg-bg-primary/20 select-none">
-        <!-- Left panel placeholder -->
-        <div class="w-[168px] shrink-0 border-r border-border/20"></div>
-        <!-- Ruler ticks -->
-        <div class="flex-1 relative overflow-hidden">
+  <!-- Desktop timeline (≥ sm) — horizontally scrollable DAW layout -->
+  <div class="hidden sm:block overflow-x-auto" bind:this={scrollContainer}>
+    <div style="min-width: {timelineWidthPx + 192}px">
+
+      <!-- Time ruler -->
+      <div class="flex h-6 border-b border-border/20 bg-bg-primary/30 select-none sticky top-0 z-20">
+        <!-- Left panel stub (sticky) -->
+        <div class="w-48 shrink-0 border-r border-border/20 sticky left-0 z-30 bg-bg-surface"></div>
+        <!-- Ruler ticks at pixel positions -->
+        <div class="relative" style="width: {timelineWidthPx}px; flex-shrink: 0;">
           {#each timeMarkers as ms}
             <div
               class="absolute top-0 h-full flex items-center gap-0.5"
-              style="left: {(ms / totalMs) * 100}%"
+              style="left: {(ms / 1000) * pxPerSec}px"
             >
-              <div class="w-px h-2.5 bg-border/40 shrink-0"></div>
-              <span class="font-mono text-text-muted/40 font-semibold" style="font-size: 9px;">{formatDuration(ms)}</span>
+              <div class="w-px h-3 bg-border/50 shrink-0"></div>
+              <span class="font-mono text-text-muted/50 font-semibold whitespace-nowrap" style="font-size: 9px;">{formatDuration(ms)}</span>
             </div>
           {/each}
         </div>
       </div>
-    {/if}
 
-    <!-- Track rows -->
-    {#each visibleTracks as t (t.id)}
-      {@const isMuted = muted.has(t.id)}
-      {@const isSolo = soloId === t.id}
-      {@const isDimmed = soloId !== null && soloId !== t.id}
-      {@const dur = trackDuration(t)}
-      <div class="flex items-stretch border-b border-border/20 last:border-0 h-[52px] transition-opacity {isDimmed ? 'opacity-35' : ''}">
+      <!-- Track rows -->
+      {#each visibleTracks as t (t.id)}
+        {@const isMuted = muted.has(t.id)}
+        {@const isSolo = soloId === t.id}
+        {@const isDimmed = soloId !== null && soloId !== t.id}
+        {@const dur = trackDuration(t)}
+        <div class="flex items-stretch border-b border-border/20 last:border-0 h-[64px] transition-opacity {isDimmed ? 'opacity-35' : ''}">
 
-        <!-- Left: controls panel -->
-        <div class="w-[168px] shrink-0 flex items-center gap-1.5 px-2 border-r border-border/20">
-          <!-- M/S -->
-          <button
-            onclick={() => toggleMute(t.id)}
-            title={isMuted ? "unmute" : "mute"}
-            class="w-5 h-5 text-[9px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isMuted
-              ? 'bg-bg-primary border-border text-text-muted/50'
-              : 'border-accent/40 text-accent/70 hover:border-accent hover:text-accent'}"
-          >M</button>
-          <button
-            onclick={() => toggleSolo(t.id)}
-            title={isSolo ? "unsolo" : "solo"}
-            class="w-5 h-5 text-[9px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isSolo
-              ? 'border-amber-400 bg-amber-400/10 text-amber-400'
-              : 'border-border text-text-muted/50 hover:border-amber-400/60 hover:text-amber-400/60'}"
-          >S</button>
+          <!-- Left: controls panel (sticky) -->
+          <div class="w-48 shrink-0 flex items-center gap-1.5 px-2 border-r border-border/20 sticky left-0 z-10 bg-bg-surface">
+            <!-- M/S -->
+            <button
+              onclick={() => toggleMute(t.id)}
+              title={isMuted ? "unmute" : "mute"}
+              class="w-5 h-5 text-[9px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isMuted
+                ? 'bg-bg-primary border-border text-text-muted/50'
+                : 'border-accent/40 text-accent/70 hover:border-accent hover:text-accent'}"
+            >M</button>
+            <button
+              onclick={() => toggleSolo(t.id)}
+              title={isSolo ? "unsolo" : "solo"}
+              class="w-5 h-5 text-[9px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isSolo
+                ? 'border-amber-400 bg-amber-400/10 text-amber-400'
+                : 'border-border text-text-muted/50 hover:border-amber-400/60 hover:text-amber-400/60'}"
+            >S</button>
 
-          <!-- Name -->
-          <div class="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
-            {#if t.isParent}
-              <span class="font-semibold text-accent/50 leading-none" style="font-size: 8px; letter-spacing: 0.08em;">SRC</span>
-            {/if}
-            {#if editingId === t.id}
-              <input
-                type="text"
-                bind:value={editingTitle}
-                onblur={commitRename}
-                onkeydown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") cancelRename(); }}
-                autofocus
-                class="w-full bg-bg-primary border border-accent px-1 py-0 text-xs font-semibold text-text-primary focus:outline-none leading-tight"
-              />
-            {:else}
-              <button
-                ondblclick={() => startRename(t)}
-                title="double-click to rename"
-                class="truncate text-left text-xs font-semibold font-display tracking-wide leading-tight {isMuted ? 'text-text-muted/50' : 'text-text-primary'} hover:text-accent transition-colors"
-              >{t.title}</button>
-            {/if}
-          </div>
-
-          <!-- Gain -->
-          <div class="flex flex-col items-end gap-0.5 shrink-0">
-            <input
-              type="range" min="0" max="1" step="0.05"
-              value={gainValues[t.id] ?? 1}
-              oninput={(e) => setGainVal(t.id, parseFloat((e.target as HTMLInputElement).value))}
-              class="w-14 h-0.5 accent-accent cursor-pointer"
-            />
-            <span class="font-mono text-text-muted/50 font-semibold tabular-nums leading-none" style="font-size: 8px;">
-              {Math.round((gainValues[t.id] ?? 1) * 100)}
-            </span>
-          </div>
-
-          <!-- Actions -->
-          <div class="flex flex-col items-center justify-center gap-1.5 shrink-0 pl-1">
-            {#if !t.isParent}
-              <button
-                onclick={() => onVote?.(t.user_voted ? null : t.id)}
-                title="vote"
-                class="transition-colors {t.user_voted ? 'text-accent' : 'text-text-muted/30 hover:text-accent/70'}"
-              >
-                <svg width="9" height="9" viewBox="0 0 24 24" fill={t.user_voted ? "currentColor" : "none"} stroke="currentColor" stroke-width="2.5">
-                  <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
-                </svg>
-              </button>
-            {/if}
-            <a
-              href={`/api/bands/${bandSlug}/tracks/${t.id}/stream?dl=1`}
-              title="download"
-              class="text-text-muted/30 hover:text-accent/70 transition-colors"
-            >
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-            </a>
-            {#if !t.isParent}
-              {#if confirmDeleteId === t.id}
-                <div class="flex items-center gap-1">
-                  <button onclick={() => { onDelete?.(t.id); confirmDeleteId = null; }} class="label-sm text-danger hover:text-red-300 transition-colors px-0.5">y</button>
-                  <button onclick={() => confirmDeleteId = null} class="label-sm text-text-muted hover:text-text-secondary transition-colors px-0.5">n</button>
-                </div>
+            <!-- Name -->
+            <div class="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
+              {#if editingId === t.id}
+                <input
+                  type="text"
+                  bind:value={editingTitle}
+                  onblur={commitRename}
+                  onkeydown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") cancelRename(); }}
+                  autofocus
+                  class="w-full bg-bg-primary border border-accent px-1 py-0 text-xs font-semibold text-text-primary focus:outline-none leading-tight"
+                />
               {:else}
-                <button onclick={() => confirmDeleteId = t.id} title="delete" class="text-text-muted/30 hover:text-danger transition-colors">
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                <button
+                  ondblclick={() => startRename(t)}
+                  title="double-click to rename"
+                  class="truncate text-left text-xs font-semibold font-display tracking-wide leading-tight {isMuted ? 'text-text-muted/50' : t.isParent ? 'text-accent/70' : 'text-text-primary'} hover:text-accent transition-colors"
+                >{t.title}</button>
+              {/if}
+            </div>
+
+            <!-- Gain -->
+            <div class="flex flex-col items-end gap-0.5 shrink-0">
+              <input
+                type="range" min="0" max="1" step="0.05"
+                value={gainValues[t.id] ?? 1}
+                oninput={(e) => setGainVal(t.id, parseFloat((e.target as HTMLInputElement).value))}
+                class="w-14 h-0.5 accent-accent cursor-pointer"
+              />
+              <span class="font-mono text-text-muted/50 font-semibold tabular-nums leading-none" style="font-size: 8px;">
+                {Math.round((gainValues[t.id] ?? 1) * 100)}
+              </span>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex flex-col items-center justify-center gap-1.5 shrink-0 pl-1">
+              {#if !t.isParent}
+                <button
+                  onclick={() => onVote?.(t.user_voted ? null : t.id)}
+                  title="vote"
+                  class="transition-colors {t.user_voted ? 'text-accent' : 'text-text-muted/30 hover:text-accent/70'}"
+                >
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill={t.user_voted ? "currentColor" : "none"} stroke="currentColor" stroke-width="2.5">
+                    <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
                   </svg>
                 </button>
               {/if}
+              <a
+                href={`/api/bands/${bandSlug}/tracks/${t.id}/stream?dl=1`}
+                title="download"
+                class="text-text-muted/30 hover:text-accent/70 transition-colors"
+              >
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+              </a>
+              {#if !t.isParent}
+                {#if confirmDeleteId === t.id}
+                  <div class="flex items-center gap-1">
+                    <button onclick={() => { onDelete?.(t.id); confirmDeleteId = null; }} class="label-sm text-danger hover:text-red-300 transition-colors px-0.5">y</button>
+                    <button onclick={() => confirmDeleteId = null} class="label-sm text-text-muted hover:text-text-secondary transition-colors px-0.5">n</button>
+                  </div>
+                {:else}
+                  <button onclick={() => confirmDeleteId = t.id} title="delete" class="text-text-muted/30 hover:text-danger transition-colors">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </button>
+                {/if}
+              {/if}
+            </div>
+          </div>
+
+          <!-- Right: waveform lane at explicit pixel width -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <div
+            class="relative cursor-crosshair bg-bg-primary/10"
+            style="width: {timelineWidthPx}px; flex-shrink: 0;"
+            use:initLane={t.id}
+            onclick={(e) => {
+              const lane = laneMap.get(t.id);
+              if (!lane || totalMs <= 0) return;
+              const rect = lane.getBoundingClientRect();
+              const scrollLeft = scrollContainer?.scrollLeft ?? 0;
+              const xAbsolute = (e.clientX - rect.left) + scrollLeft;
+              commitSeek(Math.max(0, Math.round((xAbsolute / pxPerSec) * 1000)));
+            }}
+          >
+            {#if totalMs > 0 && dur > 0}
+              <!-- Clip block -->
+              <div
+                class="absolute top-1 bottom-1 rounded-sm overflow-hidden border border-border/30 bg-bg-elevated/30"
+                style="left: {fullClipStartPx(t)}px; width: {fullClipWidthPx(t)}px"
+              >
+                <canvas
+                  use:initCanvas={t.id}
+                  width="400"
+                  height="40"
+                  class="w-full h-full block"
+                ></canvas>
+
+                <!-- Left trim handle -->
+                <div
+                  class="absolute top-0 h-full w-3 cursor-ew-resize z-10 flex items-center justify-center group"
+                  style="left: {trimStartPct(t)}%; transform: translateX(-50%)"
+                  onpointerdown={(e) => startTrimDrag(e, t.id, "left")}
+                >
+                  <div class="w-0.5 h-4/5 bg-white/50 group-hover:bg-white/90 rounded-full transition-colors"></div>
+                </div>
+
+                <!-- Right trim handle -->
+                <div
+                  class="absolute top-0 h-full w-3 cursor-ew-resize z-10 flex items-center justify-center group"
+                  style="left: {trimEndPct(t)}%; transform: translateX(-50%)"
+                  onpointerdown={(e) => startTrimDrag(e, t.id, "right")}
+                >
+                  <div class="w-0.5 h-4/5 bg-white/50 group-hover:bg-white/90 rounded-full transition-colors"></div>
+                </div>
+              </div>
+            {:else if dur > 0}
+              <!-- Loading placeholder -->
+              <div
+                class="absolute top-1 bottom-1 border border-border/20 bg-bg-elevated/10 flex items-center px-2"
+                style="left: {fullClipStartPx(t)}px; width: {fullClipWidthPx(t)}px"
+              >
+                <div class="w-full h-px bg-border/30"></div>
+              </div>
             {/if}
+
+            <!-- Playhead -->
+            <div
+              class="absolute top-0 bottom-0 w-px bg-white/50 pointer-events-none z-20"
+              style="left: {playheadPx}px"
+            ></div>
           </div>
         </div>
-
-        <!-- Right: waveform lane -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <div
-          class="flex-1 relative overflow-hidden cursor-crosshair bg-bg-primary/10"
-          use:initLane={t.id}
-          onclick={(e) => {
-            const lane = laneMap.get(t.id);
-            if (!lane || totalMs <= 0) return;
-            const rect = lane.getBoundingClientRect();
-            commitSeek(Math.round(((e.clientX - rect.left) / rect.width) * totalMs));
-          }}
-        >
-          {#if totalMs > 0 && dur > 0}
-            <!-- Clip block (full duration, not trimmed — trim shown via waveform coloring) -->
-            <div
-              class="absolute top-1 bottom-1 rounded-sm overflow-hidden border border-border/30 bg-bg-elevated/30"
-              style="left: {fullClipStartPct(t)}%; width: {fullClipWidthPct(t)}%"
-            >
-              <!-- Waveform canvas fills the clip -->
-              <canvas
-                use:initCanvas={t.id}
-                width="400"
-                height="40"
-                class="w-full h-full block"
-              ></canvas>
-
-              <!-- Left trim handle -->
-              <div
-                class="absolute top-0 h-full w-3 cursor-ew-resize z-10 flex items-center justify-center group"
-                style="left: {trimStartPct(t)}%; transform: translateX(-50%)"
-                onpointerdown={(e) => startTrimDrag(e, t.id, "left")}
-              >
-                <div class="w-0.5 h-4/5 bg-white/50 group-hover:bg-white/90 rounded-full transition-colors"></div>
-              </div>
-
-              <!-- Right trim handle -->
-              <div
-                class="absolute top-0 h-full w-3 cursor-ew-resize z-10 flex items-center justify-center group"
-                style="left: {trimEndPct(t)}%; transform: translateX(-50%)"
-                onpointerdown={(e) => startTrimDrag(e, t.id, "right")}
-              >
-                <div class="w-0.5 h-4/5 bg-white/50 group-hover:bg-white/90 rounded-full transition-colors"></div>
-              </div>
-            </div>
-          {:else if dur > 0}
-            <!-- Loading placeholder -->
-            <div
-              class="absolute top-1 bottom-1 border border-border/20 bg-bg-elevated/10 flex items-center px-2"
-              style="left: {fullClipStartPct(t)}%; width: {fullClipWidthPct(t)}%"
-            >
-              <div class="w-full h-px bg-border/30"></div>
-            </div>
-          {/if}
-
-          <!-- Playhead -->
-          <div
-            class="absolute top-0 bottom-0 w-px bg-white/40 pointer-events-none z-20"
-            style="left: {playheadPct}%"
-          ></div>
-
-        </div>
-      </div>
-    {/each}
+      {/each}
+    </div>
   </div>
 
   <!-- Bounce controls (admin only) -->
