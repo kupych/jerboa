@@ -45,6 +45,7 @@
     bounced_to?: string;
     pre_bounce_id?: string;
     bounce_versions?: number;
+    rpp_session_name?: string;
     created_at: string;
     uploader?: { display_name: string; email: string };
   }
@@ -149,6 +150,7 @@
   let isAdmin = $derived(
     members.some((m) => m.user.id === $currentUser?.id && m.role === "admin")
   );
+  let isRppSession = $derived(!!(track?.rpp_session_name));
 
   import { user as currentUser } from "../lib/stores/auth";
 
@@ -1022,54 +1024,68 @@
       {/if}
     </div>
 
-    <!-- Player -->
-    {#if track.status === "ready"}
-      <div class="{overdubs.length > 0 ? '' : 'mb-10'}">
-        {#key streamVersion}
-          <WaveformPlayer
-            bind:this={playerRef}
-            src={streamUrl}
-            peaks={track.waveform_data}
-            duration={track.duration_ms}
-            comments={timedComments}
-            onTimestampClick={handleTimestampClick}
-            onCommentClick={scrollToComment}
-            seamlessBottom={overdubs.length > 0}
-            externalPositionMs={overdubs.length > 0 ? mixerPositionMs : undefined}
-            externalPlaying={overdubs.length > 0 ? mixerPlaying : undefined}
-            onSeekRequest={overdubs.length > 0 ? (ms) => mixerRef?.seekTo(ms) : undefined}
-            onPlay={overdubs.length > 0 ? () => mixerRef?.playTrack() : undefined}
-            onPause={overdubs.length > 0 ? () => mixerRef?.pauseTrack() : undefined}
-          />
-        {/key}
-      </div>
-    {:else if track.status === "processing"}
-      <div class="bg-bg-surface border border-border p-12 text-center mb-10">
-        <div class="flex items-center justify-center gap-3 text-accent">
-          <div class="w-2 h-2 bg-accent animate-pulse"></div>
-          <span class="label">processing</span>
+    <!-- Player — skip for RPP session tracks (no audio on parent) -->
+    {#if !isRppSession}
+      {#if track.status === "ready"}
+        <div class="{overdubs.length > 0 ? '' : 'mb-10'}">
+          {#key streamVersion}
+            <WaveformPlayer
+              bind:this={playerRef}
+              src={streamUrl}
+              peaks={track.waveform_data}
+              duration={track.duration_ms}
+              comments={timedComments}
+              onTimestampClick={handleTimestampClick}
+              onCommentClick={scrollToComment}
+              seamlessBottom={overdubs.length > 0}
+              externalPositionMs={overdubs.length > 0 ? mixerPositionMs : undefined}
+              externalPlaying={overdubs.length > 0 ? mixerPlaying : undefined}
+              onSeekRequest={overdubs.length > 0 ? (ms) => mixerRef?.seekTo(ms) : undefined}
+              onPlay={overdubs.length > 0 ? () => mixerRef?.playTrack() : undefined}
+              onPause={overdubs.length > 0 ? () => mixerRef?.pauseTrack() : undefined}
+            />
+          {/key}
         </div>
-      </div>
-    {:else}
-      <div class="bg-bg-surface border border-border p-12 text-center mb-10 text-danger label">
-        processing failed
-      </div>
+      {:else if track.status === "processing"}
+        <div class="bg-bg-surface border border-border p-12 text-center mb-10">
+          <div class="flex items-center justify-center gap-3 text-accent">
+            <div class="w-2 h-2 bg-accent animate-pulse"></div>
+            <span class="label">processing</span>
+          </div>
+        </div>
+      {:else}
+        <div class="bg-bg-surface border border-border p-12 text-center mb-10 text-danger label">
+          processing failed
+        </div>
+      {/if}
     {/if}
 
-    <!-- Overdubs -->
-    {#if track.status === "ready" && !track.overdub_of}
-      <div class="{overdubs.length > 0 ? 'mb-10' : ''}"  >
+    <!-- Overdubs / RPP session mixer -->
+    {#if !track.overdub_of}
+      <div class="{overdubs.length > 0 || isRppSession ? 'mb-10' : ''}">
 
-        <!-- Mixer (sits directly below waveform) -->
-        {#if overdubs.length > 0}
+        <!-- RPP session header -->
+        {#if isRppSession}
+          <div class="flex items-center gap-4 px-3 py-2 border border-border bg-bg-surface mb-px">
+            <span class="label-sm font-mono text-accent/60 tracking-widest">REAPER SESSION</span>
+            <span class="label-sm text-text-muted/50">{track.rpp_session_name}</span>
+            <a
+              href={`/api/bands/${slug}/sync/rpp/${trackId}`}
+              class="label-sm text-text-muted hover:text-accent transition-colors ml-auto"
+            >download .rpp</a>
+          </div>
+        {/if}
+
+        <!-- Mixer — always shown for RPP sessions, otherwise only when overdubs exist -->
+        {#if overdubs.length > 0 || isRppSession}
           <MultiTrackMixer
             bind:this={mixerRef}
             tracks={mixerTracks}
             {isAdmin}
             bandSlug={slug}
             parentTrackId={trackId}
-            hideSrc={true}
-            seamlessTop={true}
+            hideSrc={isRppSession}
+            seamlessTop={!isRppSession}
             onPositionChange={(ms) => (mixerPositionMs = ms)}
             onPlayingChange={(p) => (mixerPlaying = p)}
             onOffsetChange={(id, ms) => adjustOffset(id, ms)}
