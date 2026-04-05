@@ -30,6 +30,7 @@
   let parentLoading = $state(false);
 
   let recState = $state<"idle" | "warming" | "counting" | "recording" | "uploading">("idle");
+  let wakeLock: WakeLockSentinel | null = null;
   let mediaRecorder: MediaRecorder | null = null;
   let micStream: MediaStream | null = null;
   let recordStream: MediaStream | null = null;
@@ -232,6 +233,10 @@
     elapsed = 0;
     timerInterval = setInterval(() => elapsed++, 1000);
 
+    if ("wakeLock" in navigator) {
+      try { wakeLock = await navigator.wakeLock.request("screen"); } catch {}
+    }
+
     // Start parent playback via Web Audio API — sample-accurate sync
     // Routed to ctx.destination (speakers) but NOT to recordStream (mic only)
     if (overdubParentId && parentBuffer && audioCtx) {
@@ -243,6 +248,10 @@
   }
 
   function stopRecording() {
+    if (wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+    }
     if (parentSource) {
       try { parentSource.stop(); } catch {}
       parentSource = null;
