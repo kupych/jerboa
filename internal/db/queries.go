@@ -1486,6 +1486,134 @@ func (q *Queries) GetBandActivity(ctx context.Context, bandID, userID uuid.UUID,
 	return items, nil
 }
 
+// API tokens
+
+func (q *Queries) GetOrCreateAPIToken(ctx context.Context, userID, bandID uuid.UUID) (*models.APIToken, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	newToken := hex.EncodeToString(b)
+
+	var t models.APIToken
+	err := q.pool.QueryRow(ctx, `
+		INSERT INTO api_tokens (user_id, band_id, token)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id, band_id) DO UPDATE SET token = api_tokens.token
+		RETURNING id, user_id, band_id, token, created_at, last_used_at
+	`, userID, bandID, newToken).Scan(&t.ID, &t.UserID, &t.BandID, &t.Token, &t.CreatedAt, &t.LastUsedAt)
+	return &t, err
+}
+
+func (q *Queries) RotateAPIToken(ctx context.Context, userID, bandID uuid.UUID) (*models.APIToken, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	newToken := hex.EncodeToString(b)
+
+	var t models.APIToken
+	err := q.pool.QueryRow(ctx, `
+		INSERT INTO api_tokens (user_id, band_id, token)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id, band_id) DO UPDATE SET token = EXCLUDED.token
+		RETURNING id, user_id, band_id, token, created_at, last_used_at
+	`, userID, bandID, newToken).Scan(&t.ID, &t.UserID, &t.BandID, &t.Token, &t.CreatedAt, &t.LastUsedAt)
+	return &t, err
+}
+
+func (q *Queries) GetUserByToken(ctx context.Context, token string) (*models.User, error) {
+	var u models.User
+	err := q.pool.QueryRow(ctx, `
+		UPDATE api_tokens SET last_used_at = now()
+		WHERE token = $1
+		RETURNING user_id
+	`, token).Scan(&u.ID)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return q.GetUser(ctx, u.ID)
+}
+
+// Reaper sync
+
+func (q *Queries) GetOrCreateRppSession(ctx context.Context, bandID, userID uuid.UUID, sessionName string) (*models.Track, error) {
+	var t models.Track
+	err := q.pool.QueryRow(ctx, `
+		SELECT id, band_id, title, rpp_session_name, created_at
+		FROM tracks WHERE band_id = $1 AND rpp_session_name = $2
+		LIMIT 1
+	`, bandID, sessionName).Scan(&t.ID, &t.BandID, &t.Title, &t.RppSessionName, &t.CreatedAt)
+	if err == nil {
+		return &t, nil
+	}
+	if err != pgx.ErrNoRows {
+		return nil, err
+	}
+
+	// Create new session track
+	err = q.pool.QueryRow(ctx, `
+		INSERT INTO tracks (band_id, title, uploaded_by, file_path, file_size, status, rpp_session_name)
+		VALUES ($1, $2, $3, '', 0, 'ready', $2)
+		RETURNING id, band_id, title, rpp_session_name, created_at
+	`, bandID, sessionName, userID).Scan(&t.ID, &t.BandID, &t.Title, &t.RppSessionName, &t.CreatedAt)
+	return &t, err
+}
+
+func (q *Queries) GetSyncState(ctx context.Context, trackID uuid.UUID) ([]models.SyncFile, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT filename, file_hash, overdub_id FROM sync_files WHERE track_id = $1
+	`, trackID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var files []models.SyncFile
+	for rows.Next() {
+		var f models.SyncFile
+		if err := rows.Scan(&f.Filename, &f.FileHash, &f.OverdubID); err != nil {
+			return nil, err
+		}
+		files = append(files, f)
+	}
+	return files, nil
+}
+
+func (q *Queries) UpsertSyncFile(ctx context.Context, trackID uuid.UUID, overdubID *uuid.UUID, filename, hash string) error {
+	_, err := q.pool.Exec(ctx, `
+		INSERT INTO sync_files (track_id, overdub_id, filename, file_hash)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (track_id, filename) DO UPDATE SET overdub_id = $2, file_hash = $4
+	`, trackID, overdubID, filename, hash)
+	return err
+}
+
+func (q *Queries) CreateRppVersion(ctx context.Context, trackID uuid.UUID, storageKey string) (*models.RppVersion, error) {
+	var v models.RppVersion
+	err := q.pool.QueryRow(ctx, `
+		INSERT INTO rpp_versions (track_id, storage_key, version)
+		VALUES ($1, $2, COALESCE((SELECT MAX(version) FROM rpp_versions WHERE track_id = $1), 0) + 1)
+		RETURNING id, track_id, storage_key, version, created_at
+	`, trackID, storageKey).Scan(&v.ID, &v.TrackID, &v.StorageKey, &v.Version, &v.CreatedAt)
+	return &v, err
+}
+
+func (q *Queries) GetLatestRppVersion(ctx context.Context, trackID uuid.UUID) (*models.RppVersion, error) {
+	var v models.RppVersion
+	err := q.pool.QueryRow(ctx, `
+		SELECT id, track_id, storage_key, version, created_at
+		FROM rpp_versions WHERE track_id = $1 ORDER BY version DESC LIMIT 1
+	`, trackID).Scan(&v.ID, &v.TrackID, &v.StorageKey, &v.Version, &v.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &v, err
+}
+
 // Band files
 
 func (q *Queries) CreateBandFile(ctx context.Context, f *models.BandFile) error {

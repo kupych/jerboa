@@ -39,6 +39,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	overdubH := NewOverdubHandler(queries, store, processor, hub)
 	activityH := NewActivityHandler(queries)
 	fileH := NewFileHandler(queries, s3, cfg.MaxFileMB)
+	syncH := NewSyncHandler(queries, store, processor, hub, cfg.MaxUploadMB, cfg.BinDir)
 
 	// Auth routes (no auth middleware)
 	r.Get("/auth/login", authH.Login)
@@ -132,6 +133,13 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/feedback", feedbackH.List)
 		r.Patch("/api/feedback/{feedbackID}", feedbackH.UpdateStatus)
 		r.Get("/api/feedback/{feedbackID}/image", feedbackH.ServeImage)
+
+		// Reaper sync
+		r.Get("/api/bands/{slug}/sync/state/{sessionName}", syncH.State)
+		r.Post("/api/bands/{slug}/sync/file", syncH.UploadFile)
+		r.Post("/api/bands/{slug}/sync/rpp", syncH.UploadRPP)
+		r.Get("/api/bands/{slug}/sync/binary", syncH.DownloadBinary)
+		r.Get("/api/bands/{slug}/sync/rpp/{trackID}", syncH.ServeRPP)
 
 		// Band files
 		r.Get("/api/bands/{slug}/files", fileH.List)

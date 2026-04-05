@@ -105,6 +105,7 @@ type Track struct {
 	UserVoted    bool              `json:"user_voted,omitempty"`
 	PreBounceID    *uuid.UUID        `json:"pre_bounce_id,omitempty"`
 	BounceVersions int               `json:"bounce_versions,omitempty"`
+	RppSessionName *string           `json:"rpp_session_name,omitempty"`
 }
 
 type OverdubVote struct {
@@ -252,6 +253,29 @@ type ActivityItem struct {
 	StreamID string `json:"stream_id,omitempty"`
 	// unseen since last visit
 	IsNew bool `json:"is_new"`
+}
+
+type APIToken struct {
+	ID         uuid.UUID  `json:"id"`
+	UserID     uuid.UUID  `json:"user_id"`
+	BandID     uuid.UUID  `json:"band_id"`
+	Token      string     `json:"-"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+type RppVersion struct {
+	ID         uuid.UUID `json:"id"`
+	TrackID    uuid.UUID `json:"track_id"`
+	StorageKey string    `json:"-"`
+	Version    int       `json:"version"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type SyncFile struct {
+	Filename  string     `json:"filename"`
+	FileHash  string     `json:"file_hash"`
+	OverdubID *uuid.UUID `json:"overdub_id,omitempty"`
 }
 
 type BandFile struct {
