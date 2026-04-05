@@ -120,14 +120,17 @@
   let mixerTracks = $derived<MixerTrack[]>(
     track
       ? [
-          {
-            id: track.id,
-            title: track.title,
-            duration_ms: track.duration_ms,
-            offset_ms: 0,
-            isParent: true,
-            streamUrl: `/api/bands/${slug}/tracks/${trackId}/stream`,
-          },
+          // Omit the parent if it has no audio (e.g. a Reaper session container track)
+          ...(track.file_size > 0
+            ? [{
+                id: track.id,
+                title: track.title,
+                duration_ms: track.duration_ms,
+                offset_ms: 0,
+                isParent: true,
+                streamUrl: `/api/bands/${slug}/tracks/${trackId}/stream`,
+              }]
+            : []),
           ...overdubs.map((od) => ({
             id: od.id,
             title: od.title,
