@@ -254,6 +254,18 @@ type ActivityItem struct {
 	IsNew bool `json:"is_new"`
 }
 
+type BandFile struct {
+	ID          uuid.UUID `json:"id"`
+	BandID      uuid.UUID `json:"band_id"`
+	Name        string    `json:"name"`
+	StorageKey  string    `json:"-"`
+	FileSize    int64     `json:"file_size"`
+	ContentType string    `json:"content_type"`
+	UploadedBy  uuid.UUID `json:"uploaded_by"`
+	CreatedAt   time.Time `json:"created_at"`
+	Uploader    *User     `json:"uploader,omitempty"`
+}
+
 type Comment struct {
 	ID          uuid.UUID  `json:"id"`
 	TrackID     uuid.UUID  `json:"track_id"`

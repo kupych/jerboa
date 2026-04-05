@@ -16,7 +16,7 @@ import (
 	"jerboa/internal/storage"
 )
 
-func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provider, store *storage.Store, processor *audio.Processor, webFS fs.FS) http.Handler {
+func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provider, store *storage.Store, s3 *storage.S3Client, processor *audio.Processor, webFS fs.FS) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RealIP)
@@ -38,6 +38,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	adminH := NewAdminHandler(queries)
 	overdubH := NewOverdubHandler(queries, store, processor, hub)
 	activityH := NewActivityHandler(queries)
+	fileH := NewFileHandler(queries, s3, cfg.MaxFileMB)
 
 	// Auth routes (no auth middleware)
 	r.Get("/auth/login", authH.Login)
@@ -131,6 +132,12 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/feedback", feedbackH.List)
 		r.Patch("/api/feedback/{feedbackID}", feedbackH.UpdateStatus)
 		r.Get("/api/feedback/{feedbackID}/image", feedbackH.ServeImage)
+
+		// Band files
+		r.Get("/api/bands/{slug}/files", fileH.List)
+		r.Post("/api/bands/{slug}/files", fileH.Upload)
+		r.Get("/api/bands/{slug}/files/{fileID}/download", fileH.Download)
+		r.Delete("/api/bands/{slug}/files/{fileID}", fileH.Delete)
 
 		// Admin
 		r.Get("/api/admin/overview", adminH.Overview)

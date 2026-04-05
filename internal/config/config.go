@@ -32,6 +32,13 @@ type Config struct {
 	SMTPFrom string
 
 	YTDLPCookies string
+
+	S3Endpoint  string
+	S3Bucket    string
+	S3Region    string
+	S3AccessKey string
+	S3SecretKey string
+	MaxFileMB   int64
 }
 
 func loadDotenv() {
@@ -87,6 +94,13 @@ func Load() (*Config, error) {
 		SMTPFrom: env("JERBOA_SMTP_FROM", ""),
 
 		YTDLPCookies: env("JERBOA_YTDLP_COOKIES", ""),
+
+		S3Endpoint:  env("JERBOA_S3_ENDPOINT", ""),
+		S3Bucket:    env("JERBOA_S3_BUCKET", ""),
+		S3Region:    env("JERBOA_S3_REGION", ""),
+		S3AccessKey: env("JERBOA_S3_ACCESS_KEY", ""),
+		S3SecretKey: env("JERBOA_S3_SECRET_KEY", ""),
+		MaxFileMB:   envInt("JERBOA_MAX_FILE_MB", 2000),
 	}
 
 	if c.Secret == "" {

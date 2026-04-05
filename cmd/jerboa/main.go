@@ -62,6 +62,17 @@ func run() error {
 
 	processor := audio.NewProcessor(cfg.FFmpegPath, cfg.FFprobePath, cfg.WaveformPeaks)
 
+	var s3Client *storage.S3Client
+	if cfg.S3Endpoint != "" && cfg.S3Bucket != "" {
+		s3Client, err = storage.NewS3Client(cfg.S3Endpoint, cfg.S3Bucket, cfg.S3Region, cfg.S3AccessKey, cfg.S3SecretKey)
+		if err != nil {
+			return fmt.Errorf("s3: %w", err)
+		}
+		slog.Info("S3 storage configured", "endpoint", cfg.S3Endpoint, "bucket", cfg.S3Bucket)
+	} else {
+		slog.Warn("S3 not configured — file uploads will return 501")
+	}
+
 	var authProvider *auth.Provider
 	if cfg.OIDCIssuer != "" {
 		callbackURL := cfg.BaseURL + "/auth/callback"
@@ -81,7 +92,7 @@ func run() error {
 		slog.Info("no embedded frontend — use Vite dev server")
 	}
 
-	router := server.NewRouter(cfg, queries, authProvider, store, processor, webFS)
+	router := server.NewRouter(cfg, queries, authProvider, store, s3Client, processor, webFS)
 
 	srv := &http.Server{
 		Addr:         cfg.Addr,

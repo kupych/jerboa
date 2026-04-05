@@ -1486,6 +1486,67 @@ func (q *Queries) GetBandActivity(ctx context.Context, bandID, userID uuid.UUID,
 	return items, nil
 }
 
+// Band files
+
+func (q *Queries) CreateBandFile(ctx context.Context, f *models.BandFile) error {
+	return q.pool.QueryRow(ctx, `
+		INSERT INTO band_files (band_id, name, storage_key, file_size, content_type, uploaded_by)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, created_at
+	`, f.BandID, f.Name, f.StorageKey, f.FileSize, f.ContentType, f.UploadedBy).Scan(&f.ID, &f.CreatedAt)
+}
+
+func (q *Queries) ListBandFiles(ctx context.Context, bandID uuid.UUID) ([]models.BandFile, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT f.id, f.band_id, f.name, f.storage_key, f.file_size, f.content_type, f.uploaded_by, f.created_at,
+		       u.id, u.display_name, u.email
+		FROM band_files f
+		JOIN users u ON u.id = f.uploaded_by
+		WHERE f.band_id = $1
+		ORDER BY f.created_at DESC
+	`, bandID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var files []models.BandFile
+	for rows.Next() {
+		var f models.BandFile
+		var u models.User
+		if err := rows.Scan(&f.ID, &f.BandID, &f.Name, &f.StorageKey, &f.FileSize, &f.ContentType, &f.UploadedBy, &f.CreatedAt,
+			&u.ID, &u.DisplayName, &u.Email); err != nil {
+			return nil, err
+		}
+		f.Uploader = &u
+		files = append(files, f)
+	}
+	return files, nil
+}
+
+func (q *Queries) GetBandFile(ctx context.Context, id, bandID uuid.UUID) (*models.BandFile, error) {
+	var f models.BandFile
+	err := q.pool.QueryRow(ctx, `
+		SELECT id, band_id, name, storage_key, file_size, content_type, uploaded_by, created_at
+		FROM band_files WHERE id = $1 AND band_id = $2
+	`, id, bandID).Scan(&f.ID, &f.BandID, &f.Name, &f.StorageKey, &f.FileSize, &f.ContentType, &f.UploadedBy, &f.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &f, err
+}
+
+func (q *Queries) DeleteBandFile(ctx context.Context, id, bandID uuid.UUID) (string, error) {
+	var key string
+	err := q.pool.QueryRow(ctx, `
+		DELETE FROM band_files WHERE id = $1 AND band_id = $2 RETURNING storage_key
+	`, id, bandID).Scan(&key)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	return key, err
+}
+
 func (q *Queries) GetUnreadCounts(ctx context.Context, userID uuid.UUID) ([]models.UnreadCount, error) {
 	rows, err := q.pool.Query(ctx, `
 		SELECT bm.band_id, b.slug,

@@ -11,7 +11,8 @@
   import MiniPlayer from "../lib/components/MiniPlayer.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
   import Recorder from "../lib/components/Recorder.svelte";
-  import { setTypeCode, setTypeLabel, formatRelativeTime, formatDuration } from "../lib/utils/format";
+  import { setTypeCode, setTypeLabel, formatRelativeTime, formatDuration, formatFileSize } from "../lib/utils/format";
+  import { uploadFile } from "../lib/api";
 
   let { slug }: { slug: string } = $props();
 
@@ -111,10 +112,24 @@
     return groups;
   }
 
+  interface BandFile {
+    id: string;
+    name: string;
+    file_size: number;
+    content_type: string;
+    created_at: string;
+    uploader?: { display_name: string; email: string };
+  }
+
   let loading = $state(true);
   let feedItems = $state<ActivityItem[]>([]);
   let expandedGroups = $state(new Set<string>());
-  let viewTab = $state<"feed" | "songs" | "sets" | "tags">("feed");
+  let viewTab = $state<"feed" | "songs" | "sets" | "tags" | "files">("feed");
+  let files = $state<BandFile[]>([]);
+  let filesLoading = $state(false);
+  let fileUploadProgress = $state(0);
+  let fileUploading = $state(false);
+  let fileUploadError = $state("");
 
   let feedGroups = $derived(groupFeedItems(feedItems));
 
@@ -204,6 +219,40 @@
 
   async function loadTracks() {
     tracks = await api<Track[]>(`/api/bands/${slug}/tracks`);
+  }
+
+  async function loadFiles() {
+    filesLoading = true;
+    try {
+      files = await api<BandFile[]>(`/api/bands/${slug}/files`);
+    } finally {
+      filesLoading = false;
+    }
+  }
+
+  async function uploadBandFile(file: File) {
+    fileUploading = true;
+    fileUploadError = "";
+    fileUploadProgress = 0;
+    try {
+      const created = await uploadFile<BandFile>(
+        `/api/bands/${slug}/files`,
+        file,
+        {},
+        (pct) => (fileUploadProgress = pct),
+      );
+      files = [created, ...files];
+    } catch (e: any) {
+      fileUploadError = e.message || "Upload failed";
+    } finally {
+      fileUploading = false;
+      fileUploadProgress = 0;
+    }
+  }
+
+  async function deleteBandFile(id: string) {
+    await apiDelete(`/api/bands/${slug}/files/${id}`);
+    files = files.filter((f) => f.id !== id);
   }
 
   async function loadSongs() {
@@ -636,6 +685,10 @@
           class="label transition-colors {viewTab === 'tags' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
         >tags</button>
       {/if}
+      <button
+        onclick={() => { viewTab = "files"; if (files.length === 0 && !filesLoading) loadFiles(); }}
+        class="label transition-colors {viewTab === 'files' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+      >files</button>
 
       {#if viewTab === "songs"}
         <form onsubmit={(e) => { e.preventDefault(); createSong(); }} class="ml-auto flex gap-2">
@@ -851,6 +904,69 @@
       {:else}
         <div class="text-center py-12 label text-text-muted mb-4">
           no sets yet
+        </div>
+      {/if}
+    {/if}
+
+    {#if viewTab === "files"}
+      <!-- Upload area -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <label
+        class="block border border-dashed border-border hover:border-accent/60 transition-colors px-4 py-5 mb-3 cursor-pointer text-center"
+        ondragover={(e) => e.preventDefault()}
+        ondrop={(e) => { e.preventDefault(); const f = e.dataTransfer?.files[0]; if (f) uploadBandFile(f); }}
+      >
+        <input
+          type="file"
+          class="sr-only"
+          disabled={fileUploading}
+          onchange={(e) => { const f = (e.currentTarget as HTMLInputElement).files?.[0]; if (f) uploadBandFile(f); (e.currentTarget as HTMLInputElement).value = ""; }}
+        />
+        {#if fileUploading}
+          <div class="flex flex-col items-center gap-2">
+            <div class="w-32 h-1 bg-border rounded-full overflow-hidden">
+              <div class="h-full bg-accent transition-all" style="width: {fileUploadProgress}%"></div>
+            </div>
+            <span class="label-sm text-text-muted">{fileUploadProgress}%</span>
+          </div>
+        {:else}
+          <span class="label-sm text-text-muted">drop a file or click to upload</span>
+        {/if}
+      </label>
+      {#if fileUploadError}
+        <p class="label-sm text-red-400 mb-3">{fileUploadError}</p>
+      {/if}
+
+      {#if filesLoading}
+        <div class="text-center py-8 label text-text-muted">loading...</div>
+      {:else if files.length === 0}
+        <div class="text-center py-8 label text-text-muted">no files yet</div>
+      {:else}
+        <div class="space-y-1 mb-4">
+          {#each files as file}
+            <div class="bg-bg-surface border border-border px-4 py-3 flex items-center justify-between gap-4">
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold text-text-primary truncate">{file.name}</p>
+                <p class="label-sm text-text-muted/60 mt-0.5">
+                  {formatFileSize(file.file_size)}
+                  {#if file.uploader}· {file.uploader.display_name}{/if}
+                  · {formatRelativeTime(file.created_at)}
+                </p>
+              </div>
+              <div class="flex items-center gap-3 shrink-0">
+                <a
+                  href="/api/bands/{slug}/files/{file.id}/download"
+                  class="label-sm text-accent hover:text-accent/70 transition-colors"
+                  onclick={(e) => e.stopPropagation()}
+                >download</a>
+                <button
+                  onclick={() => deleteBandFile(file.id)}
+                  class="label-sm text-text-muted/40 hover:text-red-400 transition-colors"
+                >delete</button>
+              </div>
+            </div>
+          {/each}
         </div>
       {/if}
     {/if}

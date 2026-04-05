@@ -5,11 +5,18 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [
+  {
+    version: "0.14.0",
+    date: "2026-04-04",
+    summary: [
+      "Check out that new 'Files' tab - upload any file you desire. But not too much. SSDs don't grow on trees."
+    ]
+  },
   { 
     version: "0.13.0",
     date: "2026-04-04",
     summary: [
-      "Activity feed - see what you're band's been up to at a glance",
+      "Activity feed - see what your band's been up to at a glance",
       "Some UX enhancements to hopefully make navigation a little easier"
     ]
   },
