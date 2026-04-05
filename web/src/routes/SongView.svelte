@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { marked } from "marked";
-  import { api, apiPatch, apiPost } from "../lib/api";
+  import { api, apiDelete, apiPatch, apiPost } from "../lib/api";
   import { navigate } from "../lib/stores/router";
   import { player } from "../lib/stores/player";
   import { formatDuration, formatRelativeTime, formatTimestamp, setTypeCode, setTypeLabel } from "../lib/utils/format";
@@ -117,6 +117,19 @@
   let savingBpm = $state(false);
   let tapTimes: number[] = [];
 
+  // Delete
+  let confirmDelete = $state(false);
+  let deleting = $state(false);
+
+  async function deleteSong() {
+    deleting = true;
+    try {
+      await apiDelete(`/api/bands/${slug}/songs/${songId}`);
+      navigate(`/band/${slug}`);
+    } finally {
+      deleting = false;
+    }
+  }
   function handleTap() {
     const now = performance.now();
     // Reset if gap > 2 seconds
@@ -532,6 +545,27 @@
             disabled={savingBpm}
             class="label-sm text-accent hover:text-accent-hover transition-colors"
           >{savingBpm ? "..." : "save"}</button>
+        {/if}
+        {#if !confirmDelete}
+          <button
+            onclick={() => (confirmDelete = true)}
+            class="label text-text-muted hover:text-danger transition-colors"
+          >
+            delete
+          </button>
+        {:else}
+          <span class="flex items-center gap-2">
+            <span class="label-sm text-danger">sure?</span>
+            <button
+              onclick={deleteSong}
+              disabled={deleting}
+              class="label-sm text-danger hover:text-red-300 transition-colors"
+            >{deleting ? "..." : "yes"}</button>
+            <button
+              onclick={() => (confirmDelete = false)}
+              class="label-sm text-text-muted hover:text-text-secondary transition-colors"
+            >no</button>
+          </span>
         {/if}
       </div>
     </div>
