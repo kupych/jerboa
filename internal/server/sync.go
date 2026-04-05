@@ -46,6 +46,7 @@ type SyncConfig struct {
 	ServerURL string `json:"server_url"`
 	BandSlug  string `json:"band_slug"`
 	Token     string `json:"token"`
+	SongID    string `json:"song_id,omitempty"`
 }
 
 // State returns filenames+hashes already on the server for a given session.
@@ -58,7 +59,8 @@ func (h *SyncHandler) State(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionName := chi.URLParam(r, "sessionName")
-	track, err := h.queries.GetOrCreateRppSession(r.Context(), band.ID, user.ID, sessionName)
+	songID := r.URL.Query().Get("song_id")
+	track, err := h.queries.GetOrCreateRppSession(r.Context(), band.ID, user.ID, sessionName, songID)
 	if err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
@@ -241,6 +243,7 @@ func (h *SyncHandler) DownloadBinary(w http.ResponseWriter, r *http.Request) {
 		ServerURL: fmt.Sprintf("%s://%s", scheme, host),
 		BandSlug:  band.Slug,
 		Token:     token.Token,
+		SongID:    r.URL.Query().Get("song_id"),
 	}
 
 	cfgJSON, err := json.Marshal(cfg)

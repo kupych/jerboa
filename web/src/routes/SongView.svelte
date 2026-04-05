@@ -578,6 +578,11 @@
           <TrackUpload bandSlug={slug} {songId} onUploaded={loadTracks} />
           <Recorder bandSlug={slug} {songId} bpm={song?.bpm ?? 0} onRecorded={loadTracks} />
         </div>
+        <div class="flex gap-2 mb-4">
+          <a href="/api/bands/{slug}/sync/binary?platform=linux&song_id={songId}" class="label-sm text-text-muted/40 hover:text-text-muted transition-colors">reaper sync (linux)</a>
+          <span class="label-sm text-text-muted/20">·</span>
+          <a href="/api/bands/{slug}/sync/binary?platform=windows&song_id={songId}" class="label-sm text-text-muted/40 hover:text-text-muted transition-colors">reaper sync (windows)</a>
+        </div>
 
         {#if directTracks.length > 0 || setTakes.length > 0}
         <div class="space-y-2">

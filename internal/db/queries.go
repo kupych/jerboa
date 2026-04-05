@@ -1540,7 +1540,7 @@ func (q *Queries) GetUserByToken(ctx context.Context, token string) (*models.Use
 
 // Reaper sync
 
-func (q *Queries) GetOrCreateRppSession(ctx context.Context, bandID, userID uuid.UUID, sessionName string) (*models.Track, error) {
+func (q *Queries) GetOrCreateRppSession(ctx context.Context, bandID, userID uuid.UUID, sessionName, songID string) (*models.Track, error) {
 	var t models.Track
 	err := q.pool.QueryRow(ctx, `
 		SELECT id, band_id, title, rpp_session_name, created_at
@@ -1554,12 +1554,19 @@ func (q *Queries) GetOrCreateRppSession(ctx context.Context, bandID, userID uuid
 		return nil, err
 	}
 
-	// Create new session track
+	// Parse optional song ID
+	var sid *uuid.UUID
+	if songID != "" {
+		if parsed, err := uuid.Parse(songID); err == nil {
+			sid = &parsed
+		}
+	}
+
 	err = q.pool.QueryRow(ctx, `
-		INSERT INTO tracks (band_id, title, uploaded_by, file_path, file_size, status, rpp_session_name)
-		VALUES ($1, $2, $3, '', 0, 'ready', $2)
+		INSERT INTO tracks (band_id, title, uploaded_by, file_path, file_size, status, rpp_session_name, song_id)
+		VALUES ($1, $2, $3, '', 0, 'ready', $2, $4)
 		RETURNING id, band_id, title, rpp_session_name, created_at
-	`, bandID, sessionName, userID).Scan(&t.ID, &t.BandID, &t.Title, &t.RppSessionName, &t.CreatedAt)
+	`, bandID, sessionName, userID, sid).Scan(&t.ID, &t.BandID, &t.Title, &t.RppSessionName, &t.CreatedAt)
 	return &t, err
 }
 

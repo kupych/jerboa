@@ -20,6 +20,7 @@ type Config struct {
 	ServerURL string `json:"server_url"`
 	BandSlug  string `json:"band_slug"`
 	Token     string `json:"token"`
+	SongID    string `json:"song_id,omitempty"`
 }
 
 type syncState struct {
@@ -161,6 +162,9 @@ func hashFile(path string) (string, error) {
 
 func getState(client *http.Client, cfg *Config, sessionName string) (*syncState, error) {
 	url := fmt.Sprintf("%s/api/bands/%s/sync/state/%s", cfg.ServerURL, cfg.BandSlug, sessionName)
+	if cfg.SongID != "" {
+		url += "?song_id=" + cfg.SongID
+	}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+cfg.Token)
 
