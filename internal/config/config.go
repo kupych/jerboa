@@ -39,6 +39,7 @@ type Config struct {
 	S3AccessKey string
 	S3SecretKey string
 	MaxFileMB   int64
+	BinDir      string
 }
 
 func loadDotenv() {
@@ -101,6 +102,7 @@ func Load() (*Config, error) {
 		S3AccessKey: env("JERBOA_S3_ACCESS_KEY", ""),
 		S3SecretKey: env("JERBOA_S3_SECRET_KEY", ""),
 		MaxFileMB:   envInt("JERBOA_MAX_FILE_MB", 2000),
+		BinDir:      env("JERBOA_BIN_DIR", "./bin"),
 	}
 
 	if c.Secret == "" {

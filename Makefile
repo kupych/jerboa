@@ -1,4 +1,4 @@
-.PHONY: dev dev-api dev-web build build-web build-api clean migrate test
+.PHONY: dev dev-api dev-web build build-web build-api build-sync clean migrate test
 
 # Development - run both backend and frontend
 dev:
@@ -12,13 +12,19 @@ dev-web:
 	cd web && npm run dev
 
 # Production build
-build: build-web build-api
+build: build-web build-api build-sync
 
 build-web:
 	cd web && npm ci && npm run build
 
 build-api: build-web
 	CGO_ENABLED=0 go build -o bin/jerboa ./cmd/jerboa
+
+build-sync:
+	@mkdir -p bin
+	CGO_ENABLED=0 GOOS=linux  GOARCH=amd64 go build -o bin/jerboa-sync-linux-amd64   ./cmd/jerboa-sync
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o bin/jerboa-sync-windows-amd64.exe ./cmd/jerboa-sync
+	@echo "sync binaries built"
 
 # Database
 migrate:

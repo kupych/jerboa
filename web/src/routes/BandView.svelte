@@ -602,6 +602,21 @@
           {/if}
         </div>
 
+        <div>
+          <span class="label-sm md:label text-text-muted block mb-1">reaper sync</span>
+          <p class="label-sm text-text-muted/50 mb-3">drop the utility in your reaper project folder and run it — it syncs takes directly to jerboa</p>
+          <div class="flex gap-2">
+            <a
+              href="/api/bands/{slug}/sync/binary?platform=linux"
+              class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
+            >linux</a>
+            <a
+              href="/api/bands/{slug}/sync/binary?platform=windows"
+              class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
+            >windows</a>
+          </div>
+        </div>
+
         <button
           onclick={() => (showSettings = false)}
           class="label text-text-muted hover:text-text-secondary transition-colors"

@@ -43,14 +43,29 @@ func CheckBandAccess(q *db.Queries, ctx context.Context, bandID, userID uuid.UUI
 func AuthMiddleware(q *db.Queries) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookie, err := r.Cookie("session")
-			if err != nil {
-				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-				return
+			var user *models.User
+
+			// Try Bearer token first
+			if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+				token := strings.TrimPrefix(auth, "Bearer ")
+				u, err := q.GetUserByToken(r.Context(), token)
+				if err == nil && u != nil {
+					user = u
+				}
 			}
 
-			user, err := q.GetSession(r.Context(), cookie.Value)
-			if err != nil || user == nil {
+			// Fall back to session cookie
+			if user == nil {
+				cookie, err := r.Cookie("session")
+				if err == nil {
+					u, err := q.GetSession(r.Context(), cookie.Value)
+					if err == nil && u != nil {
+						user = u
+					}
+				}
+			}
+
+			if user == nil {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}

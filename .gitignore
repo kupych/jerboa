@@ -31,3 +31,4 @@ data/
 # Test
 coverage.out
 *.test
+jerboa-sync

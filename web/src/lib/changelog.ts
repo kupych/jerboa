@@ -6,6 +6,16 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "0.15.0",
+    date: "2026-04-05",
+    summary: [
+      "Reaper session sync! Download a pre-baked utility from band settings, drop it in your project folder, run it. Your takes teleport to Jerboa. The .rpp gets versioned too — time machine included.",
+      "Recording now holds a wake lock so your phone screen won't bail mid-rehearsal and nuke your take",
+      "Recorded takes are now backed up to IndexedDB as they happen — if the page crashes, the recovery banner will be waiting for you when you come back",
+      "Files tab: upload anything (Reaper sessions, stems, your drummer's grocery list) — backed by object storage so your server's SSD can breathe",
+    ]
+  },
+  {
     version: "0.14.0",
     date: "2026-04-04",
     summary: [
