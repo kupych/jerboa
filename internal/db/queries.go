@@ -561,7 +561,8 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 		SELECT t.id, t.band_id, t.title, t.description, t.uploaded_by, t.file_path,
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
-		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to, t.created_at,
+		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to,
+		       t.rpp_session_name, t.created_at,
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
 		       s.name
 		FROM tracks t
@@ -571,7 +572,8 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 	`, id).Scan(&t.ID, &t.BandID, &t.Title, &t.Description, &t.UploadedBy, &t.FilePath,
 		&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
 		&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
-		&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo, &t.CreatedAt,
+		&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo,
+		&t.RppSessionName, &t.CreatedAt,
 		&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
 		&songName)
 	if err == pgx.ErrNoRows {

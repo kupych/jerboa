@@ -248,9 +248,19 @@
   }
 
   // === DAW pixel timeline ===
-  let pxPerSec = $state(100);
+  let pxPerSec = $state(50); // will be auto-fit once totalMs is known
+  let hasAutoFit = false;
   let scrollContainer = $state<HTMLDivElement | null>(null);
   let timelineWidthPx = $derived(Math.max((totalMs / 1000) * pxPerSec, 200));
+
+  // Auto-fit to container width on first load
+  $effect(() => {
+    if (totalMs > 0 && scrollContainer && !hasAutoFit) {
+      hasAutoFit = true;
+      const availW = scrollContainer.clientWidth - 192;
+      if (availW > 0) pxPerSec = Math.max(4, availW / (totalMs / 1000));
+    }
+  });
 
   function fullClipStartPx(t: MixerTrack): number {
     const shift = timelineShift(tracks);
