@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -92,6 +94,10 @@ func run() error {
 		slog.Info("no embedded frontend — use Vite dev server")
 	}
 
+	// Background job: transcode any WebM/WAV files that don't yet have an Opus sibling.
+	// Fixes recordings made before the sync transcode was in place.
+	go transcodeOrphans(cfg.StoragePath, processor)
+
 	router := server.NewRouter(cfg, queries, authProvider, store, s3Client, processor, webFS)
 
 	srv := &http.Server{
@@ -115,6 +121,51 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// transcodeOrphans walks the storage directory and creates Opus siblings for any
+// audio files that need transcoding but don't have one yet.
+func transcodeOrphans(storageRoot string, processor *audio.Processor) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+	defer cancel()
+
+	sem := make(chan struct{}, 2) // max 2 concurrent ffmpeg processes
+	walked := 0
+	converted := 0
+
+	_ = filepath.Walk(storageRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext != ".webm" && ext != ".wav" && ext != ".flac" {
+			return nil
+		}
+		opus := path[:len(path)-len(ext)] + ".opus"
+		if _, err := os.Stat(opus); err == nil {
+			return nil // sibling already exists
+		}
+		walked++
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem }()
+			if err := processor.TranscodeToOpus(ctx, path, opus); err != nil {
+				slog.Warn("orphan transcode failed", "file", path, "error", err)
+			} else {
+				slog.Info("orphan transcoded", "file", path)
+				converted++
+			}
+		}()
+		return nil
+	})
+
+	// Wait for all goroutines to finish
+	for i := 0; i < cap(sem); i++ {
+		sem <- struct{}{}
+	}
+	if walked > 0 {
+		slog.Info("orphan transcode complete", "found", walked, "converted", converted)
+	}
 }
 
 func runMigrate(ctx context.Context) error {

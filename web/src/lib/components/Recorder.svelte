@@ -164,18 +164,20 @@
   }
 
   async function startRecording() {
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-      ? "audio/webm;codecs=opus"
-      : MediaRecorder.isTypeSupported("audio/mp4")
-        ? "audio/mp4"
-        : "";
+    const mimeType = MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
+      ? "audio/ogg;codecs=opus"
+      : MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/mp4")
+          ? "audio/mp4"
+          : "";
 
     mediaRecorder = new MediaRecorder(recordStream!, mimeType ? { mimeType } : {});
     chunks = [];
 
     const now = new Date();
     const stamp = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}-${now.getDate().toString().padStart(2, "0")}_${now.getHours().toString().padStart(2, "0")}${now.getMinutes().toString().padStart(2, "0")}`;
-    const ext = mimeType.includes("mp4") ? ".m4a" : ".webm";
+    const ext = mimeType.includes("ogg") ? ".ogg" : mimeType.includes("mp4") ? ".m4a" : ".webm";
     sessionId = `${bandSlug}-${Date.now()}`;
     const session: PendingRecording = {
       id: sessionId,
@@ -183,7 +185,7 @@
       songId,
       overdubParentId,
       offsetMs: punchInMs - latencyCompensation,
-      mimeType: mimeType || "audio/webm",
+      mimeType: mimeType || "audio/ogg",
       filename: `recording_${stamp}${ext}`,
       timestamp: Date.now(),
       chunks: [],
@@ -249,7 +251,7 @@
 
   async function doUpload(blob: Blob, mimeType: string, sid: string, pending?: PendingRecording) {
     const p = pending;
-    const ext = mimeType.includes("mp4") ? ".m4a" : ".webm";
+    const ext = mimeType.includes("ogg") ? ".ogg" : mimeType.includes("mp4") ? ".m4a" : ".webm";
     const now = new Date();
     const stamp = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}-${now.getDate().toString().padStart(2, "0")}_${now.getHours().toString().padStart(2, "0")}${now.getMinutes().toString().padStart(2, "0")}`;
     const filename = p?.filename ?? `recording_${stamp}${ext}`;

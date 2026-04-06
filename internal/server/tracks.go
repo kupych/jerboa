@@ -320,11 +320,31 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	servePath := track.FilePath
 	useOpus := false
 	if !isDownload {
-		if opus := opusSibling(track.FilePath); fileExists(opus) {
+		opus := opusSibling(track.FilePath)
+		if fileExists(opus) {
 			servePath = opus
 			useOpus = true
 		} else if h.processor.NeedsTranscode(track.Format) {
-			h.lazyTranscode(track.FilePath)
+			// Transcode synchronously so the client always gets a decodable file.
+			// If a background transcode is already running, wait for it.
+			if _, inProgress := h.transcoding.Load(opus); inProgress {
+				for i := 0; i < 120; i++ {
+					time.Sleep(500 * time.Millisecond)
+					if fileExists(opus) {
+						break
+					}
+				}
+			} else {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				defer cancel()
+				if err := h.processor.TranscodeToOpus(ctx, track.FilePath, opus); err != nil {
+					slog.Warn("stream: transcode failed, serving original", "id", trackID, "error", err)
+				}
+			}
+			if fileExists(opus) {
+				servePath = opus
+				useOpus = true
+			}
 		}
 	}
 
