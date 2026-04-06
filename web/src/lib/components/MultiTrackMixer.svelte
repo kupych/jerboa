@@ -316,6 +316,10 @@
   }
 
   // === Loading ===
+  // Loads each track individually with up to 3 attempts (2.5s apart).
+  // This handles the race where the server hasn't finished transcoding WebM→Ogg/Opus
+  // yet on the first request — by the second attempt the sibling usually exists.
+  // One failed track doesn't block the others.
   async function loadMissing(): Promise<boolean> {
     const ctx = ensureCtx();
     const missing = tracks.filter((t) => !bufferCache.has(t.id));
@@ -323,33 +327,45 @@
 
     loading = true;
     loadError = "";
+    let anyFailed = false;
+
     try {
       await Promise.all(
         missing.map(async (t) => {
-          // cache:'no-cache' sends a conditional request so the server can serve
-          // a newly-transcoded Ogg/Opus sibling instead of a stale WebM disk-cache hit.
-          const res = await fetch(t.streamUrl, { cache: "no-cache" });
-          if (!res.ok) throw new Error(`stream ${res.status}`);
-          const ab = await res.arrayBuffer();
-          const buf = await ctx.decodeAudioData(ab);
-          if (buf.duration === 0) throw new Error(`decoded buffer has zero duration for ${t.id}`);
-          bufferCache.set(t.id, buf);
-          peaksCache.set(t.id, extractPeaks(buf, 400));
-          // Fix endMs now that we have real duration
-          const dur = buf.duration * 1000;
-          const existing = trimValues[t.id];
-          if (!existing || existing.endMs > dur || existing.endMs === 9999999) {
-            trimValues = {
-              ...trimValues,
-              [t.id]: { startMs: existing?.startMs ?? 0, endMs: dur },
-            };
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              // cache:'no-cache' so the server can serve a freshly-transcoded
+              // Ogg/Opus sibling instead of a stale WebM cache hit.
+              const res = await fetch(t.streamUrl, { cache: "no-cache" });
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              const ab = await res.arrayBuffer();
+              const buf = await ctx.decodeAudioData(ab);
+              if (buf.duration === 0) throw new Error("zero duration");
+              bufferCache.set(t.id, buf);
+              peaksCache.set(t.id, extractPeaks(buf, 400));
+              const dur = buf.duration * 1000;
+              const existing = trimValues[t.id];
+              if (!existing || existing.endMs > dur || existing.endMs === 9999999) {
+                trimValues = { ...trimValues, [t.id]: { startMs: existing?.startMs ?? 0, endMs: dur } };
+              }
+              return; // success
+            } catch (e) {
+              if (attempt < 2) {
+                // Give the server time to finish transcoding before retrying
+                await new Promise((r) => setTimeout(r, 2500));
+              } else {
+                console.warn(`[mixer] failed to decode track ${t.id} after 3 attempts:`, e);
+                anyFailed = true;
+              }
+            }
           }
         })
       );
       peaksVersion++;
-      return true;
-    } catch {
-      loadError = "failed to load one or more tracks";
+      if (anyFailed) loadError = "one or more tracks failed to decode — try playing again";
+      return !anyFailed;
+    } catch (e) {
+      loadError = "failed to load audio";
       return false;
     } finally {
       loading = false;
