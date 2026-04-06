@@ -123,13 +123,14 @@ func run() error {
 	return nil
 }
 
-// transcodeOrphans walks the storage directory and creates Opus siblings for any
-// audio files that need transcoding but don't have one yet.
+// transcodeOrphans walks the storage directory and (re-)creates Opus siblings for any
+// audio file that needs one. WebM siblings are always regenerated because previous
+// versions used -c:a copy which produces Ogg/Opus that decodeAudioData rejects.
 func transcodeOrphans(storageRoot string, processor *audio.Processor) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
 
-	sem := make(chan struct{}, 2) // max 2 concurrent ffmpeg processes
+	sem := make(chan struct{}, 2)
 	walked := 0
 	converted := 0
 
@@ -142,9 +143,15 @@ func transcodeOrphans(storageRoot string, processor *audio.Processor) {
 			return nil
 		}
 		opus := path[:len(path)-len(ext)] + ".opus"
-		if _, err := os.Stat(opus); err == nil {
-			return nil // sibling already exists
+
+		// Always regenerate .opus siblings of WebM files — old ones were created
+		// with -c:a copy and produce malformed output that decodeAudioData rejects.
+		if ext == ".webm" {
+			os.Remove(opus)
+		} else if _, err := os.Stat(opus); err == nil {
+			return nil // non-webm sibling already exists, skip
 		}
+
 		walked++
 		sem <- struct{}{}
 		go func() {
@@ -159,7 +166,6 @@ func transcodeOrphans(storageRoot string, processor *audio.Processor) {
 		return nil
 	})
 
-	// Wait for all goroutines to finish
 	for i := 0; i < cap(sem); i++ {
 		sem <- struct{}{}
 	}

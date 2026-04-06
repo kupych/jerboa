@@ -159,22 +159,11 @@ func (p *Processor) NeedsTranscode(format string) bool {
 }
 
 // TranscodeToOpus encodes srcPath to Opus (Ogg container) at 128kbps VBR and writes to dstPath.
-// If the source is already Opus (e.g. a WebM/Opus MediaRecorder file), the audio stream is
-// copied without re-encoding to preserve quality and speed up processing.
+// Always re-encodes — never uses -c:a copy, even for WebM/Opus sources. Copying self-delimited
+// Opus packets from a WebM container into Ogg produces output that Chrome's decodeAudioData
+// rejects, even though the <audio> element plays it fine.
 func (p *Processor) TranscodeToOpus(ctx context.Context, srcPath, dstPath string) error {
-	// Detect whether the source is already Opus so we can copy instead of re-encode.
-	// A copy remux fixes the container (WebM → Ogg) without any quality loss.
-	codec := "libopus"
-	extraArgs := []string{"-b:a", "128k", "-vbr", "on"}
-	meta, err := p.Probe(ctx, srcPath)
-	if err == nil && meta.Format == "opus" {
-		codec = "copy"
-		extraArgs = nil
-	}
-
-	args := []string{"-i", srcPath, "-vn", "-c:a", codec}
-	args = append(args, extraArgs...)
-	args = append(args, "-y", dstPath)
+	args := []string{"-i", srcPath, "-vn", "-c:a", "libopus", "-b:a", "128k", "-vbr", "on", "-y", dstPath}
 	cmd := exec.CommandContext(ctx, p.ffmpegPath, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg transcode: %w: %s", err, out)
