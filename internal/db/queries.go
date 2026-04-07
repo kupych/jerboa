@@ -1634,6 +1634,32 @@ func (q *Queries) CreateRppVersion(ctx context.Context, trackID uuid.UUID, stora
 	return &v, err
 }
 
+type SyncSession struct {
+	TrackID     uuid.UUID `json:"track_id"`
+	SessionName string    `json:"session_name"`
+}
+
+func (q *Queries) ListSyncSessions(ctx context.Context, bandID uuid.UUID) ([]SyncSession, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, rpp_session_name FROM tracks
+		WHERE band_id = $1 AND rpp_session_name IS NOT NULL AND rpp_session_name <> ''
+		ORDER BY created_at DESC
+	`, bandID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sessions []SyncSession
+	for rows.Next() {
+		var s SyncSession
+		if err := rows.Scan(&s.TrackID, &s.SessionName); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, s)
+	}
+	return sessions, nil
+}
+
 func (q *Queries) GetLatestRppVersion(ctx context.Context, trackID uuid.UUID) (*models.RppVersion, error) {
 	var v models.RppVersion
 	err := q.pool.QueryRow(ctx, `

@@ -49,6 +49,28 @@ type SyncConfig struct {
 	SongID    string `json:"song_id,omitempty"`
 }
 
+// Sessions lists all Reaper sessions for a band.
+// GET /api/bands/{slug}/sync/sessions
+func (h *SyncHandler) Sessions(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	band, ok := h.getBand(w, r, user)
+	if !ok {
+		return
+	}
+
+	sessions, err := h.queries.ListSyncSessions(r.Context(), band.ID)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	if sessions == nil {
+		sessions = []db.SyncSession{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"sessions": sessions})
+}
+
 // State returns filenames+hashes already on the server for a given session.
 // GET /api/bands/{slug}/sync/state/{sessionName}
 func (h *SyncHandler) State(w http.ResponseWriter, r *http.Request) {

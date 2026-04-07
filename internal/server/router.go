@@ -135,6 +135,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/feedback/{feedbackID}/image", feedbackH.ServeImage)
 
 		// Reaper sync
+		r.Get("/api/bands/{slug}/sync/sessions", syncH.Sessions)
 		r.Get("/api/bands/{slug}/sync/state/{sessionName}", syncH.State)
 		r.Post("/api/bands/{slug}/sync/file", syncH.UploadFile)
 		r.Post("/api/bands/{slug}/sync/rpp", syncH.UploadRPP)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,8 +31,14 @@ type syncState struct {
 }
 
 type fileInfo struct {
-	Filename string `json:"filename"`
-	FileHash string `json:"file_hash"`
+	Filename  string  `json:"filename"`
+	FileHash  string  `json:"file_hash"`
+	OverdubID *string `json:"overdub_id,omitempty"`
+}
+
+type sessionInfo struct {
+	TrackID     string `json:"track_id"`
+	SessionName string `json:"session_name"`
 }
 
 func main() {
@@ -41,39 +49,41 @@ func main() {
 
 	fmt.Printf("jerboa-sync  →  %s / %s\n\n", cfg.ServerURL, cfg.BandSlug)
 
-	// Find .rpp file in current directory
+	client := &http.Client{Timeout: 10 * time.Minute}
+
 	rppPath, err := findRPP(".")
 	if err != nil {
-		fatalf("%v", err)
+		// No .rpp found — interactive pull mode
+		runPull(client, cfg, "")
+		return
 	}
-	fmt.Printf("project : %s\n", filepath.Base(rppPath))
 
+	fmt.Printf("project : %s\n", filepath.Base(rppPath))
 	sessionName := strings.TrimSuffix(filepath.Base(rppPath), filepath.Ext(rppPath))
 
-	// Parse .rpp to get audio items
+	runPush(client, cfg, rppPath, sessionName)
+	runPullInto(client, cfg, sessionName, filepath.Dir(rppPath))
+}
+
+// runPush uploads local audio files and .rpp to the server.
+func runPush(client *http.Client, cfg *Config, rppPath, sessionName string) {
 	items, err := ParseRPP(rppPath)
 	if err != nil {
 		fatalf("parse rpp: %v", err)
 	}
 	fmt.Printf("items   : %d audio file(s) found\n\n", len(items))
 
-	client := &http.Client{Timeout: 10 * time.Minute}
-
-	// Get server state for this session
 	state, err := getState(client, cfg, sessionName)
 	if err != nil {
 		fatalf("get state: %v", err)
 	}
 
-	// Build local hash index from items that exist on disk
 	serverHashes := map[string]string{}
 	for _, f := range state.Files {
 		serverHashes[f.Filename] = f.FileHash
 	}
 
-	uploaded := 0
-	skipped := 0
-	failed := 0
+	uploaded, skipped, failed := 0, 0, 0
 
 	for _, item := range items {
 		base := filepath.Base(item.FilePath)
@@ -107,7 +117,6 @@ func main() {
 		}
 	}
 
-	// Always upload .rpp (versioned)
 	rppHash, _ := hashFile(rppPath)
 	fmt.Printf("\n  rpp   %s ... ", filepath.Base(rppPath))
 	if err := uploadRPP(client, cfg, state.TrackID, rppPath); err != nil {
@@ -117,12 +126,108 @@ func main() {
 		_ = rppHash
 	}
 
-	fmt.Printf("\ndone — %d uploaded, %d skipped, %d failed\n", uploaded, skipped, failed)
+	fmt.Printf("\npush — %d uploaded, %d skipped, %d failed\n\n", uploaded, skipped, failed)
 	if failed > 0 {
 		os.Exit(1)
 	}
+}
 
-	// Keep terminal open on Windows when double-clicked
+// runPull is the interactive no-.rpp mode: list sessions, prompt, pull.
+func runPull(client *http.Client, cfg *Config, sessionName string) {
+	sessions, err := listSessions(client, cfg)
+	if err != nil {
+		fatalf("list sessions: %v", err)
+	}
+	if len(sessions) == 0 {
+		fmt.Println("No sessions found on server.")
+		waitIfWindows()
+		return
+	}
+
+	var chosen sessionInfo
+	if sessionName != "" {
+		for _, s := range sessions {
+			if s.SessionName == sessionName {
+				chosen = s
+				break
+			}
+		}
+		if chosen.TrackID == "" {
+			fatalf("session %q not found on server", sessionName)
+		}
+	} else {
+		fmt.Println("Available sessions:")
+		for i, s := range sessions {
+			fmt.Printf("  %d) %s\n", i+1, s.SessionName)
+		}
+		fmt.Print("\nEnter number to pull: ")
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		n, err := strconv.Atoi(strings.TrimSpace(scanner.Text()))
+		if err != nil || n < 1 || n > len(sessions) {
+			fatalf("invalid selection")
+		}
+		chosen = sessions[n-1]
+	}
+
+	fmt.Printf("\npulling %s ...\n\n", chosen.SessionName)
+	runPullInto(client, cfg, chosen.SessionName, ".")
+}
+
+// runPullInto downloads any server-side files missing or conflicting locally.
+func runPullInto(client *http.Client, cfg *Config, sessionName, dir string) {
+	state, err := getState(client, cfg, sessionName)
+	if err != nil {
+		fatalf("get state: %v", err)
+	}
+
+	// Pull .rpp if it doesn't exist locally
+	rppLocal := filepath.Join(dir, sessionName+".rpp")
+	if _, err := os.Stat(rppLocal); os.IsNotExist(err) {
+		fmt.Printf("  rpp   %s.rpp ... ", sessionName)
+		if err := downloadRPP(client, cfg, state.TrackID, rppLocal); err != nil {
+			fmt.Printf("FAILED: %v\n", err)
+		} else {
+			fmt.Printf("done\n")
+		}
+	}
+
+	downloaded, skipped, conflicts := 0, 0, 0
+
+	for _, f := range state.Files {
+		if f.OverdubID == nil || *f.OverdubID == "" {
+			continue
+		}
+
+		localPath := filepath.Join(dir, f.Filename)
+		dest := localPath
+
+		if _, err := os.Stat(localPath); err == nil {
+			// File exists — check hash
+			localHash, err := hashFile(localPath)
+			if err == nil && localHash == f.FileHash {
+				fmt.Printf("  ok    %s\n", f.Filename)
+				skipped++
+				continue
+			}
+			// Conflict: same name, different content
+			ext := filepath.Ext(f.Filename)
+			base := strings.TrimSuffix(f.Filename, ext)
+			dest = filepath.Join(dir, base+"_remote"+ext)
+			fmt.Printf("  conf  %s → %s\n", f.Filename, filepath.Base(dest))
+			conflicts++
+		}
+
+		fmt.Printf("  dl    %s ... ", filepath.Base(dest))
+		if err := downloadAudio(client, cfg, *f.OverdubID, dest); err != nil {
+			fmt.Printf("FAILED: %v\n", err)
+		} else {
+			fmt.Printf("done\n")
+			downloaded++
+		}
+	}
+
+	fmt.Printf("\npull — %d downloaded, %d skipped, %d conflict(s) saved as _remote\n", downloaded, skipped, conflicts)
 	waitIfWindows()
 }
 
@@ -158,6 +263,31 @@ func hashFile(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func listSessions(client *http.Client, cfg *Config) ([]sessionInfo, error) {
+	url := fmt.Sprintf("%s/api/bands/%s/sync/sessions", cfg.ServerURL, cfg.BandSlug)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		Sessions []sessionInfo `json:"sessions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return result.Sessions, nil
 }
 
 func getState(client *http.Client, cfg *Config, sessionName string) (*syncState, error) {
@@ -262,6 +392,59 @@ func uploadRPP(client *http.Client, cfg *Config, trackID string, rppPath string)
 		return fmt.Errorf("%d: %s", resp.StatusCode, body)
 	}
 	return nil
+}
+
+func downloadRPP(client *http.Client, cfg *Config, trackID, dest string) error {
+	url := fmt.Sprintf("%s/api/bands/%s/sync/rpp/%s", cfg.ServerURL, cfg.BandSlug, trackID)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%d: %s", resp.StatusCode, body)
+	}
+
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, resp.Body)
+	return err
+}
+
+func downloadAudio(client *http.Client, cfg *Config, overdubID, dest string) error {
+	url := fmt.Sprintf("%s/api/bands/%s/tracks/%s/stream", cfg.ServerURL, cfg.BandSlug, overdubID)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%d: %s", resp.StatusCode, body)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return err
+	}
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, resp.Body)
+	return err
 }
 
 // loadConfig reads the embedded config from the end of the binary.
