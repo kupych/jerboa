@@ -1069,10 +1069,17 @@
           <div class="flex items-center gap-4 px-3 py-2 border border-border bg-bg-surface mb-px">
             <span class="label-sm font-mono text-accent/60 tracking-widest">REAPER SESSION</span>
             <span class="label-sm text-text-muted/50">{track.rpp_session_name}</span>
-            <a
-              href={`/api/bands/${slug}/sync/rpp/${trackId}`}
-              class="label-sm text-text-muted hover:text-accent transition-colors ml-auto"
-            >download .rpp</a>
+            <div class="flex items-center gap-3 ml-auto">
+              <a
+                href={`/api/bands/${slug}/sync/rpp/${trackId}`}
+                class="label-sm text-text-muted hover:text-accent transition-colors"
+              >download .rpp</a>
+              <a
+                href={`/api/bands/${slug}/sync/binary`}
+                class="label-sm text-text-muted hover:text-accent transition-colors"
+                title="Download the sync utility — run it in your project folder to push/pull this session"
+              >download sync utility</a>
+            </div>
           </div>
         {/if}
 
