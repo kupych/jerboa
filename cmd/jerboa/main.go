@@ -98,6 +98,10 @@ func run() error {
 	// Fixes recordings made before the sync transcode was in place.
 	go transcodeOrphans(cfg.StoragePath, processor)
 
+	// Background job: fix tracks where duration_ms<=1 or waveform_data is missing.
+	// These were recorded via MediaRecorder before the re-probe-from-opus fix.
+	go fixBadMetadata(queries, processor)
+
 	router := server.NewRouter(cfg, queries, authProvider, store, s3Client, processor, webFS)
 
 	srv := &http.Server{
@@ -171,6 +175,49 @@ func transcodeOrphans(storageRoot string, processor *audio.Processor) {
 	}
 	if walked > 0 {
 		slog.Info("orphan transcode complete", "found", walked, "converted", converted)
+	}
+}
+
+func fixBadMetadata(queries *db.Queries, processor *audio.Processor) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+	defer cancel()
+
+	tracks, err := queries.ListTracksWithBadMetadata(ctx)
+	if err != nil {
+		slog.Warn("fixBadMetadata: query failed", "error", err)
+		return
+	}
+	if len(tracks) == 0 {
+		return
+	}
+	slog.Info("fixBadMetadata: fixing tracks", "count", len(tracks))
+
+	for _, t := range tracks {
+		dot := strings.LastIndex(t.FilePath, ".")
+		opusPath := t.FilePath[:dot] + ".opus"
+		if dot < 0 {
+			opusPath = t.FilePath + ".opus"
+		}
+		srcPath := opusPath
+		if _, err := os.Stat(opusPath); err != nil {
+			srcPath = t.FilePath // fall back to original if no sibling yet
+		}
+
+		meta, err := processor.Probe(ctx, srcPath)
+		if err != nil {
+			slog.Warn("fixBadMetadata: probe failed", "id", t.ID, "error", err)
+			continue
+		}
+		peaks, err := processor.GeneratePeaks(ctx, srcPath)
+		if err != nil {
+			slog.Warn("fixBadMetadata: peaks failed", "id", t.ID, "error", err)
+			continue
+		}
+		if err := queries.UpdateTrackProcessed(ctx, t.ID, peaks, meta.DurationMS, t.Format, meta.SampleRate); err != nil {
+			slog.Warn("fixBadMetadata: update failed", "id", t.ID, "error", err)
+			continue
+		}
+		slog.Info("fixBadMetadata: fixed", "id", t.ID, "duration_ms", meta.DurationMS)
 	}
 }
 

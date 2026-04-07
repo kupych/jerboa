@@ -190,15 +190,26 @@ func (h *TrackHandler) processTrack(trackID uuid.UUID, filePath string, bandID u
 		return
 	}
 
+	if h.processor.NeedsTranscode(meta.Format) {
+		opusPath := opusSibling(filePath)
+		if err := h.processor.TranscodeToOpus(ctx, filePath, opusPath); err != nil {
+			slog.Error("transcode track", "id", trackID, "error", err)
+		} else {
+			// Re-probe the Opus sibling — MediaRecorder files often lack accurate duration
+			// headers, so the original probe may return near-zero duration. The transcoded
+			// Opus has proper headers that ffprobe can read accurately.
+			if betterMeta, err := h.processor.Probe(ctx, opusPath); err == nil && betterMeta.DurationMS > meta.DurationMS {
+				meta.DurationMS = betterMeta.DurationMS
+			}
+			if betterPeaks, err := h.processor.GeneratePeaks(ctx, opusPath); err == nil {
+				peaks = betterPeaks
+			}
+		}
+	}
+
 	if err := h.queries.UpdateTrackProcessed(ctx, trackID, peaks, meta.DurationMS, meta.Format, meta.SampleRate); err != nil {
 		slog.Error("update track", "id", trackID, "error", err)
 		return
-	}
-
-	if h.processor.NeedsTranscode(meta.Format) {
-		if err := h.processor.TranscodeToOpus(ctx, filePath, opusSibling(filePath)); err != nil {
-			slog.Error("transcode track", "id", trackID, "error", err)
-		}
 	}
 
 	// Notify connected clients

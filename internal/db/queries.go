@@ -542,6 +542,29 @@ func (q *Queries) UpdateTrackProcessed(ctx context.Context, id uuid.UUID, wavefo
 	return err
 }
 
+// ListTracksWithBadMetadata returns ready tracks that have near-zero duration or missing
+// waveform data — typically MediaRecorder recordings uploaded before the re-probe fix.
+func (q *Queries) ListTracksWithBadMetadata(ctx context.Context) ([]models.Track, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, file_path, format FROM tracks
+		WHERE status = 'ready' AND (duration_ms <= 1 OR waveform_data IS NULL)
+		  AND file_path != ''
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.Track
+	for rows.Next() {
+		var t models.Track
+		if err := rows.Scan(&t.ID, &t.FilePath, &t.Format); err != nil {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 func (q *Queries) UpdateTrackError(ctx context.Context, id uuid.UUID) error {
 	_, err := q.pool.Exec(ctx, "UPDATE tracks SET status = 'error' WHERE id = $1", id)
 	return err
