@@ -345,7 +345,10 @@
               peaksCache.set(t.id, extractPeaks(buf, 400));
               const dur = buf.duration * 1000;
               const existing = trimValues[t.id];
-              if (!existing || existing.endMs > dur || existing.endMs === 9999999) {
+              // Update if: never set, set beyond audio end, sentinel value, or still matches
+              // the DB duration (auto-initialized, not user-modified) — handles wrong/stale duration_ms.
+              const autoInit = t.duration_ms > 0 ? t.duration_ms : 9999999;
+              if (!existing || existing.endMs > dur || existing.endMs === 9999999 || existing.endMs === autoInit) {
                 trimValues = { ...trimValues, [t.id]: { startMs: existing?.startMs ?? 0, endMs: dur } };
               }
               return; // success
