@@ -9,6 +9,7 @@ make build
 
 echo ":: staging binary..."
 scp bin/jerboa "$HOST:$REMOTE_DIR/bin/jerboa.new"
+scp bin/jerboa-sync-linux-amd64 bin/jerboa-sync-windows-amd64.exe "$HOST:$REMOTE_DIR/bin/"
 
 echo ":: syncing migrations..."
 scp migrations/*.sql "$HOST:$REMOTE_DIR/migrations/"

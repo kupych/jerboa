@@ -181,14 +181,29 @@ func runPullInto(client *http.Client, cfg *Config, sessionName, dir string) {
 		fatalf("get state: %v", err)
 	}
 
-	// Pull .rpp if it doesn't exist locally
+	// Pull .rpp first (always — we need it to find correct file paths)
 	rppLocal := filepath.Join(dir, sessionName+".rpp")
+	rppExists := true
 	if _, err := os.Stat(rppLocal); os.IsNotExist(err) {
+		rppExists = false
 		fmt.Printf("  rpp   %s.rpp ... ", sessionName)
 		if err := downloadRPP(client, cfg, state.TrackID, rppLocal); err != nil {
 			fmt.Printf("FAILED: %v\n", err)
 		} else {
 			fmt.Printf("done\n")
+		}
+	}
+	_ = rppExists
+
+	// Parse .rpp to build basename → relative path index
+	rppPaths := map[string]string{} // basename → path relative to dir
+	if items, err := ParseRPP(rppLocal); err == nil {
+		for _, item := range items {
+			rel, err := filepath.Rel(dir, item.FilePath)
+			if err != nil {
+				rel = filepath.Base(item.FilePath)
+			}
+			rppPaths[filepath.Base(item.FilePath)] = rel
 		}
 	}
 
@@ -199,26 +214,31 @@ func runPullInto(client *http.Client, cfg *Config, sessionName, dir string) {
 			continue
 		}
 
-		localPath := filepath.Join(dir, f.Filename)
+		// Use the path the .rpp expects, falling back to flat in dir
+		relPath, ok := rppPaths[f.Filename]
+		if !ok {
+			relPath = f.Filename
+		}
+		localPath := filepath.Join(dir, relPath)
 		dest := localPath
 
 		if _, err := os.Stat(localPath); err == nil {
 			// File exists — check hash
 			localHash, err := hashFile(localPath)
 			if err == nil && localHash == f.FileHash {
-				fmt.Printf("  ok    %s\n", f.Filename)
+				fmt.Printf("  ok    %s\n", relPath)
 				skipped++
 				continue
 			}
 			// Conflict: same name, different content
-			ext := filepath.Ext(f.Filename)
-			base := strings.TrimSuffix(f.Filename, ext)
-			dest = filepath.Join(dir, base+"_remote"+ext)
-			fmt.Printf("  conf  %s → %s\n", f.Filename, filepath.Base(dest))
+			ext := filepath.Ext(localPath)
+			base := strings.TrimSuffix(localPath, ext)
+			dest = base + "_remote" + ext
+			fmt.Printf("  conf  %s → %s\n", relPath, filepath.Base(dest))
 			conflicts++
 		}
 
-		fmt.Printf("  dl    %s ... ", filepath.Base(dest))
+		fmt.Printf("  dl    %s ... ", relPath)
 		if err := downloadAudio(client, cfg, *f.OverdubID, dest); err != nil {
 			fmt.Printf("FAILED: %v\n", err)
 		} else {
@@ -420,7 +440,7 @@ func downloadRPP(client *http.Client, cfg *Config, trackID, dest string) error {
 }
 
 func downloadAudio(client *http.Client, cfg *Config, overdubID, dest string) error {
-	url := fmt.Sprintf("%s/api/bands/%s/tracks/%s/stream", cfg.ServerURL, cfg.BandSlug, overdubID)
+	url := fmt.Sprintf("%s/api/bands/%s/tracks/%s/stream?dl=1", cfg.ServerURL, cfg.BandSlug, overdubID)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+cfg.Token)
 
