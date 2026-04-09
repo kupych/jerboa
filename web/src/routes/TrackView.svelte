@@ -392,7 +392,7 @@
     try {
       await apiPost(`/api/tracks/${trackId}/comments`, {
         body: newComment.trim(),
-        timestamp_ms: commentTimestamp,
+        timestamp_ms: commentTimestamp !== null ? Math.round(commentTimestamp) : null,
       });
       newComment = "";
       commentTimestamp = null;

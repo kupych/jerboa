@@ -170,10 +170,20 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	if webFS != nil {
 		fileServer := http.FileServer(http.FS(webFS))
 		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
-			// Try to serve the file directly
 			path := strings.TrimPrefix(r.URL.Path, "/")
 			if path == "" {
 				path = "index.html"
+			}
+
+			// index.html and sw.js must never be cached — the browser/PWA
+			// needs the latest version to pick up new content-hashed bundles.
+			// Hashed assets (*.js, *.css with fingerprints in the name) are
+			// immutable and can be cached indefinitely.
+			switch {
+			case path == "index.html", path == "sw.js":
+				w.Header().Set("Cache-Control", "no-store")
+			case strings.HasPrefix(path, "assets/"):
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			}
 
 			if f, err := webFS.Open(path); err == nil {
@@ -183,6 +193,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 			}
 
 			// SPA fallback: serve index.html for unmatched routes
+			w.Header().Set("Cache-Control", "no-store")
 			r.URL.Path = "/"
 			fileServer.ServeHTTP(w, r)
 		})

@@ -62,7 +62,7 @@ func (h *CommentHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		Body        string     `json:"body"`
-		TimestampMS *int64     `json:"timestamp_ms"`
+		TimestampMS *float64   `json:"timestamp_ms"` // float to tolerate unrounded client values
 		ParentID    *uuid.UUID `json:"parent_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Body == "" {
@@ -70,12 +70,18 @@ func (h *CommentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var tsMS *int64
+	if body.TimestampMS != nil {
+		v := int64(*body.TimestampMS)
+		tsMS = &v
+	}
+
 	comment := &models.Comment{
 		TrackID:     trackID,
 		UserID:      user.ID,
 		ParentID:    body.ParentID,
 		Body:        body.Body,
-		TimestampMS: body.TimestampMS,
+		TimestampMS: tsMS,
 	}
 
 	if err := h.queries.CreateComment(r.Context(), comment); err != nil {
