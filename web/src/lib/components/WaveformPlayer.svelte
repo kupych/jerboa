@@ -47,6 +47,20 @@
   let currentTime = $state(0);
   let totalDuration = $state(duration / 1000);
   let hoveredComment = $state<string | null>(null);
+  let activeTimeMs = $derived(
+    isExternallyControlled ? (externalPositionMs ?? 0) : currentTime * 1000
+  );
+
+  let playheadComment = $derived(
+    isPlaying || (isExternallyControlled && externalPlaying)
+      ? comments.reduce<typeof comments[0] | null>((best, c) => {
+        const dist = activeTimeMs - c.timestamp_ms;
+        if (dist < 0 || dist > 4000) return best;
+        if (!best || dist < activeTimeMs - best.timestamp_ms) return c;
+        return best;
+      }, null)
+    : null
+  );
 
   onMount(async () => {
     const { default: WaveSurfer } = await import("wavesurfer.js");
@@ -256,7 +270,7 @@
   </div>
 
   <!-- Waveform -->
-  <div class="overflow-x-auto overflow-y-visible pt-6" bind:this={scrollContainer}>
+  <div class="overflow-y-visible pt-6" bind:this={scrollContainer}>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -312,7 +326,7 @@
       >
         <div class="absolute -top-1 -left-[3px] w-2 h-2 bg-marker"></div>
 
-        {#if hoveredComment === comment.id}
+        {#if hoveredComment === comment.id || (!hoveredComment && playheadComment?.id === comment.id)}
           <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-4 py-3 bg-bg-elevated border border-border w-56 z-10">
             <div class="label-sm text-text-secondary truncate">{comment.user_name}</div>
             <div class="text-sm font-medium text-text-primary mt-1 line-clamp-3">{comment.body}</div>
