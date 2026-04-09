@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -23,10 +24,14 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Compress(5))
 	r.Use(CORSMiddleware(cfg.BaseURL))
+	r.Use(SecurityHeadersMiddleware(strings.HasPrefix(cfg.BaseURL, "https://")))
 
-	hub := NewHub(queries)
+	// Rate-limit unauthenticated auth endpoints (magic link + OIDC login).
+	authLimiter := RateLimitMiddleware(10, time.Minute)
+
+	hub := NewHub(queries, cfg.BaseURL)
 	mailer := email.NewMailer(cfg)
-	authH := NewAuthHandler(authProvider, queries, mailer, cfg.BaseURL)
+	authH := NewAuthHandler(authProvider, queries, mailer, cfg.BaseURL, cfg.DevAuth)
 	bandH := NewBandHandler(queries, cfg.BaseURL, mailer)
 	trackH := NewTrackHandler(queries, store, processor, hub, cfg.MaxUploadMB)
 	commentH := NewCommentHandler(queries, hub)
@@ -41,12 +46,16 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	fileH := NewFileHandler(queries, s3, cfg.MaxFileMB)
 	syncH := NewSyncHandler(queries, store, processor, hub, cfg.MaxUploadMB, cfg.BinDir)
 
-	// Auth routes (no auth middleware)
-	r.Get("/auth/login", authH.Login)
-	r.Get("/auth/callback", authH.Callback)
-	r.Get("/auth/invite/{token}", authH.InviteLogin)
-	r.Post("/auth/magic-link", authH.SendMagicLink)
-	r.Get("/auth/magic-link/verify", authH.VerifyMagicLink)
+	// Auth routes (no auth middleware). Rate-limited to slow brute-force
+	// and mailer abuse on the magic-link send endpoint.
+	r.Group(func(r chi.Router) {
+		r.Use(authLimiter)
+		r.Get("/auth/login", authH.Login)
+		r.Get("/auth/callback", authH.Callback)
+		r.Get("/auth/invite/{token}", authH.InviteLogin)
+		r.Post("/auth/magic-link", authH.SendMagicLink)
+		r.Get("/auth/magic-link/verify", authH.VerifyMagicLink)
+	})
 
 	// Authenticated routes
 	r.Group(func(r chi.Router) {

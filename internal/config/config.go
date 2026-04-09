@@ -40,6 +40,8 @@ type Config struct {
 	S3SecretKey string
 	MaxFileMB   int64
 	BinDir      string
+
+	DevAuth bool // JERBOA_DEV_AUTH — allows unauthenticated dev login when OIDC is absent
 }
 
 func loadDotenv() {
@@ -103,6 +105,8 @@ func Load() (*Config, error) {
 		S3SecretKey: env("JERBOA_S3_SECRET_KEY", ""),
 		MaxFileMB:   envInt("JERBOA_MAX_FILE_MB", 2000),
 		BinDir:      env("JERBOA_BIN_DIR", "./bin"),
+
+		DevAuth: envBool("JERBOA_DEV_AUTH", false),
 	}
 
 	if c.Secret == "" {
@@ -129,4 +133,12 @@ func envInt(key string, fallback int64) int64 {
 		return fallback
 	}
 	return n
+}
+
+func envBool(key string, fallback bool) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if v == "" {
+		return fallback
+	}
+	return v == "1" || v == "true" || v == "yes" || v == "on"
 }

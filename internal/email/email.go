@@ -2,6 +2,7 @@ package email
 
 import (
 	"fmt"
+	"html"
 	"log/slog"
 	"net/smtp"
 	"strings"
@@ -84,7 +85,8 @@ func (m *Mailer) send(to, subject, msg string) error {
 
 func (m *Mailer) SendMagicLoginEmail(to, loginURL string) {
 	subject := "Your Jerboa login link"
-	html := fmt.Sprintf(`<!DOCTYPE html>
+	safeURL := html.EscapeString(loginURL)
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body style="margin:0;padding:0;background:#131313;font-family:'Courier New',monospace;">
@@ -108,14 +110,16 @@ func (m *Mailer) SendMagicLoginEmail(to, loginURL string) {
     </div>
   </div>
 </body>
-</html>`, loginURL)
+</html>`, safeURL)
 
-	go m.SendHTML(to, subject, html)
+	go m.SendHTML(to, subject, htmlBody)
 }
 
 func (m *Mailer) SendInvite(to, bandName, inviteURL string) {
+	safeBand := html.EscapeString(bandName)
+	safeURL := html.EscapeString(inviteURL)
 	subject := fmt.Sprintf("You're invited to %s on Jerboa", bandName)
-	html := fmt.Sprintf(`<!DOCTYPE html>
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body style="margin:0;padding:0;background:#131313;font-family:'Courier New',monospace;">
@@ -143,8 +147,8 @@ func (m *Mailer) SendInvite(to, bandName, inviteURL string) {
     </div>
   </div>
 </body>
-</html>`, bandName, inviteURL)
+</html>`, safeBand, safeURL)
 
 	// Send in background, don't block the request
-	go m.SendHTML(to, subject, html)
+	go m.SendHTML(to, subject, htmlBody)
 }

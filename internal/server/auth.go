@@ -22,22 +22,37 @@ type AuthHandler struct {
 	mailer   *email.Mailer
 	baseURL  string
 	secure   bool
+	devAuth  bool
 }
 
-func NewAuthHandler(provider *auth.Provider, queries *db.Queries, mailer *email.Mailer, baseURL string) *AuthHandler {
+func NewAuthHandler(provider *auth.Provider, queries *db.Queries, mailer *email.Mailer, baseURL string, devAuth bool) *AuthHandler {
 	secure := len(baseURL) > 8 && baseURL[:8] == "https://"
+	if devAuth && !isPrivateBaseURL(baseURL) {
+		slog.Warn("JERBOA_DEV_AUTH set but BaseURL is not a private address — dev login will be refused", "base_url", baseURL)
+	} else if devAuth {
+		slog.Warn("JERBOA_DEV_AUTH is enabled — unauthenticated dev login active", "base_url", baseURL)
+	}
 	return &AuthHandler{
 		provider: provider,
 		queries:  queries,
 		mailer:   mailer,
 		baseURL:  baseURL,
 		secure:   secure,
+		devAuth:  devAuth,
 	}
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	// Dev bypass: auto-login when no OIDC provider configured
+	// Dev bypass: only when explicitly enabled, no OIDC provider is configured,
+	// AND BaseURL points at a private/loopback address. The private-address
+	// check makes the flag self-defeating in production — flipping DEV_AUTH
+	// alone is ignored, and pointing BaseURL at localhost would break
+	// OIDC redirects/emails long before an attacker could use it.
 	if h.provider == nil {
+		if !h.devAuth || !isPrivateBaseURL(h.baseURL) {
+			http.Error(w, `{"error":"auth not configured"}`, http.StatusServiceUnavailable)
+			return
+		}
 		h.devLogin(w, r)
 		return
 	}
@@ -78,6 +93,7 @@ func (h *AuthHandler) devLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   30 * 24 * 60 * 60,
 		HttpOnly: true,
+		Secure:   h.secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -158,6 +174,8 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   h.secure,
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	w.WriteHeader(http.StatusNoContent)

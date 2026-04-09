@@ -304,7 +304,7 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		if dlTitle == "" {
 			dlTitle = track.Title
 		}
-		filename := fmt.Sprintf("%s.wav", dlTitle)
+		filename := sanitizeHeaderValue(dlTitle) + ".wav"
 		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 		w.Header().Set("Content-Type", "audio/wav")
 
@@ -371,7 +371,7 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		if i := strings.LastIndex(track.FilePath, "."); i >= 0 {
 			ext = track.FilePath[i:]
 		}
-		filename := track.Title + ext
+		filename := sanitizeHeaderValue(track.Title) + ext
 		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	} else if useOpus {
 		w.Header().Set("Content-Type", "audio/ogg; codecs=opus")

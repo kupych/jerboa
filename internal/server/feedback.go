@@ -44,14 +44,32 @@ func (h *FeedbackHandler) Create(w http.ResponseWriter, r *http.Request) {
 		PageURL: r.FormValue("page_url"),
 	}
 
-	// Handle optional image
-	file, header, err := r.FormFile("image")
+	// Handle optional image. Only accept well-known raster formats:
+	// sniff the first 512 bytes (http.DetectContentType), reject SVG/HTML/etc.
+	// that could execute script when served back to admins.
+	file, _, err := r.FormFile("image")
 	if err == nil {
 		defer file.Close()
-		ext := filepath.Ext(header.Filename)
-		if ext == "" {
+
+		sniff := make([]byte, 512)
+		n, _ := file.Read(sniff)
+		ctype := http.DetectContentType(sniff[:n])
+
+		var ext string
+		switch ctype {
+		case "image/png":
 			ext = ".png"
+		case "image/jpeg":
+			ext = ".jpg"
+		case "image/gif":
+			ext = ".gif"
+		case "image/webp":
+			ext = ".webp"
+		default:
+			http.Error(w, `{"error":"unsupported image type"}`, http.StatusUnsupportedMediaType)
+			return
 		}
+
 		dir := filepath.Join(h.store.Root(), "feedback")
 		if err := os.MkdirAll(dir, 0750); err != nil {
 			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
@@ -65,6 +83,11 @@ func (h *FeedbackHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer f.Close()
+		if _, err := f.Write(sniff[:n]); err != nil {
+			os.Remove(path)
+			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+			return
+		}
 		if _, err := f.ReadFrom(file); err != nil {
 			os.Remove(path)
 			http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)

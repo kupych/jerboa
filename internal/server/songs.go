@@ -209,6 +209,13 @@ func (h *SongHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ensure song actually belongs to this band before deletion.
+	song, err := h.queries.GetSong(r.Context(), songID)
+	if err != nil || song == nil || song.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
 	if err := h.queries.DeleteSong(r.Context(), songID); err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
@@ -306,12 +313,28 @@ func (h *SongHandler) AssignTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ensure track belongs to this band.
+	track, err := h.queries.GetTrack(r.Context(), trackID)
+	if err != nil || track == nil || track.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
 	var req struct {
 		SongID *uuid.UUID `json:"song_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
 		return
+	}
+
+	// If assigning to a song, ensure that song also belongs to this band.
+	if req.SongID != nil {
+		song, err := h.queries.GetSong(r.Context(), *req.SongID)
+		if err != nil || song == nil || song.BandID != band.ID {
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+			return
+		}
 	}
 
 	if err := h.queries.SetTrackSong(r.Context(), trackID, req.SongID); err != nil {

@@ -4,13 +4,17 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 
 	"jerboa/internal/db"
+	"jerboa/internal/models"
 )
 
 type WSMessage struct {
@@ -25,15 +29,21 @@ type wsClient struct {
 }
 
 type Hub struct {
-	mu       sync.RWMutex
-	clients  map[*wsClient]bool
-	queries  *db.Queries
+	mu             sync.RWMutex
+	clients        map[*wsClient]bool
+	queries        *db.Queries
+	originPatterns []string
 }
 
-func NewHub(queries *db.Queries) *Hub {
+func NewHub(queries *db.Queries, baseURL string) *Hub {
+	patterns := []string{}
+	if u, err := url.Parse(baseURL); err == nil && u.Host != "" {
+		patterns = append(patterns, u.Host)
+	}
 	return &Hub{
-		clients: make(map[*wsClient]bool),
-		queries: queries,
+		clients:        make(map[*wsClient]bool),
+		queries:        queries,
+		originPatterns: patterns,
 	}
 }
 
@@ -60,7 +70,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: []string{"*"},
+		OriginPatterns: h.originPatterns,
 	})
 	if err != nil {
 		slog.Error("websocket accept", "error", err)
@@ -117,7 +127,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		switch msg.Type {
 		case "subscribe":
-			if h.canAccess(ctx, user.ID, msg.Channel) {
+			if h.canAccess(ctx, user, msg.Channel) {
 				client.channels[msg.Channel] = true
 				wsjson.Write(ctx, conn, WSMessage{
 					Type:    "subscribed",
@@ -132,11 +142,32 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Hub) canAccess(ctx context.Context, userID interface{}, channel string) bool {
-	// Simple channel access check
-	// Channels are formatted as "band:<id>" or "track:<id>"
-	// For now, allow any authenticated user to subscribe
-	// TODO: verify band/track membership
-	return true
-}
+// canAccess verifies the user may subscribe to the channel.
+// Channels are "band:<uuid>" or "track:<uuid>"; access is gated on band membership.
+func (h *Hub) canAccess(ctx context.Context, user *models.User, channel string) bool {
+	if user == nil {
+		return false
+	}
+	kind, rest, ok := strings.Cut(channel, ":")
+	if !ok {
+		return false
+	}
+	id, err := uuid.Parse(rest)
+	if err != nil {
+		return false
+	}
 
+	switch kind {
+	case "band":
+		ok, _ := CheckBandAccess(h.queries, ctx, id, user.ID, user.IsAdmin)
+		return ok
+	case "track":
+		track, err := h.queries.GetTrack(ctx, id)
+		if err != nil || track == nil {
+			return false
+		}
+		ok, _ := CheckBandAccess(h.queries, ctx, track.BandID, user.ID, user.IsAdmin)
+		return ok
+	}
+	return false
+}

@@ -298,11 +298,17 @@ func (h *SyncHandler) ServeRPP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = band
 
 	trackID, err := uuid.Parse(chi.URLParam(r, "trackID"))
 	if err != nil {
 		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Verify the track belongs to this band to prevent cross-band enumeration.
+	track, err := h.queries.GetTrack(r.Context(), trackID)
+	if err != nil || track == nil || track.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
 

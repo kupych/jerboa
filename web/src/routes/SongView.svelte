@@ -5,6 +5,12 @@
   import { navigate } from "../lib/stores/router";
   import { player } from "../lib/stores/player";
   import { formatDuration, formatRelativeTime, formatTimestamp, setTypeCode, setTypeLabel } from "../lib/utils/format";
+  import { sanitizeHtml } from "../lib/utils/sanitize";
+
+  // marked.parse emits raw HTML — route every render through sanitizeHtml
+  // so stored <script>/on*=/javascript: payloads can't execute in other
+  // members' sessions.
+  const renderMd = (src: string) => sanitizeHtml(marked.parse(src ?? "") as string);
   import CommentList from "../lib/components/CommentList.svelte";
   import Recorder from "../lib/components/Recorder.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
@@ -849,7 +855,7 @@
         {:else if expandedSection === "notes"}
           <div class="px-5 pb-5 border-t border-border/50 pt-4">
             {#if song.notes}
-              <div class="prose bg-bg-surface border border-border p-5">{@html marked.parse(song.notes)}</div>
+              <div class="prose bg-bg-surface border border-border p-5">{@html renderMd(song.notes)}</div>
               <button onclick={() => { editingNotes = true; notesInput = song!.notes; }} class="label-sm text-text-muted hover:text-accent transition-colors mt-3">edit</button>
             {:else}
               <button
@@ -903,7 +909,7 @@
                   <ChordProLyrics text={song.lyrics} {showChords} />
                 </div>
               {:else}
-                <div class="prose bg-bg-surface border border-border p-5">{@html marked.parse(song.lyrics)}</div>
+                <div class="prose bg-bg-surface border border-border p-5">{@html renderMd(song.lyrics)}</div>
               {/if}
               <button onclick={() => { editingLyrics = true; lyricsInput = song!.lyrics; }} class="label-sm text-text-muted hover:text-accent transition-colors mt-3">edit</button>
             {:else}
