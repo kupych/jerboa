@@ -32,6 +32,7 @@
     onPositionChange,
     onPlayingChange,
     onTrimChange,
+    onGainChange,
   }: {
     tracks: MixerTrack[];
     isAdmin?: boolean;
