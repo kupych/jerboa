@@ -212,6 +212,14 @@ func (h *TrackHandler) processTrack(trackID uuid.UUID, filePath string, bandID u
 		return
 	}
 
+	if lufs, err := h.processor.MeasureLoudness(ctx, filePath); err == nil {
+		if err := h.queries.UpdateTrackLoudness(ctx, trackID, lufs); err != nil {
+			slog.Warn("update track loudness", "id", trackID, "error", err)
+		}
+	} else {
+		slog.Debug("measure loudness", "id", trackID, "error", err)
+	}
+
 	// Notify connected clients
 	h.hub.Broadcast("band:"+bandID.String(), WSMessage{
 		Type: "track.ready",
@@ -508,6 +516,55 @@ func (h *TrackHandler) UpdateTags(w http.ResponseWriter, r *http.Request) {
 	track.Tags = req.Tags
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(track)
+}
+
+func (h *TrackHandler) UpdateGain(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	trackID, err := uuid.Parse(chi.URLParam(r, "trackID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid track id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	track, err := h.queries.GetTrack(r.Context(), trackID)
+	if err != nil || track == nil || track.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Gain float64 `json:"gain"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Gain < 0 {
+		http.Error(w, `{"error":"gain must be non-negative"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.queries.UpdateTrackGain(r.Context(), trackID, req.Gain); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"gain": req.Gain})
 }
 
 func (h *TrackHandler) Delete(w http.ResponseWriter, r *http.Request) {

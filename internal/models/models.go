@@ -106,6 +106,8 @@ type Track struct {
 	PreBounceID    *uuid.UUID        `json:"pre_bounce_id,omitempty"`
 	BounceVersions int               `json:"bounce_versions,omitempty"`
 	RppSessionName *string           `json:"rpp_session_name,omitempty"`
+	Gain           float64           `json:"gain"`
+	LoudnessLUFS   *float64          `json:"loudness_lufs,omitempty"`
 }
 
 type OverdubVote struct {

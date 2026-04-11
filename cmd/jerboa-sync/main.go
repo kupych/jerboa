@@ -349,6 +349,9 @@ func uploadAudio(client *http.Client, cfg *Config, trackID string, item RPPItem,
 	mw.WriteField("filename", filepath.Base(item.FilePath))
 	mw.WriteField("file_hash", hash)
 	mw.WriteField("offset_ms", fmt.Sprintf("%d", item.OffsetMS))
+	if item.Gain > 0 {
+		mw.WriteField("gain", fmt.Sprintf("%.6f", item.Gain))
+	}
 
 	fw, err := mw.CreateFormFile("file", filepath.Base(item.FilePath))
 	if err != nil {

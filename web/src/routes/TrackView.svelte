@@ -130,6 +130,8 @@
                 offset_ms: 0,
                 isParent: true,
                 streamUrl: `/api/bands/${slug}/tracks/${trackId}/stream`,
+                gain: track.gain,
+                loudness_lufs: track.loudness_lufs,
               }]
             : []),
           ...overdubs.map((od) => ({
@@ -142,6 +144,8 @@
             uploader: od.uploader,
             vote_count: od.vote_count,
             user_voted: od.user_voted,
+            gain: od.gain,
+            loudness_lufs: od.loudness_lufs,
           })),
         ]
       : []
@@ -473,6 +477,10 @@
     } finally {
       bouncing = false;
     }
+  }
+
+  async function saveGain(id: string, gain: number) {
+    await apiPatch(`/api/bands/${slug}/tracks/${id}/gain`, { gain });
   }
 
   async function scrubOverdubs(keepId?: string) {
@@ -1101,6 +1109,7 @@
             onVote={(id) => voteOverdub(id)}
             onBounceMix={(ids, toNew) => bounceMix(ids, toNew)}
             onRefresh={() => loadOverdubs()}
+            onGainChange={(id, gain) => saveGain(id, gain)}
           />
           {#if isAdmin && overdubs.length > 1}
             <button

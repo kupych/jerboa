@@ -95,6 +95,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/bands/{slug}/tracks/{trackID}/stream", trackH.Stream)
 		r.Patch("/api/bands/{slug}/tracks/{trackID}", trackH.UpdateMeta)
 		r.Patch("/api/bands/{slug}/tracks/{trackID}/tags", trackH.UpdateTags)
+		r.Patch("/api/bands/{slug}/tracks/{trackID}/gain", trackH.UpdateGain)
 		r.Get("/api/bands/{slug}/tracks/{trackID}/personnel", trackH.ListPersonnel)
 		r.Post("/api/bands/{slug}/tracks/{trackID}/personnel", trackH.AddPersonnel)
 		r.Delete("/api/bands/{slug}/tracks/{trackID}/personnel/{userID}", trackH.RemovePersonnel)

@@ -13,6 +13,7 @@ type RPPItem struct {
 	TrackName string
 	FilePath  string // relative path as stored in .rpp
 	OffsetMS  int64
+	Gain      float64 // linear gain from VOLPAN (1.0 = unity); 0 means not set
 }
 
 // ParseRPP parses a Reaper project file and returns all audio items with their
@@ -34,9 +35,11 @@ func ParseRPP(rppPath string) ([]RPPItem, error) {
 	var items []RPPItem
 
 	currentTrackName := ""
+	currentTrackVol := 1.0 // VOLPAN from the enclosing TRACK block
 	inItem := false
 	inSource := false
 	itemOffset := 0.0
+	itemVol := 0.0 // VOLPAN from the ITEM block (0 = not set)
 	sourceFile := ""
 
 	flush := func() {
@@ -45,16 +48,22 @@ func ParseRPP(rppPath string) ([]RPPItem, error) {
 			if !filepath.IsAbs(sourceFile) {
 				abs = filepath.Join(baseDir, sourceFile)
 			}
+			gain := currentTrackVol
+			if itemVol > 0 {
+				gain = currentTrackVol * itemVol
+			}
 			items = append(items, RPPItem{
 				TrackName: currentTrackName,
 				FilePath:  abs,
 				OffsetMS:  int64(math.Round(itemOffset * 1000)),
+				Gain:      gain,
 			})
 		}
 		inItem = false
 		inSource = false
 		sourceFile = ""
 		itemOffset = 0
+		itemVol = 0
 	}
 
 	scanner := bufio.NewScanner(f)
@@ -65,6 +74,8 @@ func ParseRPP(rppPath string) ([]RPPItem, error) {
 			tag := strings.Fields(strings.TrimPrefix(line, "<"))[0]
 			stack = append(stack, frame{tag: tag})
 			switch tag {
+			case "TRACK":
+				currentTrackVol = 1.0 // reset to unity for each new track
 			case "ITEM":
 				flush()
 				inItem = true
@@ -100,6 +111,16 @@ func ParseRPP(rppPath string) ([]RPPItem, error) {
 		switch {
 		case key == "NAME" && len(stack) > 0 && stack[len(stack)-1].tag == "TRACK":
 			currentTrackName = unquote(val)
+		case key == "VOLPAN" && len(stack) > 0 && stack[len(stack)-1].tag == "TRACK":
+			// VOLPAN <vol> <pan> ...  — capture track fader volume
+			if v, err := strconv.ParseFloat(strings.Fields(val)[0], 64); err == nil {
+				currentTrackVol = v
+			}
+		case key == "VOLPAN" && inItem:
+			// Per-item clip gain
+			if v, err := strconv.ParseFloat(strings.Fields(val)[0], 64); err == nil {
+				itemVol = v
+			}
 		case key == "POSITION" && inItem:
 			itemOffset, _ = strconv.ParseFloat(val, 64)
 		case key == "FILE" && inSource:

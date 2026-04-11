@@ -171,6 +171,37 @@ func (p *Processor) TranscodeToOpus(ctx context.Context, srcPath, dstPath string
 	return nil
 }
 
+// MeasureLoudness measures the integrated loudness of an audio file using ffmpeg's
+// loudnorm filter and returns the value in LUFS (e.g. -23.0). Returns an error if
+// the file is too short to measure or if ffmpeg fails unexpectedly.
+func (p *Processor) MeasureLoudness(ctx context.Context, filePath string) (float64, error) {
+	cmd := exec.CommandContext(ctx, p.ffmpegPath,
+		"-i", filePath,
+		"-af", "loudnorm=print_format=json",
+		"-f", "null", "-",
+	)
+	// ffmpeg exits non-zero here (no output file) but the loudnorm JSON is in stderr.
+	out, _ := cmd.CombinedOutput()
+
+	s := string(out)
+	start := strings.LastIndex(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start < 0 || end <= start {
+		return 0, fmt.Errorf("no loudnorm JSON in ffmpeg output")
+	}
+
+	var result struct {
+		InputI string `json:"input_i"`
+	}
+	if err := json.Unmarshal([]byte(s[start:end+1]), &result); err != nil {
+		return 0, fmt.Errorf("parse loudnorm JSON: %w", err)
+	}
+	if result.InputI == "-inf" {
+		return 0, fmt.Errorf("silent track")
+	}
+	return strconv.ParseFloat(result.InputI, 64)
+}
+
 func (p *Processor) IsSupported(filename string) bool {
 	ext := strings.ToLower(filename)
 	for _, e := range []string{".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a", ".aiff", ".aif", ".wma", ".opus", ".webm"} {

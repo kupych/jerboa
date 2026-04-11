@@ -12,6 +12,8 @@
     uploader?: { display_name: string; email: string };
     vote_count?: number;
     user_voted?: boolean;
+    gain?: number;
+    loudness_lufs?: number | null;
   }
 
   let {
@@ -46,6 +48,7 @@
     onPositionChange?: (ms: number) => void;
     onPlayingChange?: (playing: boolean) => void;
     onTrimChange?: (id: string, startMs: number, endMs: number) => void;
+    onGainChange?: (id: string, gain: number) => void;
   } = $props();
 
   export function seekTo(ms: number) { commitSeek(ms); }
@@ -95,7 +98,7 @@
     const nextG = { ...gainValues };
     const nextT = { ...trimValues };
     for (const t of tracks) {
-      if (!(t.id in nextG)) { nextG[t.id] = 1; gChanged = true; }
+      if (!(t.id in nextG)) { nextG[t.id] = t.gain ?? 1; gChanged = true; }
       if (!(t.id in nextT)) {
         nextT[t.id] = { startMs: 0, endMs: t.duration_ms > 0 ? t.duration_ms : 9999999 };
         tChanged = true;
@@ -587,6 +590,34 @@
     setTimeout(() => { bouncing = false; }, 2000);
   }
 
+  // === Gain helpers ===
+  function gainToDb(g: number): string {
+    if (g <= 0) return '-∞';
+    const db = 20 * Math.log10(g);
+    return (db >= 0 ? '+' : '') + db.toFixed(1);
+  }
+
+  function normalize() {
+    const withLufs = tracks.filter((t) => t.loudness_lufs != null);
+    if (withLufs.length < 2) return;
+
+    // Use parent track's LUFS as target; if no parent data, use loudest track
+    const parent = withLufs.find((t) => t.isParent);
+    const targetLufs = parent?.loudness_lufs
+      ?? Math.max(...withLufs.map((t) => t.loudness_lufs!));
+
+    const nextG = { ...gainValues };
+    for (const t of withLufs) {
+      const g = Math.min(Math.pow(10, (targetLufs - t.loudness_lufs!) / 20), 8);
+      nextG[t.id] = g;
+    }
+    gainValues = nextG;
+    for (const t of withLufs) applyGain(t.id);
+    for (const t of withLufs) onGainChange?.(t.id, nextG[t.id]);
+  }
+
+  let canNormalize = $derived(tracks.filter((t) => t.loudness_lufs != null).length >= 2);
+
   $effect(() => { onPlayingChange?.(playing); });
 
   // Auto-load buffers for tracks with unknown duration (WebM/MediaRecorder files often have duration_ms=0 in DB).
@@ -664,18 +695,27 @@
     {#if hideSrc && srcTrack}
       <span class="label-sm text-text-muted shrink-0 ml-2">src</span>
       <input
-        type="range" min="0" max="1" step="0.05"
+        type="range" min="0" max="8" step="0.05"
         value={gainValues[srcTrack.id] ?? 1}
         oninput={(e) => setGainVal(srcTrack!.id, parseFloat((e.target as HTMLInputElement).value))}
+        onchange={(e) => onGainChange?.(srcTrack!.id, parseFloat((e.target as HTMLInputElement).value))}
         class="w-20 h-1 accent-accent cursor-pointer shrink-0"
       />
-      <span class="w-6 label-sm font-mono text-text-muted text-right shrink-0">
-        {Math.round((gainValues[srcTrack.id] ?? 1) * 100)}
+      <span class="w-10 label-sm font-mono text-text-muted text-right shrink-0">
+        {gainToDb(gainValues[srcTrack.id] ?? 1)}
       </span>
     {/if}
 
+    {#if canNormalize}
+      <button
+        onclick={normalize}
+        class="hidden sm:block label-sm text-text-muted/60 hover:text-accent transition-colors shrink-0 ml-auto"
+        title="Set gains so all tracks have matching loudness"
+      >normalize</button>
+    {/if}
+
     <!-- Zoom controls -->
-    <div class="hidden sm:flex items-center gap-1 ml-auto shrink-0">
+    <div class="hidden sm:flex items-center gap-1 {canNormalize ? '' : 'ml-auto'} shrink-0">
       <button
         onclick={() => pxPerSec = Math.max(10, pxPerSec / 1.5)}
         class="w-6 h-6 flex items-center justify-center text-text-muted/50 hover:text-accent transition-colors font-mono text-base leading-none"
@@ -717,13 +757,14 @@
         </div>
 
         <input
-          type="range" min="0" max="1" step="0.05"
+          type="range" min="0" max="8" step="0.05"
           value={gainValues[t.id] ?? 1}
           oninput={(e) => setGainVal(t.id, parseFloat((e.target as HTMLInputElement).value))}
+          onchange={(e) => onGainChange?.(t.id, parseFloat((e.target as HTMLInputElement).value))}
           class="w-20 h-1 accent-accent cursor-pointer shrink-0"
         />
-        <span class="w-7 label-sm font-mono text-text-muted/60 text-right shrink-0">
-          {Math.round((gainValues[t.id] ?? 1) * 100)}
+        <span class="w-10 label-sm font-mono text-text-muted/60 text-right shrink-0">
+          {gainToDb(gainValues[t.id] ?? 1)}
         </span>
       </div>
     {/each}
@@ -800,13 +841,14 @@
             <!-- Gain -->
             <div class="flex flex-col items-end gap-0.5 shrink-0">
               <input
-                type="range" min="0" max="1" step="0.05"
+                type="range" min="0" max="8" step="0.05"
                 value={gainValues[t.id] ?? 1}
                 oninput={(e) => setGainVal(t.id, parseFloat((e.target as HTMLInputElement).value))}
+                onchange={(e) => onGainChange?.(t.id, parseFloat((e.target as HTMLInputElement).value))}
                 class="w-14 h-0.5 accent-accent cursor-pointer"
               />
               <span class="font-mono text-text-muted/50 font-semibold tabular-nums leading-none" style="font-size: 8px;">
-                {Math.round((gainValues[t.id] ?? 1) * 100)}
+                {gainToDb(gainValues[t.id] ?? 1)}
               </span>
             </div>
 

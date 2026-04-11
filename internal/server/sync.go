@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -129,6 +130,10 @@ func (h *SyncHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	fileHash := r.FormValue("file_hash")
 	var offsetMS int64
 	fmt.Sscanf(r.FormValue("offset_ms"), "%d", &offsetMS)
+	var gain float64 = 1.0
+	if g, err := strconv.ParseFloat(r.FormValue("gain"), 64); err == nil && g > 0 {
+		gain = g
+	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -152,6 +157,7 @@ func (h *SyncHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		Status:     "processing",
 		OverdubOf:  &trackID,
 		OffsetMS:   offsetMS,
+		Gain:       gain,
 	}
 
 	if err := h.queries.CreateTrack(r.Context(), overdub); err != nil {
@@ -350,6 +356,14 @@ func (h *SyncHandler) processTrack(trackID uuid.UUID, filePath string, bandID uu
 	if err := h.queries.UpdateTrackProcessed(ctx, trackID, peaks, meta.DurationMS, meta.Format, meta.SampleRate); err != nil {
 		slog.Error("sync: update track", "id", trackID, "error", err)
 		return
+	}
+
+	if lufs, err := h.processor.MeasureLoudness(ctx, filePath); err == nil {
+		if err := h.queries.UpdateTrackLoudness(ctx, trackID, lufs); err != nil {
+			slog.Warn("sync: update track loudness", "id", trackID, "error", err)
+		}
+	} else {
+		slog.Debug("sync: measure loudness", "id", trackID, "error", err)
 	}
 
 	if h.processor.NeedsTranscode(meta.Format) {
