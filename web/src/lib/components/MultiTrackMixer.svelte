@@ -602,10 +602,9 @@
     const withLufs = tracks.filter((t) => t.loudness_lufs != null);
     if (withLufs.length < 2) return;
 
-    // Use parent track's LUFS as target; if no parent data, use loudest track
-    const parent = withLufs.find((t) => t.isParent);
-    const targetLufs = parent?.loudness_lufs
-      ?? Math.max(...withLufs.map((t) => t.loudness_lufs!));
+    // Target the loudest track so everything gets boosted up to meet it,
+    // rather than pulled down to meet a quiet parent with lots of overhead.
+    const targetLufs = Math.max(...withLufs.map((t) => t.loudness_lufs!));
 
     const nextG = { ...gainValues };
     for (const t of withLufs) {
