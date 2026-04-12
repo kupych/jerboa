@@ -546,6 +546,27 @@ func (q *Queries) UpdateTrackProcessed(ctx context.Context, id uuid.UUID, wavefo
 	return err
 }
 
+// ListTracksWithoutLoudness returns ready tracks that have a file but no loudness measurement yet.
+func (q *Queries) ListTracksWithoutLoudness(ctx context.Context) ([]models.Track, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, file_path FROM tracks
+		WHERE status = 'ready' AND loudness_lufs IS NULL AND file_path != ''
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.Track
+	for rows.Next() {
+		var t models.Track
+		if err := rows.Scan(&t.ID, &t.FilePath); err != nil {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // ListTracksWithBadMetadata returns ready tracks that have near-zero duration or missing
 // waveform data — typically MediaRecorder recordings uploaded before the re-probe fix.
 func (q *Queries) ListTracksWithBadMetadata(ctx context.Context) ([]models.Track, error) {

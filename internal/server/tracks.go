@@ -567,6 +567,44 @@ func (h *TrackHandler) UpdateGain(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"gain": req.Gain})
 }
 
+// BackfillLoudness measures loudness for all ready tracks that are missing it.
+// Runs in the background; responds immediately with the count of tracks queued.
+func (h *TrackHandler) BackfillLoudness(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	if !user.IsAdmin {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	tracks, err := h.queries.ListTracksWithoutLoudness(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	go func() {
+		ctx := context.Background()
+		for _, t := range tracks {
+			filePath := t.FilePath
+			// Prefer the Opus sibling for loudness measurement if it exists
+			if opus := opusSibling(filePath); fileExists(opus) {
+				filePath = opus
+			}
+			if lufs, err := h.processor.MeasureLoudness(ctx, filePath); err == nil {
+				if err := h.queries.UpdateTrackLoudness(ctx, t.ID, lufs); err != nil {
+					slog.Warn("backfill loudness: update", "id", t.ID, "error", err)
+				}
+			} else {
+				slog.Debug("backfill loudness: measure", "id", t.ID, "error", err)
+			}
+		}
+		slog.Info("backfill loudness: done", "count", len(tracks))
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"queued": len(tracks)})
+}
+
 func (h *TrackHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	user := UserFrom(r.Context())
 	slug := chi.URLParam(r, "slug")

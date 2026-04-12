@@ -162,6 +162,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/admin/overview", adminH.Overview)
 		r.Delete("/api/admin/users/{userID}", adminH.DeleteUser)
 		r.Delete("/api/admin/invites/{inviteID}", adminH.DeleteInvite)
+		r.Post("/api/admin/backfill-loudness", trackH.BackfillLoudness)
 
 		// WebSocket
 		r.Handle("/ws", hub)
