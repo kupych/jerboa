@@ -105,6 +105,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/bands/{slug}/tracks/{trackID}/overdubs", overdubH.List)
 		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs", overdubH.Upload)
 		r.Patch("/api/bands/{slug}/tracks/{trackID}/overdubs/{overdubID}/offset", overdubH.UpdateOffset)
+		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs/link", overdubH.LinkOverdub)
 		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs/vote", overdubH.Vote)
 		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs/bounce", overdubH.Bounce)
 		r.Post("/api/bands/{slug}/tracks/{trackID}/overdubs/bounce-mix", overdubH.BounceMix)

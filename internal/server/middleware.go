@@ -22,6 +22,16 @@ func opusSibling(filePath string) string {
 	return filePath + ".opus"
 }
 
+// safeDeleteFile deletes filePath and its Opus sibling only if no other track row
+// references the same path — cloned overdubs share a file with their source track.
+func safeDeleteFile(ctx context.Context, q *db.Queries, store interface{ Delete(string) error }, filePath string) {
+	if shared, err := q.IsFileShared(ctx, filePath); err == nil && shared {
+		return
+	}
+	store.Delete(filePath)
+	store.Delete(opusSibling(filePath))
+}
+
 func UserFrom(ctx context.Context) *models.User {
 	u, _ := ctx.Value(userCtxKey).(*models.User)
 	return u

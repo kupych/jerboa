@@ -813,7 +813,7 @@ func (h *OverdubHandler) RestoreOriginal(w http.ResponseWriter, r *http.Request)
 
 	// Delete parent's current bounced file
 	if parent.FilePath != "" {
-		h.store.Delete(parent.FilePath)
+		safeDeleteFile(r.Context(), h.queries, h.store, parent.FilePath)
 	}
 
 	// Restore parent to original state
@@ -829,8 +829,7 @@ func (h *OverdubHandler) RestoreOriginal(w http.ResponseWriter, r *http.Request)
 			continue
 		}
 		if filePath != "" {
-			h.store.Delete(filePath)
-			h.store.Delete(opusSibling(filePath))
+			safeDeleteFile(r.Context(), h.queries, h.store, filePath)
 		}
 	}
 
@@ -881,8 +880,7 @@ func (h *OverdubHandler) PurgeBounceVersions(w http.ResponseWriter, r *http.Requ
 			continue
 		}
 		if filePath != "" {
-			h.store.Delete(filePath)
-			h.store.Delete(opusSibling(filePath))
+			safeDeleteFile(r.Context(), h.queries, h.store, filePath)
 		}
 	}
 
@@ -936,8 +934,7 @@ func (h *OverdubHandler) Scrub(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if filePath != "" {
-			h.store.Delete(filePath)
-			h.store.Delete(opusSibling(filePath))
+			safeDeleteFile(r.Context(), h.queries, h.store, filePath)
 		}
 	}
 
@@ -945,4 +942,79 @@ func (h *OverdubHandler) Scrub(w http.ResponseWriter, r *http.Request) {
 	h.queries.DeleteOverdubVotes(r.Context(), trackID)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// LinkOverdub clones an existing track row as an overdub of the parent track.
+// The file is shared — not re-uploaded. The source track remains unchanged.
+func (h *OverdubHandler) LinkOverdub(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	trackID, err := uuid.Parse(chi.URLParam(r, "trackID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid track id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	parent, err := h.queries.GetTrack(r.Context(), trackID)
+	if err != nil || parent == nil || parent.BandID != band.ID {
+		http.Error(w, `{"error":"parent track not found"}`, http.StatusNotFound)
+		return
+	}
+
+	var body struct {
+		SourceTrackID string `json:"source_track_id"`
+		OffsetMS      int64  `json:"offset_ms"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+
+	sourceID, err := uuid.Parse(body.SourceTrackID)
+	if err != nil {
+		http.Error(w, `{"error":"invalid source_track_id"}`, http.StatusBadRequest)
+		return
+	}
+
+	source, err := h.queries.GetTrack(r.Context(), sourceID)
+	if err != nil || source == nil || source.BandID != band.ID {
+		http.Error(w, `{"error":"source track not found"}`, http.StatusNotFound)
+		return
+	}
+	if source.OverdubOf != nil {
+		http.Error(w, `{"error":"source track is already an overdub"}`, http.StatusBadRequest)
+		return
+	}
+	if sourceID == trackID {
+		http.Error(w, `{"error":"cannot link a track as its own overdub"}`, http.StatusBadRequest)
+		return
+	}
+
+	cloned, err := h.queries.CloneTrackAsOverdub(r.Context(), sourceID, trackID, body.OffsetMS)
+	if err != nil {
+		slog.Error("link overdub: clone", "error", err)
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{
+		Type:    "overdub.linked",
+		Payload: map[string]any{"track_id": trackID, "overdub_id": cloned.ID},
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(cloned)
 }

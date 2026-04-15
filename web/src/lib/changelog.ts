@@ -6,6 +6,40 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "0.19.0",
+    date: "2026-04-14",
+    summary: [
+      "Link existing tracks as overdubs — no re-upload needed. Pick any track in the band, clone it into the mixer, and the original stays exactly where it was.",
+      "Fixed a sneaky bug where MediaRecorder recordings would decode correctly but play for exactly 1 millisecond. What is this, Napalm Death's 'You Suffer'?"
+    ],
+  },
+  {
+    version: "0.18.0",
+    date: "2026-04-12",
+    summary: [
+      "Fader positions are saved so you can keep that tiger tamed",
+      "Auto-normalization! Not perfect but it'll get you partway there",
+    ],
+  },
+  {
+    version: "0.17.0",
+    date: "2026-04-11",
+    summary: [
+      "Timed comments on the waveform now actually work the way they should",
+      "Fixed a dumb bug where if a take was a multiple of 3 in duration it wouldn't play. Fuck float math",
+    ],
+  },
+  {
+    version: "0.16.0",
+    date: "2026-04-08",
+    summary: [
+      "DAW-style multitrack mixer: pixel-based timeline, horizontal scrolling, zoom controls — it actually looks like a real DAW now",
+      "Reaper session tracks get their own dedicated view: skip the waveform player, go straight to the mixer with all your takes laid out",
+      "Fixed the WebM/Opus pipeline for good — recordings now encode as Ogg/Opus and stream synchronously, so the mixer can decode them reliably every time",
+      "RPP session sync enhancements and improved cachebuster handling",
+    ],
+  },
+  {
     version: "0.15.0",
     date: "2026-04-05",
     summary: [
