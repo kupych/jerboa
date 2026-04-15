@@ -641,8 +641,7 @@ func (h *TrackHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if filePath != "" {
-		h.store.Delete(filePath)
-		h.store.Delete(opusSibling(filePath))
+		safeDeleteFile(r.Context(), h.queries, h.store, filePath)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

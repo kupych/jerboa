@@ -714,6 +714,34 @@ func (q *Queries) DeleteTrack(ctx context.Context, id uuid.UUID) (string, error)
 	return filePath, err
 }
 
+// IsFileShared returns true if more than one track row references the same file_path.
+// Used before deleting a file to avoid nuking a file that a cloned overdub still points to.
+func (q *Queries) IsFileShared(ctx context.Context, filePath string) (bool, error) {
+	var count int
+	err := q.pool.QueryRow(ctx, "SELECT COUNT(*) FROM tracks WHERE file_path = $1", filePath).Scan(&count)
+	return count > 1, err
+}
+
+// CloneTrackAsOverdub creates a new track row that shares the source track's file and
+// metadata but is attached as an overdub of parentID.
+func (q *Queries) CloneTrackAsOverdub(ctx context.Context, sourceID, parentID uuid.UUID, offsetMS int64) (*models.Track, error) {
+	var t models.Track
+	err := q.pool.QueryRow(ctx, `
+		INSERT INTO tracks (band_id, title, description, uploaded_by, file_path, file_size,
+		                   waveform_data, duration_ms, format, sample_rate, status,
+		                   tags, notes, source_url, recorded_at, overdub_of, offset_ms)
+		SELECT band_id, title, description, uploaded_by, file_path, file_size,
+		       waveform_data, duration_ms, format, sample_rate, status,
+		       tags, notes, source_url, recorded_at, $2, $3
+		FROM tracks WHERE id = $1
+		RETURNING id, created_at
+	`, sourceID, parentID, offsetMS).Scan(&t.ID, &t.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
 // Track Personnel
 
 func (q *Queries) ListTrackPersonnel(ctx context.Context, trackID uuid.UUID) ([]models.TrackPersonnel, error) {

@@ -113,6 +113,11 @@
   let overdubFile = $state<File | null>(null);
   let uploadOffsetMs = $state(0);
   let uploadingOverdub = $state(false);
+  let showLinkTrack = $state(false);
+  let linkableTracks = $state<Track[]>([]);
+  let linkingTrackId = $state<string | null>(null);
+  let linkOffsetMs = $state(0);
+  let linkSearch = $state("");
   let playerRef: any;
   let mixerRef: any;
   let mixerPositionMs = $state(0);
@@ -412,6 +417,33 @@
 
   async function loadOverdubs() {
     overdubs = await api<Overdub[]>(`/api/bands/${slug}/tracks/${trackId}/overdubs`);
+  }
+
+  async function openLinkTrack() {
+    showLinkTrack = true;
+    showOverdubUpload = false;
+    showOverdubRecord = false;
+    if (linkableTracks.length === 0) {
+      linkableTracks = await api<Track[]>(`/api/bands/${slug}/tracks`);
+    }
+  }
+
+  async function linkTrack() {
+    if (!linkingTrackId) return;
+    try {
+      await api(`/api/bands/${slug}/tracks/${trackId}/overdubs/link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_track_id: linkingTrackId, offset_ms: linkOffsetMs }),
+      });
+      showLinkTrack = false;
+      linkingTrackId = null;
+      linkOffsetMs = 0;
+      linkSearch = "";
+      await loadOverdubs();
+    } catch (e: any) {
+      alert(e?.message ?? "failed to link track");
+    }
   }
 
   async function voteOverdub(overdubId: string | null) {
@@ -1145,16 +1177,20 @@
           </div>
           <div class="w-px h-4 bg-border/50 hidden sm:block"></div>
           <button
-            onclick={() => { showOverdubUpload = !showOverdubUpload; if (showOverdubUpload) showOverdubRecord = false; }}
+            onclick={() => { showOverdubUpload = !showOverdubUpload; if (showOverdubUpload) { showOverdubRecord = false; showLinkTrack = false; } }}
             class="label-sm text-text-muted hover:text-accent transition-colors"
           >{showOverdubUpload ? "cancel" : "upload"}</button>
           <button
-            onclick={() => { showOverdubRecord = !showOverdubRecord; if (showOverdubRecord) showOverdubUpload = false; }}
+            onclick={() => { showOverdubRecord = !showOverdubRecord; if (showOverdubRecord) { showOverdubUpload = false; showLinkTrack = false; } }}
             class="label-sm text-text-muted hover:text-accent transition-colors flex items-center gap-1.5"
           >
             <div class="w-2 h-2 rounded-full bg-red-400/60"></div>
             {showOverdubRecord ? "cancel" : "record"}
           </button>
+          <button
+            onclick={() => { if (showLinkTrack) { showLinkTrack = false; } else { openLinkTrack(); } }}
+            class="label-sm text-text-muted hover:text-accent transition-colors"
+          >{showLinkTrack ? "cancel" : "link existing"}</button>
         </div>
 
         {#if calibrationMsg}
@@ -1190,6 +1226,53 @@
                 disabled={!overdubFile || uploadingOverdub}
                 class="px-4 py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors"
               >{uploadingOverdub ? "uploading..." : "upload"}</button>
+            </div>
+          </div>
+        {/if}
+
+        {#if showLinkTrack}
+          <div class="mt-4 bg-bg-surface border border-border p-4 space-y-3">
+            <p class="label-sm text-text-muted">link an existing track as an overdub. the original track stays in the track list — this creates a shared reference.</p>
+            <input
+              type="text"
+              placeholder="filter tracks..."
+              bind:value={linkSearch}
+              class="w-full bg-bg-primary border border-border px-3 py-1.5 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+            />
+            <div class="max-h-48 overflow-y-auto space-y-1">
+              {#each linkableTracks.filter(t => t.id !== trackId && !t.overdub_of && t.title.toLowerCase().includes(linkSearch.toLowerCase())) as t}
+                <button
+                  onclick={() => linkingTrackId = linkingTrackId === t.id ? null : t.id}
+                  class="w-full text-left px-3 py-2 label-sm transition-colors {linkingTrackId === t.id ? 'bg-accent text-bg-primary' : 'hover:bg-bg-primary text-text-secondary'}"
+                >
+                  <span class="font-semibold">{t.title}</span>
+                  {#if t.recorded_at}<span class="text-xs opacity-60 ml-2">{new Date(t.recorded_at).toLocaleDateString()}</span>{/if}
+                </button>
+              {/each}
+              {#if linkableTracks.filter(t => t.id !== trackId && !t.overdub_of && t.title.toLowerCase().includes(linkSearch.toLowerCase())).length === 0}
+                <p class="label-sm text-text-muted px-3 py-2">no tracks found</p>
+              {/if}
+            </div>
+            <div class="flex items-center gap-3 flex-wrap">
+              <div class="flex items-center gap-2">
+                <span class="label-sm text-text-muted">offset</span>
+                <input
+                  type="number"
+                  step="100"
+                  bind:value={linkOffsetMs}
+                  class="w-24 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
+                />
+                <span class="label-sm text-text-muted">ms</span>
+              </div>
+              <button
+                onclick={() => { linkOffsetMs = mixerPositionMs || (playerRef?.getCurrentTimeMs() ?? 0); }}
+                class="label-sm text-accent hover:text-accent-hover transition-colors"
+              >use player position</button>
+              <button
+                onclick={linkTrack}
+                disabled={!linkingTrackId}
+                class="px-4 py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors"
+              >link</button>
             </div>
           </div>
         {/if}
