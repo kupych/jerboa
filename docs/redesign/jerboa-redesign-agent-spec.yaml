@@ -1,0 +1,345 @@
+version: 1
+title: Jerboa redesign agent spec
+status: active
+
+baseline:
+  confirmed_fixes:
+    - global_shell_widened_to_1280
+    - band_mobile_create_row_separated_from_tabs
+    - freestyle_perform_song_list_includes_lyrics_and_tabs
+  source_refs:
+    - web/src/lib/components/Layout.svelte:24
+    - web/src/routes/BandView.svelte:709
+    - internal/db/queries.go:467
+
+intent:
+  summary: >
+    Redesign Jerboa so it feels sharper, more aggressive, and more legible
+    without forcing existing pilot users to relearn the product.
+  mode: migration_safe_evolution
+
+continuity_rules:
+  - Keep page identities obvious: Dashboard, Band, Song, Track, Set, Perform.
+  - Keep route structure, core verbs, and major section order unchanged unless a ticket explicitly says otherwise.
+  - Keep primary CTAs in familiar zones.
+  - Improve hierarchy, grouping, spacing, and responsive behavior before introducing new interaction models.
+  - Old users should reorient by recognition, not training.
+
+visual_doctrine:
+  principle:
+    - harder_aesthetic_must_improve_readability_not_compete_with_it
+    - chrome_can_be_small_content_cannot
+    - one_dominant_anchor_per_screen
+    - accent_means_active_current_primary_or_armed
+    - geometry_and_proportion_create_attitude_more_than_decoration
+  typography:
+    body_font: Rajdhani
+    display_font: Chakra Petch
+    mono_font: existing_mono
+    title_scale:
+      mobile: 30_to_32
+      desktop: 36_to_40
+    minimum_actionable_microtype_px: 11
+  layout_roles:
+    dashboard: switchboard
+    band: inbox_and_launchpad
+    song: document_plus_attached_takes
+    track: workstation
+    set: planner_and_timestamp_editor
+    perform: stage_tool
+
+release_rules:
+  - Do not ship Track and Set redesigns in the same release.
+  - Do not remove desktop power-user features to improve mobile.
+  - Validate every ticket at 390x844, 768x1024, and 1440x900.
+  - Preserve at least one obvious continuity marker per page.
+
+execution_strategy:
+  foundation_policy:
+    - Do not implement foundation as one global pre-pass.
+    - Treat foundation tickets as small enabling slices that pages pull in only when needed.
+    - Prefer finishing one page cleanly over partially changing the whole product substrate.
+  safe_first_order:
+    - T00a
+    - T02
+    - T03
+    - T00b
+    - T05
+    - T04
+    - T00c
+    - T06
+    - T01
+    - T00d
+    - T00e
+  recommended_first_page: T02
+  notes:
+    - T02 and T03 are the safest visible wins with the lowest pilot-user confusion risk.
+    - T00b should land before any page that needs a true desktop workspace width.
+    - T00d should not land until at least one redesigned page is approved as the visual baseline.
+    - T00e should not land until color behavior is validated on at least one redesigned page in dark mode first.
+
+tickets:
+  - id: T00a
+    name: foundation_typography_tokens
+    priority: P0
+    files:
+      - web/src/app.css
+    preserve:
+      - existing_component_structure
+      - current_page_layouts
+    change:
+      - Switch body typography to Rajdhani and keep Chakra Petch for display.
+      - Raise label and label-sm minimum readable size while preserving uppercase tracked system feel.
+      - Tune body, content, and metadata size relationships so chrome is smaller than readable content.
+    accept:
+      - Typography feels harder and more legible.
+      - No route, layout, or action location changes.
+      - Existing pages still look familiar after the token change.
+
+  - id: T00b
+    name: foundation_width_variants
+    priority: P0
+    files:
+      - web/src/lib/components/Layout.svelte
+      - web/src/lib/components/Header.svelte
+    preserve:
+      - header_structure
+      - current_default_alignment
+    change:
+      - Add page width variants for reading, index, workspace, and stage.
+      - Keep the default variant visually close to the current baseline.
+      - Make width selection opt-in per page rather than forcing all pages onto a new shell at once.
+      - Keep header and content aligned to the same variant.
+    accept:
+      - No page changes width unless that page explicitly opts in.
+      - Layout primitives are available for Song, Track, and Set redesign tickets.
+
+  - id: T00c
+    name: foundation_mobile_overlay_safety
+    priority: P1
+    files:
+      - web/src/lib/components/PersistentPlayer.svelte
+      - web/src/lib/components/ChatPanel.svelte
+      - web/src/lib/components/FeedbackButton.svelte
+    preserve:
+      - player_behavior
+      - chat_behavior
+      - feedback_behavior
+    change:
+      - Prevent chat, feedback, and player chrome from obscuring primary mobile controls.
+      - Quiet collapsed player chrome without changing transport behavior.
+      - Ensure mobile bottom-right affordances do not collide with page-level CTAs.
+    accept:
+      - Mobile primary actions remain reachable on redesigned pages.
+      - No feature behavior changes, only safer presentation.
+
+  - id: T00d
+    name: foundation_contrast_and_state_tuning
+    priority: P1
+    files:
+      - web/src/app.css
+    preserve:
+      - established_color_semantics
+    change:
+      - Increase dark-mode contrast and reduce muddy middle grays.
+      - Tighten active, current, primary, and armed state semantics.
+      - Keep danger color semantic and distinct from band accent.
+    accept:
+      - Accent only means active, current, primary, or armed.
+      - A redesigned page feels more aggressive and more readable, not merely brighter.
+      - This ticket lands only after at least one page redesign is approved.
+
+  - id: T00e
+    name: foundation_color_discipline_and_light_mode
+    priority: P1
+    files:
+      - web/src/app.css
+    preserve:
+      - established_semantic_tokens
+      - current_theme_toggle_behavior
+    change:
+      - Define explicit color behavior rules instead of treating theme work as token inversion.
+      - Create a deliberate light-mode palette with stronger border contrast, cleaner surfaces, and better separation between content and chrome.
+      - Keep dark mode as the canonical emotional baseline, but make light mode feel intentional and equally legible.
+      - Reduce accent overuse across both themes so accent remains meaningful and scarce.
+      - Preserve semantic danger and success colors across themes rather than letting band accent weaken them.
+      - Encode the rule that active, current, primary, and armed states are the only states allowed to visibly glow.
+    accept:
+      - Light mode feels designed, not inverted.
+      - If everything glows, nothing does: accent is visibly more selective than before.
+      - Content remains easier to read than chrome in both themes.
+      - Danger, success, active, current, primary, and armed states remain distinct in both themes.
+      - This ticket lands only after at least one redesigned page is approved in dark mode.
+
+  - id: T01
+    name: dashboard
+    priority: P2
+    deps:
+      - T00a
+    files:
+      - web/src/routes/Dashboard.svelte
+    optional_files:
+      - web/src/lib/components/BandCard.svelte
+    preserve:
+      - simple_band_index
+      - new_band_action_zone
+      - current_redirect_behavior
+    change:
+      - Make band rows into 2-line cards with a stronger identity line and a calmer metadata line.
+      - Increase card height, spacing, and hover state confidence.
+      - Use available metadata if cheap; otherwise use role plus lightweight helper copy.
+    accept:
+      - Existing users immediately recognize the dashboard as the band list.
+      - The page feels intentional rather than placeholder.
+
+  - id: T02
+    name: band
+    priority: P1
+    deps:
+      - T00a
+    files:
+      - web/src/routes/BandView.svelte
+    optional_files:
+      - web/src/lib/components/BandHeaderBlock.svelte
+      - web/src/lib/components/BandActionStrip.svelte
+      - web/src/lib/components/BandFeedItem.svelte
+      - web/src/lib/components/BandTabBar.svelte
+    preserve:
+      - title_then_member_context_then_play_all_and_perform
+      - tab_names_and_order
+      - default_activity_tab
+      - add_material_verbs
+    change:
+      - Turn upload, record, and import into one cohesive add-material slab.
+      - Keep create-song and create-set controls on a separate row from tabs.
+      - Make the mobile tab row sticky.
+      - Collapse member chips on mobile after 3 to 4 entries.
+      - Rebuild feed items to a strict hierarchy: icon, one dominant sentence, one metadata line, optional preview.
+      - If low-risk, add a slim desktop context rail for counts or pinned actions.
+    accept:
+      - play_all_and_perform_still_found_instantly
+      - mobile_band_home_feels_like_an_inbox_not_a_tool_dump
+      - tab_navigation_is_easier_to_scan
+
+  - id: T03
+    name: song
+    priority: P1
+    deps:
+      - T00a
+      - T00b
+    files:
+      - web/src/routes/SongView.svelte
+      - web/src/lib/components/ChordProLyrics.svelte
+    optional_files:
+      - web/src/lib/components/SongDocumentSection.svelte
+    preserve:
+      - title_and_bpm_zone
+      - takes_sets_notes_lyrics_tabs_order
+      - mobile_accordion_pattern
+      - section_numbers
+    change:
+      - On desktop, move to a 2-column document layout: left for takes and sets, right for notes, lyrics, and tabs.
+      - Keep mobile as accordion but make section headers summarize status clearly.
+      - Add sticky save and cancel affordance for editing on larger screens.
+      - Make lyric and tab editing feel like document work rather than small UI panels.
+    accept:
+      - Old users still understand the page instantly.
+      - Mobile remains a quick reference surface.
+      - Desktop becomes a stronger editor.
+
+  - id: T04
+    name: track
+    priority: P1
+    deps:
+      - T00a
+      - T00b
+    files:
+      - web/src/routes/TrackView.svelte
+      - web/src/lib/components/MultiTrackMixer.svelte
+      - web/src/lib/components/WaveformPlayer.svelte
+      - web/src/lib/components/CommentList.svelte
+    optional_files:
+      - web/src/lib/components/TrackMetaRail.svelte
+      - web/src/lib/components/TrackModule.svelte
+      - web/src/lib/components/TrackOverdubTools.svelte
+    preserve:
+      - title_meta_waveform_mixer_comments_order
+      - waveform_early_in_page
+      - mixer_presence
+      - comments_as_core_review_layer
+    change:
+      - On desktop, use a main plus rail layout with waveform and mixer dominant.
+      - Move tags, assignment, personnel, source, and destructive tools into the rail on desktop.
+      - On mobile, split the page into modules: play, comments, mix, meta.
+      - Default open on mobile: play and comments.
+      - Default collapsed on mobile: calibration, scrub, bounce, link-existing, advanced overdub controls.
+      - Group overdub actions into titled modules instead of one continuous strip.
+    accept:
+      - Existing users still identify this as the deep editing page.
+      - Mobile becomes easier to scan and operate.
+      - Desktop finally feels like a workstation.
+    optional_followup_deps:
+      - T00c
+
+  - id: T05
+    name: set
+    priority: P1
+    deps:
+      - T00a
+      - T00b
+    files:
+      - web/src/routes/SetView.svelte
+      - web/src/lib/components/WaveformPlayer.svelte
+    optional_files:
+      - web/src/lib/components/SetItemRow.svelte
+      - web/src/lib/components/SetRecordingWorkspace.svelte
+    preserve:
+      - metadata_at_top
+      - setlist_before_recordings_before_workspace
+      - perform_button_zone
+      - set_row_identity
+    change:
+      - On desktop, use a planner layout with sticky setlist left and timestamp workspace right.
+      - Make tagging mode visually unmistakable.
+      - Keep save, tag_timestamps, and perform visually grouped.
+      - On mobile, collapse manual timestamp inputs until row expand or edit mode.
+    accept:
+      - Set page still feels familiar.
+      - Desktop timestamp work is materially easier.
+      - Mobile set rows are less fiddly.
+
+  - id: T06
+    name: perform
+    priority: P2
+    deps:
+      - T00a
+    files:
+      - web/src/routes/PerformView.svelte
+      - web/src/lib/components/ChordProLyrics.svelte
+      - web/src/lib/components/PerformRecorder.svelte
+    preserve:
+      - full_screen_mode
+      - top_bar_model
+      - swipe_next_navigation
+      - chords_toggle_position
+      - set_mode_and_freestyle_mode_concept
+    change:
+      - Do not structurally redesign this page.
+      - Increase lyric breathing room and chord legibility.
+      - Make current song, position, next song, and recording state more obvious.
+      - In freestyle, keep the picker but improve add confirmation and progression clarity.
+    accept:
+      - Existing users can use perform mode without relearning.
+      - Readability improves without sacrificing confidence or speed.
+    optional_followup_deps:
+      - T00d
+      - T00e
+
+qa_checks:
+  - page_identity_visible_above_the_fold_on_mobile
+  - primary_action_findable_in_under_2_seconds_for_existing_user
+  - no_desktop_feature_removed_to_help_mobile
+  - accent_only_marks_active_current_primary_or_armed_states
+  - content_text_is_larger_and_calmer_than_chrome
+  - continuity_markers_remain_obvious_to_existing_pilot_users
+  - light_mode_feels_intentional_not_inverted

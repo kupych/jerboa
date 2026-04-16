@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, onDestroy } from "svelte";
   import { api, apiPost, apiPatch, apiDelete, uploadFile } from "../lib/api";
   import { ws } from "../lib/ws";
   import { navigate } from "../lib/stores/router";
@@ -7,6 +8,7 @@
   import CommentList from "../lib/components/CommentList.svelte";
   import Recorder from "../lib/components/Recorder.svelte";
   import MultiTrackMixer, { type MixerTrack } from "../lib/components/MultiTrackMixer.svelte";
+  import { layoutWidth } from "../lib/stores/layoutWidth";
 
   let { slug, trackId }: { slug: string; trackId: string } = $props();
 
@@ -104,6 +106,7 @@
 
   let overdubs = $state<Overdub[]>([]);
   let showOverdubRecord = $state(false);
+  let showRecordingControls = $state(false);
   let voting = $state(false);
   let bouncing = $state(false);
   let scrubbing = $state(false);
@@ -749,6 +752,9 @@
     await apiDelete(`/api/bands/${slug}/tracks/${trackId}/personnel/${userId}`);
     personnel = personnel.filter((p) => p.user_id !== userId);
   }
+
+  onMount(() => layoutWidth.set('workspace'));
+  onDestroy(() => layoutWidth.set('index'));
 </script>
 
 {#if loading}
@@ -756,638 +762,471 @@
 {:else if track}
   <div>
     <!-- Breadcrumb -->
-    <div class="text-[11px] font-mono font-semibold tracking-[0.2em] text-text-muted/30 uppercase select-none flex items-center gap-1.5 mb-8">
+    <div class="text-[11px] font-mono font-semibold tracking-[0.2em] text-text-muted/30 uppercase select-none flex items-center gap-1.5 mb-6">
       <button onclick={() => navigate(`/band/${slug}`)} class="hover:text-accent/60 transition-colors py-1">{slug.toUpperCase()}</button>
       <span class="text-text-muted/20">&rsaquo;</span>
       <span class="text-text-muted/50">{track.title.toUpperCase()}</span>
     </div>
 
-    <!-- Track info -->
-    <div class="mb-8">
-      {#if editing}
-        <div class="bg-bg-surface border border-border p-6 space-y-5">
-          <div>
-            <span class="label text-text-muted block mb-2">title</span>
-            <input
-              bind:value={editTitle}
-              class="w-full bg-bg-primary border border-border px-4 py-3 text-base text-text-primary focus:outline-none focus:border-accent transition-colors"
-            />
-          </div>
-          <div>
-            <span class="label text-text-muted block mb-2">description</span>
-            <input
-              bind:value={editDesc}
-              placeholder="Short description..."
-              class="w-full bg-bg-primary border border-border px-4 py-3 text-base text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-            />
-          </div>
-          <div>
-            <span class="label text-text-muted block mb-2">notes / lyrics / tabs</span>
-            <textarea
-              bind:value={editNotes}
-              rows="8"
-              placeholder="Paste lyrics, chord charts, tabs, session notes..."
-              class="w-full bg-bg-primary border border-border px-4 py-3 text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors resize-y"
-            ></textarea>
-          </div>
-          <div>
-            <span class="label text-text-muted block mb-2">recording date</span>
-            <input
-              bind:value={editRecordedAt}
-              type="date"
-              class="bg-bg-primary border border-border px-4 py-3 text-base text-text-primary focus:outline-none focus:border-accent transition-colors"
-            />
-          </div>
-          <div class="flex gap-4">
-            <button
-              onclick={saveMeta}
-              disabled={savingMeta || !editTitle.trim()}
-              class="px-6 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors"
-            >
-              {savingMeta ? "..." : "save"}
-            </button>
-            <button
-              onclick={() => (editing = false)}
-              class="px-6 py-3 label text-text-muted hover:text-text-secondary transition-colors"
-            >
-              cancel
-            </button>
-          </div>
+    {#if editing}
+      <!-- Full-width edit form -->
+      <div class="bg-bg-surface border border-border p-6 space-y-5">
+        <div>
+          <span class="label text-text-muted block mb-2">title</span>
+          <input bind:value={editTitle} class="w-full bg-bg-primary border border-border px-4 py-3 text-base text-text-primary focus:outline-none focus:border-accent transition-colors" />
         </div>
-      {:else}
-        <div class="flex items-start justify-between">
-          <div>
-            <h2 class="text-2xl font-bold tracking-wider font-display {highlight ? 'animate-highlight' : ''}">{track.title}</h2>
+        <div>
+          <span class="label text-text-muted block mb-2">description</span>
+          <input bind:value={editDesc} placeholder="Short description..." class="w-full bg-bg-primary border border-border px-4 py-3 text-base text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors" />
+        </div>
+        <div>
+          <span class="label text-text-muted block mb-2">notes / lyrics / tabs</span>
+          <textarea bind:value={editNotes} rows="8" placeholder="Paste lyrics, chord charts, tabs, session notes..." class="w-full bg-bg-primary border border-border px-4 py-3 text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors resize-y"></textarea>
+        </div>
+        <div>
+          <span class="label text-text-muted block mb-2">recording date</span>
+          <input bind:value={editRecordedAt} type="date" class="bg-bg-primary border border-border px-4 py-3 text-base text-text-primary focus:outline-none focus:border-accent transition-colors" />
+        </div>
+        <div class="flex gap-4">
+          <button onclick={saveMeta} disabled={savingMeta || !editTitle.trim()} class="px-6 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors">{savingMeta ? "..." : "save"}</button>
+          <button onclick={() => (editing = false)} class="px-6 py-3 label text-text-muted hover:text-text-secondary transition-colors">cancel</button>
+        </div>
+      </div>
+    {:else}
+      <!-- Desktop 2-col layout: main + rail -->
+      <div class="md:grid md:grid-cols-[1fr_220px] md:gap-6 md:items-start">
+
+        <!-- MAIN COLUMN -->
+        <div class="min-w-0">
+
+          <!-- Title + meta -->
+          <div class="mb-6">
+            <h2 class="text-3xl md:text-4xl font-bold tracking-wider font-display {highlight ? 'animate-highlight' : ''}">{track.title}</h2>
             {#if track.description}
-              <p class="text-base font-medium text-text-secondary mt-3">{track.description}</p>
+              <p class="text-base font-medium text-text-secondary mt-2">{track.description}</p>
             {/if}
+            <div class="flex items-center gap-3 mt-3 label-sm text-text-muted flex-wrap">
+              <span class="font-mono">{formatDuration(track.duration_ms)}</span>
+              <span class="vr-divider">/</span>
+              <span>{formatFileSize(track.file_size)}</span>
+              <span class="vr-divider">/</span>
+              <span>{track.uploader?.display_name || track.uploader?.email}</span>
+              <span class="vr-divider">/</span>
+              <span>{formatRelativeTime(track.created_at)}</span>
+              <span class="vr-divider">/</span>
+              <a href={`/api/bands/${slug}/tracks/${trackId}/stream?dl=1`} class="text-accent hover:text-accent-hover transition-colors">download</a>
+            </div>
           </div>
+
+          <!-- Player — skip for RPP session tracks (no audio on parent) -->
+          {#if !isRppSession}
+            {#if track.status === "ready"}
+              <div class="{overdubs.length > 0 ? '' : 'mb-8'}">
+                {#key streamVersion}
+                  <WaveformPlayer
+                    bind:this={playerRef}
+                    src={streamUrl}
+                    peaks={track.waveform_data}
+                    duration={track.duration_ms}
+                    comments={timedComments}
+                    onTimestampClick={handleTimestampClick}
+                    onCommentClick={scrollToComment}
+                    seamlessBottom={overdubs.length > 0}
+                    externalPositionMs={overdubs.length > 0 ? mixerPositionMs : undefined}
+                    externalPlaying={overdubs.length > 0 ? mixerPlaying : undefined}
+                    onSeekRequest={overdubs.length > 0 ? (ms) => mixerRef?.seekTo(ms) : undefined}
+                    onPlay={overdubs.length > 0 ? () => mixerRef?.playTrack() : undefined}
+                    onPause={overdubs.length > 0 ? () => mixerRef?.pauseTrack() : undefined}
+                  />
+                {/key}
+              </div>
+            {:else if track.status === "processing"}
+              <div class="bg-bg-surface border border-border p-12 text-center mb-8">
+                <div class="flex items-center justify-center gap-3 text-accent">
+                  <div class="w-2 h-2 bg-accent animate-pulse"></div>
+                  <span class="label">processing</span>
+                </div>
+              </div>
+            {:else}
+              <div class="bg-bg-surface border border-border p-12 text-center mb-8 text-danger label">processing failed</div>
+            {/if}
+          {/if}
+
+          <!-- Overdubs / RPP session mixer -->
+          {#if !track.overdub_of}
+            <div class="mb-8">
+
+              <!-- RPP session header -->
+              {#if isRppSession}
+                <div class="flex items-center gap-4 px-3 py-2 border border-border bg-bg-surface mb-px">
+                  <span class="label-sm font-mono text-accent/60 tracking-widest">REAPER SESSION</span>
+                  <span class="label-sm text-text-muted/50">{track.rpp_session_name}</span>
+                  <div class="flex items-center gap-3 ml-auto">
+                    <a href={`/api/bands/${slug}/sync/rpp/${trackId}`} class="label-sm text-text-muted hover:text-accent transition-colors">download .rpp</a>
+                    <a href={`/api/bands/${slug}/sync/binary`} class="label-sm text-text-muted hover:text-accent transition-colors" title="Download the sync utility — run it in your project folder to push/pull this session">download sync utility</a>
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Mixer — always shown for RPP sessions, otherwise only when overdubs exist -->
+              {#if overdubs.length > 0 || isRppSession}
+                <MultiTrackMixer
+                  bind:this={mixerRef}
+                  tracks={mixerTracks}
+                  {isAdmin}
+                  bandSlug={slug}
+                  parentTrackId={trackId}
+                  hideSrc={isRppSession}
+                  seamlessTop={!isRppSession}
+                  onPositionChange={(ms) => (mixerPositionMs = ms)}
+                  onPlayingChange={(p) => (mixerPlaying = p)}
+                  onOffsetChange={(id, ms) => adjustOffset(id, ms)}
+                  onRename={(id, title) => renameTrack(id, title)}
+                  onDelete={(id) => deleteOverdub(id)}
+                  onVote={(id) => voteOverdub(id)}
+                  onBounceMix={(ids, toNew) => bounceMix(ids, toNew)}
+                  onRefresh={() => loadOverdubs()}
+                  onGainChange={(id, gain) => saveGain(id, gain)}
+                />
+                {#if isAdmin && overdubs.length > 1}
+                  <button onclick={() => scrubOverdubs()} disabled={scrubbing} class="label-sm text-red-400/60 hover:text-red-400 transition-colors mt-3">{scrubbing ? "scrubbing..." : "scrub all overdubs"}</button>
+                {/if}
+              {/if}
+
+              <!-- Overdub actions module -->
+              <div class="mt-3">
+                <!-- Mobile: collapsed by default -->
+                <button
+                  class="md:hidden w-full flex items-center justify-between px-4 py-2.5 border border-border bg-bg-surface label-sm text-text-muted hover:text-text-secondary transition-colors"
+                  onclick={() => (showRecordingControls = !showRecordingControls)}
+                >
+                  <span>add overdub</span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="transition-transform {showRecordingControls ? 'rotate-180' : ''}">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                </button>
+
+                <!-- Always visible on desktop, toggled on mobile -->
+                <div class="{showRecordingControls ? 'block' : 'hidden'} md:block">
+                  <div class="flex items-center gap-4 flex-wrap border border-border bg-bg-surface px-4 py-2.5">
+                    <div class="flex items-center gap-2">
+                      <button onclick={calibrate} disabled={calibrating} class="label-sm text-text-muted hover:text-accent transition-colors">{calibrating ? "calibrating..." : "calibrate"}</button>
+                      <input
+                        type="number"
+                        step="1"
+                        value={calibratedLatency ?? 0}
+                        onchange={(e) => {
+                          const val = parseInt((e.target as HTMLInputElement).value);
+                          if (!isNaN(val)) {
+                            calibratedLatency = val;
+                            localStorage.setItem("overdub-latency-ms", String(val));
+                          }
+                        }}
+                        class="w-16 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
+                      />
+                      <span class="label-sm text-text-muted">ms</span>
+                    </div>
+                    <div class="w-px h-4 bg-border/50 hidden sm:block"></div>
+                    <button
+                      onclick={() => { showOverdubUpload = !showOverdubUpload; if (showOverdubUpload) { showOverdubRecord = false; showLinkTrack = false; } }}
+                      class="label-sm text-text-muted hover:text-accent transition-colors"
+                    >{showOverdubUpload ? "cancel" : "upload"}</button>
+                    <button
+                      onclick={() => { showOverdubRecord = !showOverdubRecord; if (showOverdubRecord) { showOverdubUpload = false; showLinkTrack = false; } }}
+                      class="label-sm text-text-muted hover:text-accent transition-colors flex items-center gap-1.5"
+                    >
+                      <div class="w-2 h-2 rounded-full bg-red-400/60"></div>
+                      {showOverdubRecord ? "cancel" : "record"}
+                    </button>
+                    <button
+                      onclick={() => { if (showLinkTrack) { showLinkTrack = false; } else { openLinkTrack(); } }}
+                      class="label-sm text-text-muted hover:text-accent transition-colors"
+                    >{showLinkTrack ? "cancel" : "link existing"}</button>
+                  </div>
+
+                  {#if calibrationMsg}
+                    <p class="label-sm text-text-muted mt-2">{calibrationMsg}</p>
+                  {/if}
+
+                  {#if showOverdubUpload}
+                    <div class="mt-3 bg-bg-surface border border-border p-4 space-y-3">
+                      <p class="label-sm text-text-muted">upload a pre-recorded overdub file. set the offset to where it aligns in the parent track.</p>
+                      <div class="flex items-center gap-4 flex-wrap">
+                        <input type="file" accept="audio/*" onchange={(e) => overdubFile = (e.target as HTMLInputElement).files?.[0] ?? null} class="label-sm text-text-secondary file:bg-bg-primary file:border file:border-border file:px-3 file:py-1.5 file:text-text-secondary file:label-sm file:mr-3 file:cursor-pointer" />
+                        <div class="flex items-center gap-2">
+                          <span class="label-sm text-text-muted">offset</span>
+                          <input type="number" step="100" bind:value={uploadOffsetMs} class="w-24 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors" />
+                          <span class="label-sm text-text-muted">ms</span>
+                        </div>
+                        <button onclick={() => { uploadOffsetMs = mixerPositionMs || (playerRef?.getCurrentTimeMs() ?? 0); }} class="label-sm text-accent hover:text-accent-hover transition-colors">use player position</button>
+                        <button onclick={uploadOverdubFile} disabled={!overdubFile || uploadingOverdub} class="px-4 py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors">{uploadingOverdub ? "uploading..." : "upload"}</button>
+                      </div>
+                    </div>
+                  {/if}
+
+                  {#if showLinkTrack}
+                    <div class="mt-3 bg-bg-surface border border-border p-4 space-y-3">
+                      <p class="label-sm text-text-muted">link an existing track as an overdub. the original track stays in the track list — this creates a shared reference.</p>
+                      <input type="text" placeholder="filter tracks..." bind:value={linkSearch} class="w-full bg-bg-primary border border-border px-3 py-1.5 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors" />
+                      <div class="max-h-48 overflow-y-auto space-y-1">
+                        {#each linkableTracks.filter(t => t.id !== trackId && !t.overdub_of && t.title.toLowerCase().includes(linkSearch.toLowerCase())) as t}
+                          <button onclick={() => linkingTrackId = linkingTrackId === t.id ? null : t.id} class="w-full text-left px-3 py-2 label-sm transition-colors {linkingTrackId === t.id ? 'bg-accent text-bg-primary' : 'hover:bg-bg-primary text-text-secondary'}">
+                            <span class="font-semibold">{t.title}</span>
+                            {#if t.recorded_at}<span class="text-xs opacity-60 ml-2">{new Date(t.recorded_at).toLocaleDateString()}</span>{/if}
+                          </button>
+                        {/each}
+                        {#if linkableTracks.filter(t => t.id !== trackId && !t.overdub_of && t.title.toLowerCase().includes(linkSearch.toLowerCase())).length === 0}
+                          <p class="label-sm text-text-muted px-3 py-2">no tracks found</p>
+                        {/if}
+                      </div>
+                      <div class="flex items-center gap-3 flex-wrap">
+                        <div class="flex items-center gap-2">
+                          <span class="label-sm text-text-muted">offset</span>
+                          <input type="number" step="100" bind:value={linkOffsetMs} class="w-24 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors" />
+                          <span class="label-sm text-text-muted">ms</span>
+                        </div>
+                        <button onclick={() => { linkOffsetMs = mixerPositionMs || (playerRef?.getCurrentTimeMs() ?? 0); }} class="label-sm text-accent hover:text-accent-hover transition-colors">use player position</button>
+                        <button onclick={linkTrack} disabled={!linkingTrackId} class="px-4 py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors">link</button>
+                      </div>
+                    </div>
+                  {/if}
+
+                  {#if showOverdubRecord}
+                    <div class="mt-3 bg-bg-surface border border-border p-4 space-y-3">
+                      <div class="flex items-center gap-4 flex-wrap">
+                        <span class="label-sm text-text-muted">punch in at:</span>
+                        <div class="flex items-center gap-2">
+                          <input type="number" step="100" bind:value={punchInMs} class="w-24 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors" />
+                          <span class="label-sm text-text-muted">ms</span>
+                        </div>
+                        <button onclick={() => { punchInMs = mixerPositionMs || (playerRef?.getCurrentTimeMs() ?? 0); }} class="label-sm text-accent hover:text-accent-hover transition-colors">use player position</button>
+                        {#if punchInMs > 0}
+                          <button onclick={() => punchInMs = 0} class="label-sm text-text-muted hover:text-danger transition-colors">reset</button>
+                          <span class="label-sm text-text-muted font-mono">starts at {formatDuration(punchInMs)}</span>
+                        {/if}
+                      </div>
+                      <p class="label-sm text-text-muted">headphones on — parent plays from {punchInMs > 0 ? formatDuration(punchInMs) : "the start"} when you hit record{calibratedLatency != null ? ` (${calibratedLatency}ms compensation)` : ""}</p>
+                      <Recorder
+                        bandSlug={slug}
+                        onRecorded={() => { showOverdubRecord = false; loadOverdubs(); }}
+                        overdubParentId={trackId}
+                        parentStreamUrl={streamUrl}
+                        latencyCompensation={calibratedLatency ?? 0}
+                        {punchInMs}
+                        bpm={track?.song?.bpm ?? 0}
+                      />
+                    </div>
+                  {/if}
+                </div>
+              </div>
+
+            </div>
+          {/if}
+
+          <!-- Comment input -->
+          <div class="mb-8">
+            <form onsubmit={(e) => { e.preventDefault(); if (!mentionOpen) submitComment(); }} class="flex gap-3">
+              <div class="flex-1 relative">
+                {#if commentTimestamp != null}
+                  <button type="button" onclick={clearTimestamp} class="absolute left-4 top-1/2 -translate-y-1/2 label-sm text-accent bg-accent/10 px-2 py-1 font-mono hover:bg-accent/20 transition-colors">
+                    @{Math.floor(commentTimestamp / 1000)}s x
+                  </button>
+                {/if}
+                <input
+                  id="comment-input"
+                  bind:value={newComment}
+                  type="text"
+                  placeholder={commentTimestamp != null ? "" : "add a comment... (use @ to mention)"}
+                  oninput={handleCommentInput}
+                  onkeydown={handleCommentKeydown}
+                  class="w-full bg-bg-surface border border-border px-5 py-4 text-base text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+                  style:padding-left={commentTimestamp != null ? "6rem" : undefined}
+                />
+                {#if mentionOpen && mentionMatches.length > 0}
+                  <div class="absolute bottom-full left-0 mb-1 w-64 bg-bg-surface border border-border z-10 max-h-48 overflow-y-auto">
+                    {#each mentionMatches as member, i}
+                      <button type="button" onmousedown={() => insertMention(member)} class="block w-full text-left px-4 py-2 label-sm transition-colors {i === mentionIndex ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:bg-accent/10 hover:text-accent'}">
+                        {member.user.display_name || member.user.email}
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+              <button type="submit" disabled={posting || !newComment.trim()} class="px-6 py-4 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors">post</button>
+            </form>
+            <div class="label-sm text-text-muted mt-3">click comment button or alt+click waveform to attach timestamp · type @ to mention</div>
+          </div>
+
+          <!-- Comments -->
+          <div class="mb-8">
+            <h3 class="label text-text-secondary mb-6">comments ({comments.length})</h3>
+            <CommentList {comments} {trackId} onSeek={handleSeek} onRefresh={loadComments} />
+          </div>
+
+          <!-- Notes -->
+          {#if track.notes}
+            <div class="mb-8">
+              <h3 class="label text-text-secondary mb-4">notes</h3>
+              <pre class="bg-bg-surface border border-border p-6 text-sm font-mono text-text-secondary whitespace-pre-wrap leading-relaxed">{track.notes}</pre>
+            </div>
+          {/if}
+
+        </div>
+
+        <!-- RAIL COLUMN -->
+        <aside class="min-w-0 mt-10 md:mt-0 space-y-5 border-t border-border pt-8 md:border-t-0 md:pt-0 md:sticky md:top-4">
+
+          <!-- Edit + Delete -->
           <div class="flex items-center gap-4">
-            <button
-              onclick={startEditing}
-              class="label text-text-muted hover:text-accent transition-colors"
-            >
-              edit
-            </button>
+            <button onclick={startEditing} class="label text-text-muted hover:text-accent transition-colors">edit</button>
             {#if !confirmDelete}
-              <button
-                onclick={() => (confirmDelete = true)}
-                class="label text-text-muted hover:text-danger transition-colors"
-              >
-                delete
-              </button>
+              <button onclick={() => (confirmDelete = true)} class="label text-text-muted hover:text-danger transition-colors">delete</button>
             {:else}
               <span class="flex items-center gap-2">
                 <span class="label-sm text-danger">sure?</span>
-                <button
-                  onclick={deleteTrack}
-                  disabled={deleting}
-                  class="label-sm text-danger hover:text-red-300 transition-colors"
-                >{deleting ? "..." : "yes"}</button>
-                <button
-                  onclick={() => (confirmDelete = false)}
-                  class="label-sm text-text-muted hover:text-text-secondary transition-colors"
-                >no</button>
+                <button onclick={deleteTrack} disabled={deleting} class="label-sm text-danger hover:text-red-300 transition-colors">{deleting ? "..." : "yes"}</button>
+                <button onclick={() => (confirmDelete = false)} class="label-sm text-text-muted hover:text-text-secondary transition-colors">no</button>
               </span>
             {/if}
           </div>
-        </div>
 
-        <div class="flex items-center gap-3 mt-4 label-sm text-text-muted flex-wrap">
-          <span class="font-mono">{formatDuration(track.duration_ms)}</span>
-          <span class="vr-divider">/</span>
-          <span>{formatFileSize(track.file_size)}</span>
-          <span class="vr-divider">/</span>
-          <span>{track.uploader?.display_name || track.uploader?.email}</span>
-          <span class="vr-divider">/</span>
-          <span>{formatRelativeTime(track.created_at)}</span>
-          <span class="vr-divider">/</span>
-          <a
-            href={`/api/bands/${slug}/tracks/${trackId}/stream?dl=1`}
-            class="text-accent hover:text-accent-hover transition-colors"
-          >download</a>
-        </div>
+          <!-- Tags -->
+          <div>
+            <div class="label-sm text-text-muted/50 tracking-widest mb-2">tags</div>
+            <div class="flex items-center gap-2 flex-wrap">
+              {#each track.tags as tag}
+                <button onclick={() => removeTag(tag)} class="label-sm text-accent bg-accent/10 px-3 py-1 hover:bg-danger/20 hover:text-danger transition-colors" title="Remove tag">{tag} x</button>
+              {/each}
+              <form onsubmit={(e) => { e.preventDefault(); addTag(); }} class="flex">
+                <input bind:value={newTag} type="text" placeholder="+ tag" disabled={savingTags} class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-24" />
+              </form>
+            </div>
+          </div>
 
-        <!-- Tags -->
-        <div class="flex items-center gap-3 mt-5 flex-wrap">
-          {#each track.tags as tag}
-            <button
-              onclick={() => removeTag(tag)}
-              class="label-sm text-accent bg-accent/10 px-3 py-1 hover:bg-danger/20 hover:text-danger transition-colors"
-              title="Remove tag"
-            >{tag} x</button>
-          {/each}
-          <form onsubmit={(e) => { e.preventDefault(); addTag(); }} class="flex">
-            <input
-              bind:value={newTag}
-              type="text"
-              placeholder="+ add tag"
-              disabled={savingTags}
-              class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-28"
-            />
-          </form>
-        </div>
+          <!-- Song assignment -->
+          <div>
+            <div class="label-sm text-text-muted/50 tracking-widest mb-2">song</div>
+            {#if track.song}
+              <div class="flex items-center gap-2">
+                <span class="label-sm text-accent bg-accent/10 px-3 py-1">{track.song.name}</span>
+                <button onclick={unassignSong} disabled={assigningSong} class="label-sm text-text-muted hover:text-danger transition-colors">x</button>
+              </div>
+            {:else}
+              <div class="relative">
+                <input
+                  type="text"
+                  bind:value={songInput}
+                  onfocus={() => (songDropdownOpen = true)}
+                  onblur={() => setTimeout(() => (songDropdownOpen = false), 150)}
+                  placeholder="type to search or create..."
+                  disabled={assigningSong}
+                  class="w-full bg-bg-surface border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+                />
+                {#if songDropdownOpen && (filteredSongs.length > 0 || songInput.trim())}
+                  <div class="absolute top-full left-0 mt-1 w-full bg-bg-surface border border-border z-10 max-h-48 overflow-y-auto">
+                    {#each filteredSongs as song}
+                      <button type="button" onmousedown={() => pickSong(song)} class="block w-full text-left px-3 py-2 label-sm text-text-secondary hover:bg-accent/10 hover:text-accent transition-colors">{song.name}</button>
+                    {/each}
+                    {#if songInput.trim() && !songs.some((s) => s.name.toLowerCase() === songInput.trim().toLowerCase())}
+                      <button type="button" onmousedown={createAndAssignSong} class="block w-full text-left px-3 py-2 label-sm text-accent hover:bg-accent/10 transition-colors border-t border-border">+ create "{songInput.trim()}"</button>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
 
-        <!-- Song assignment -->
-        <div class="flex items-center gap-3 mt-5">
-          <span class="label-sm text-text-muted">song:</span>
-          {#if track.song}
-            <span class="label-sm text-accent bg-accent/10 px-3 py-1">{track.song.name}</span>
-            <button
-              onclick={unassignSong}
-              disabled={assigningSong}
-              class="label-sm text-text-muted hover:text-danger transition-colors"
-            >x</button>
-          {:else}
-            <div class="relative">
-              <input
-                type="text"
-                bind:value={songInput}
-                onfocus={() => (songDropdownOpen = true)}
-                onblur={() => setTimeout(() => (songDropdownOpen = false), 150)}
-                placeholder="type to search or create..."
-                disabled={assigningSong}
-                class="bg-bg-surface border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-56"
-              />
-              {#if songDropdownOpen && (filteredSongs.length > 0 || songInput.trim())}
-                <div class="absolute top-full left-0 mt-1 w-56 bg-bg-surface border border-border z-10 max-h-48 overflow-y-auto">
-                  {#each filteredSongs as song}
-                    <button
-                      type="button"
-                      onmousedown={() => pickSong(song)}
-                      class="block w-full text-left px-3 py-2 label-sm text-text-secondary hover:bg-accent/10 hover:text-accent transition-colors"
-                    >{song.name}</button>
-                  {/each}
-                  {#if songInput.trim() && !songs.some((s) => s.name.toLowerCase() === songInput.trim().toLowerCase())}
-                    <button
-                      type="button"
-                      onmousedown={createAndAssignSong}
-                      class="block w-full text-left px-3 py-2 label-sm text-accent hover:bg-accent/10 transition-colors border-t border-border"
-                    >+ create "{songInput.trim()}"</button>
-                  {/if}
+          <!-- Set assignment -->
+          <div>
+            <div class="label-sm text-text-muted/50 tracking-widest mb-2">set</div>
+            {#if track.set_id}
+              {@const currentSet = allSets.find(s => s.id === track!.set_id)}
+              {#if currentSet}
+                <div class="flex items-center gap-2">
+                  <button onclick={() => navigate(`/band/${slug}/set/${currentSet.id}`)} class="label-sm text-accent bg-accent/10 px-3 py-1 hover:bg-accent/20 transition-colors">{currentSet.name}</button>
+                  <button onclick={() => assignSet(null)} disabled={assigningSet} class="label-sm text-text-muted hover:text-danger transition-colors">x</button>
                 </div>
               {/if}
-            </div>
-          {/if}
-        </div>
-
-        <!-- Source URL -->
-        {#if track.source_url}
-          <div class="flex items-center gap-2 mt-4">
-            <span class="label-sm text-text-muted">source:</span>
-            <a
-              href={track.source_url}
-              target="_blank"
-              rel="noopener"
-              class="label-sm text-accent hover:text-accent-hover transition-colors"
-            >{track.source_url}</a>
-          </div>
-        {/if}
-
-        <!-- Bounce status + restore -->
-        {#if track.pre_bounce_id}
-          <div class="flex items-center gap-2 mt-4">
-            <span class="label-sm text-text-muted">bounced —</span>
-            <button
-              onclick={() => navigate(`/band/${slug}/track/${track!.pre_bounce_id}`)}
-              class="label-sm text-accent hover:text-accent-hover transition-colors"
-            >view original</button>
-            {#if isAdmin}
-              {#if !confirmRestore}
-                <button
-                  onclick={() => confirmRestore = true}
-                  class="label-sm text-text-muted hover:text-danger transition-colors"
-                >restore original</button>
-              {:else}
-                <span class="flex items-center gap-2">
-                  <span class="label-sm text-danger">undo all bounces?</span>
-                  <button
-                    onclick={restoreOriginal}
-                    disabled={restoring}
-                    class="label-sm text-danger hover:text-red-300 transition-colors"
-                  >{restoring ? "..." : "yes"}</button>
-                  <button
-                    onclick={() => confirmRestore = false}
-                    class="label-sm text-text-muted hover:text-text-secondary transition-colors"
-                  >no</button>
-                </span>
-              {/if}
-            {/if}
-          </div>
-        {/if}
-
-        <!-- Recording date display -->
-        {#if track.recorded_at}
-          <div class="flex items-center gap-2 mt-4">
-            <span class="label-sm text-text-muted">recorded:</span>
-            <span class="label-sm text-text-secondary">{new Date(track.recorded_at.slice(0, 10) + 'T00:00:00').toLocaleDateString()}</span>
-          </div>
-        {/if}
-
-        <!-- Set assignment -->
-        <div class="flex items-center gap-3 mt-4">
-          <span class="label-sm text-text-muted">set:</span>
-          {#if track.set_id}
-            {@const currentSet = allSets.find(s => s.id === track!.set_id)}
-            {#if currentSet}
-              <button
-                onclick={() => navigate(`/band/${slug}/set/${currentSet.id}`)}
-                class="label-sm text-accent bg-accent/10 px-3 py-1 hover:bg-accent/20 transition-colors"
-              >{currentSet.name}</button>
-            {/if}
-            <button
-              onclick={() => assignSet(null)}
-              disabled={assigningSet}
-              class="label-sm text-text-muted hover:text-danger transition-colors"
-            >x</button>
-          {:else}
-            <select
-              onchange={(e) => {
-                const val = (e.target as HTMLSelectElement).value;
-                if (val) assignSet(val);
-              }}
-              disabled={assigningSet}
-              class="bg-bg-surface border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors"
-            >
-              <option value="">assign to set...</option>
-              {#each allSets as set}
-                <option value={set.id}>{set.name}</option>
-              {/each}
-            </select>
-          {/if}
-        </div>
-
-        <!-- Personnel -->
-        <div class="mt-5">
-          <div class="flex items-center gap-3 flex-wrap">
-            <span class="label-sm text-text-muted">personnel:</span>
-            {#each personnel as p}
-              <span class="label-sm text-text-secondary bg-bg-surface border border-border px-3 py-1 flex items-center gap-2">
-                {p.user.display_name || p.user.email}
-                {#if p.role}
-                  <span class="text-text-muted">/ {p.role}</span>
-                {/if}
-                <button
-                  onclick={() => removePersonnel(p.user_id)}
-                  class="text-text-muted hover:text-danger transition-colors ml-1"
-                >x</button>
-              </span>
-            {/each}
-            <form
-              onsubmit={(e) => { e.preventDefault(); addPersonnel(); }}
-              class="flex items-center gap-2"
-            >
+            {:else}
               <select
-                bind:value={addPersonnelId}
-                class="bg-bg-surface border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors"
+                onchange={(e) => { const val = (e.target as HTMLSelectElement).value; if (val) assignSet(val); }}
+                disabled={assigningSet}
+                class="w-full bg-bg-surface border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors"
               >
-                <option value="">+ add</option>
-                {#each members.filter((m) => !personnel.some((p) => p.user_id === m.user.id)) as member}
-                  <option value={member.user.id}>{member.user.display_name || member.user.email}</option>
+                <option value="">assign to set...</option>
+                {#each allSets as set}
+                  <option value={set.id}>{set.name}</option>
                 {/each}
               </select>
-              {#if addPersonnelId}
-                <input
-                  bind:value={addPersonnelRole}
-                  type="text"
-                  placeholder="role (guitar, vocals...)"
-                  class="bg-bg-surface border border-border px-2 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40"
-                />
-                <button
-                  type="submit"
-                  class="label-sm text-accent hover:text-accent-hover transition-colors"
-                >add</button>
-              {/if}
-            </form>
+            {/if}
           </div>
-        </div>
-      {/if}
-    </div>
 
-    <!-- Player — skip for RPP session tracks (no audio on parent) -->
-    {#if !isRppSession}
-      {#if track.status === "ready"}
-        <div class="{overdubs.length > 0 ? '' : 'mb-10'}">
-          {#key streamVersion}
-            <WaveformPlayer
-              bind:this={playerRef}
-              src={streamUrl}
-              peaks={track.waveform_data}
-              duration={track.duration_ms}
-              comments={timedComments}
-              onTimestampClick={handleTimestampClick}
-              onCommentClick={scrollToComment}
-              seamlessBottom={overdubs.length > 0}
-              externalPositionMs={overdubs.length > 0 ? mixerPositionMs : undefined}
-              externalPlaying={overdubs.length > 0 ? mixerPlaying : undefined}
-              onSeekRequest={overdubs.length > 0 ? (ms) => mixerRef?.seekTo(ms) : undefined}
-              onPlay={overdubs.length > 0 ? () => mixerRef?.playTrack() : undefined}
-              onPause={overdubs.length > 0 ? () => mixerRef?.pauseTrack() : undefined}
-            />
-          {/key}
-        </div>
-      {:else if track.status === "processing"}
-        <div class="bg-bg-surface border border-border p-12 text-center mb-10">
-          <div class="flex items-center justify-center gap-3 text-accent">
-            <div class="w-2 h-2 bg-accent animate-pulse"></div>
-            <span class="label">processing</span>
-          </div>
-        </div>
-      {:else}
-        <div class="bg-bg-surface border border-border p-12 text-center mb-10 text-danger label">
-          processing failed
-        </div>
-      {/if}
-    {/if}
-
-    <!-- Overdubs / RPP session mixer -->
-    {#if !track.overdub_of}
-      <div class="{overdubs.length > 0 || isRppSession ? 'mb-10' : ''}">
-
-        <!-- RPP session header -->
-        {#if isRppSession}
-          <div class="flex items-center gap-4 px-3 py-2 border border-border bg-bg-surface mb-px">
-            <span class="label-sm font-mono text-accent/60 tracking-widest">REAPER SESSION</span>
-            <span class="label-sm text-text-muted/50">{track.rpp_session_name}</span>
-            <div class="flex items-center gap-3 ml-auto">
-              <a
-                href={`/api/bands/${slug}/sync/rpp/${trackId}`}
-                class="label-sm text-text-muted hover:text-accent transition-colors"
-              >download .rpp</a>
-              <a
-                href={`/api/bands/${slug}/sync/binary`}
-                class="label-sm text-text-muted hover:text-accent transition-colors"
-                title="Download the sync utility — run it in your project folder to push/pull this session"
-              >download sync utility</a>
-            </div>
-          </div>
-        {/if}
-
-        <!-- Mixer — always shown for RPP sessions, otherwise only when overdubs exist -->
-        {#if overdubs.length > 0 || isRppSession}
-          <MultiTrackMixer
-            bind:this={mixerRef}
-            tracks={mixerTracks}
-            {isAdmin}
-            bandSlug={slug}
-            parentTrackId={trackId}
-            hideSrc={isRppSession}
-            seamlessTop={!isRppSession}
-            onPositionChange={(ms) => (mixerPositionMs = ms)}
-            onPlayingChange={(p) => (mixerPlaying = p)}
-            onOffsetChange={(id, ms) => adjustOffset(id, ms)}
-            onRename={(id, title) => renameTrack(id, title)}
-            onDelete={(id) => deleteOverdub(id)}
-            onVote={(id) => voteOverdub(id)}
-            onBounceMix={(ids, toNew) => bounceMix(ids, toNew)}
-            onRefresh={() => loadOverdubs()}
-            onGainChange={(id, gain) => saveGain(id, gain)}
-          />
-          {#if isAdmin && overdubs.length > 1}
-            <button
-              onclick={() => scrubOverdubs()}
-              disabled={scrubbing}
-              class="label-sm text-red-400/60 hover:text-red-400 transition-colors mt-3"
-            >{scrubbing ? "scrubbing..." : "scrub all overdubs"}</button>
-          {/if}
-        {/if}
-
-        <!-- Recording controls -->
-        <div class="flex items-center gap-4 flex-wrap border border-border bg-bg-surface px-4 py-2.5 mt-3">
-          <div class="flex items-center gap-2">
-            <button
-              onclick={calibrate}
-              disabled={calibrating}
-              class="label-sm text-text-muted hover:text-accent transition-colors"
-            >{calibrating ? "calibrating..." : "calibrate"}</button>
-            <input
-              type="number"
-              step="1"
-              value={calibratedLatency ?? 0}
-              onchange={(e) => {
-                const val = parseInt((e.target as HTMLInputElement).value);
-                if (!isNaN(val)) {
-                  calibratedLatency = val;
-                  localStorage.setItem("overdub-latency-ms", String(val));
-                }
-              }}
-              class="w-16 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
-            />
-            <span class="label-sm text-text-muted">ms</span>
-          </div>
-          <div class="w-px h-4 bg-border/50 hidden sm:block"></div>
-          <button
-            onclick={() => { showOverdubUpload = !showOverdubUpload; if (showOverdubUpload) { showOverdubRecord = false; showLinkTrack = false; } }}
-            class="label-sm text-text-muted hover:text-accent transition-colors"
-          >{showOverdubUpload ? "cancel" : "upload"}</button>
-          <button
-            onclick={() => { showOverdubRecord = !showOverdubRecord; if (showOverdubRecord) { showOverdubUpload = false; showLinkTrack = false; } }}
-            class="label-sm text-text-muted hover:text-accent transition-colors flex items-center gap-1.5"
-          >
-            <div class="w-2 h-2 rounded-full bg-red-400/60"></div>
-            {showOverdubRecord ? "cancel" : "record"}
-          </button>
-          <button
-            onclick={() => { if (showLinkTrack) { showLinkTrack = false; } else { openLinkTrack(); } }}
-            class="label-sm text-text-muted hover:text-accent transition-colors"
-          >{showLinkTrack ? "cancel" : "link existing"}</button>
-        </div>
-
-        {#if calibrationMsg}
-          <p class="label-sm text-text-muted mt-2">{calibrationMsg}</p>
-        {/if}
-
-        {#if showOverdubUpload}
-          <div class="mt-4 bg-bg-surface border border-border p-4 space-y-3">
-            <p class="label-sm text-text-muted">upload a pre-recorded overdub file. set the offset to where it aligns in the parent track.</p>
-            <div class="flex items-center gap-4 flex-wrap">
-              <input
-                type="file"
-                accept="audio/*"
-                onchange={(e) => overdubFile = (e.target as HTMLInputElement).files?.[0] ?? null}
-                class="label-sm text-text-secondary file:bg-bg-primary file:border file:border-border file:px-3 file:py-1.5 file:text-text-secondary file:label-sm file:mr-3 file:cursor-pointer"
-              />
-              <div class="flex items-center gap-2">
-                <span class="label-sm text-text-muted">offset</span>
-                <input
-                  type="number"
-                  step="100"
-                  bind:value={uploadOffsetMs}
-                  class="w-24 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
-                />
-                <span class="label-sm text-text-muted">ms</span>
-              </div>
-              <button
-                onclick={() => { uploadOffsetMs = mixerPositionMs || (playerRef?.getCurrentTimeMs() ?? 0); }}
-                class="label-sm text-accent hover:text-accent-hover transition-colors"
-              >use player position</button>
-              <button
-                onclick={uploadOverdubFile}
-                disabled={!overdubFile || uploadingOverdub}
-                class="px-4 py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors"
-              >{uploadingOverdub ? "uploading..." : "upload"}</button>
-            </div>
-          </div>
-        {/if}
-
-        {#if showLinkTrack}
-          <div class="mt-4 bg-bg-surface border border-border p-4 space-y-3">
-            <p class="label-sm text-text-muted">link an existing track as an overdub. the original track stays in the track list — this creates a shared reference.</p>
-            <input
-              type="text"
-              placeholder="filter tracks..."
-              bind:value={linkSearch}
-              class="w-full bg-bg-primary border border-border px-3 py-1.5 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-            />
-            <div class="max-h-48 overflow-y-auto space-y-1">
-              {#each linkableTracks.filter(t => t.id !== trackId && !t.overdub_of && t.title.toLowerCase().includes(linkSearch.toLowerCase())) as t}
-                <button
-                  onclick={() => linkingTrackId = linkingTrackId === t.id ? null : t.id}
-                  class="w-full text-left px-3 py-2 label-sm transition-colors {linkingTrackId === t.id ? 'bg-accent text-bg-primary' : 'hover:bg-bg-primary text-text-secondary'}"
-                >
-                  <span class="font-semibold">{t.title}</span>
-                  {#if t.recorded_at}<span class="text-xs opacity-60 ml-2">{new Date(t.recorded_at).toLocaleDateString()}</span>{/if}
-                </button>
+          <!-- Personnel -->
+          <div>
+            <div class="label-sm text-text-muted/50 tracking-widest mb-2">personnel</div>
+            <div class="space-y-1.5">
+              {#each personnel as p}
+                <div class="flex items-center gap-2">
+                  <span class="label-sm text-text-secondary">{p.user.display_name || p.user.email}</span>
+                  {#if p.role}<span class="label-sm text-text-muted">/ {p.role}</span>{/if}
+                  <button onclick={() => removePersonnel(p.user_id)} class="label-sm text-text-muted hover:text-danger transition-colors ml-auto">x</button>
+                </div>
               {/each}
-              {#if linkableTracks.filter(t => t.id !== trackId && !t.overdub_of && t.title.toLowerCase().includes(linkSearch.toLowerCase())).length === 0}
-                <p class="label-sm text-text-muted px-3 py-2">no tracks found</p>
-              {/if}
-            </div>
-            <div class="flex items-center gap-3 flex-wrap">
-              <div class="flex items-center gap-2">
-                <span class="label-sm text-text-muted">offset</span>
-                <input
-                  type="number"
-                  step="100"
-                  bind:value={linkOffsetMs}
-                  class="w-24 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
-                />
-                <span class="label-sm text-text-muted">ms</span>
-              </div>
-              <button
-                onclick={() => { linkOffsetMs = mixerPositionMs || (playerRef?.getCurrentTimeMs() ?? 0); }}
-                class="label-sm text-accent hover:text-accent-hover transition-colors"
-              >use player position</button>
-              <button
-                onclick={linkTrack}
-                disabled={!linkingTrackId}
-                class="px-4 py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors"
-              >link</button>
+              <form onsubmit={(e) => { e.preventDefault(); addPersonnel(); }} class="flex items-center gap-2 mt-2">
+                <select bind:value={addPersonnelId} class="flex-1 min-w-0 bg-bg-surface border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors">
+                  <option value="">+ add</option>
+                  {#each members.filter((m) => !personnel.some((p) => p.user_id === m.user.id)) as member}
+                    <option value={member.user.id}>{member.user.display_name || member.user.email}</option>
+                  {/each}
+                </select>
+                {#if addPersonnelId}
+                  <input bind:value={addPersonnelRole} type="text" placeholder="role..." class="flex-1 min-w-0 bg-bg-surface border border-border px-2 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors" />
+                  <button type="submit" class="label-sm text-accent hover:text-accent-hover transition-colors shrink-0">add</button>
+                {/if}
+              </form>
             </div>
           </div>
-        {/if}
 
-        {#if showOverdubRecord}
-          <div class="mt-4 bg-bg-surface border border-border p-4 space-y-3">
-            <div class="flex items-center gap-4 flex-wrap">
-              <span class="label-sm text-text-muted">punch in at:</span>
-              <div class="flex items-center gap-2">
-                <input
-                  type="number"
-                  step="100"
-                  bind:value={punchInMs}
-                  class="w-24 bg-bg-primary border border-border px-2 py-1 label-sm font-mono text-text-secondary text-right focus:outline-none focus:border-accent transition-colors"
-                />
-                <span class="label-sm text-text-muted">ms</span>
+          <!-- Source URL -->
+          {#if track.source_url}
+            <div>
+              <div class="label-sm text-text-muted/50 tracking-widest mb-1">source</div>
+              <a href={track.source_url} target="_blank" rel="noopener" class="label-sm text-accent hover:text-accent-hover transition-colors break-all">{track.source_url}</a>
+            </div>
+          {/if}
+
+          <!-- Recording date -->
+          {#if track.recorded_at}
+            <div>
+              <div class="label-sm text-text-muted/50 tracking-widest mb-1">recorded</div>
+              <span class="label-sm text-text-secondary">{new Date(track.recorded_at.slice(0, 10) + 'T00:00:00').toLocaleDateString()}</span>
+            </div>
+          {/if}
+
+          <!-- Bounce status -->
+          {#if track.pre_bounce_id}
+            <div>
+              <div class="label-sm text-text-muted/50 tracking-widest mb-1">bounce</div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <button onclick={() => navigate(`/band/${slug}/track/${track!.pre_bounce_id}`)} class="label-sm text-accent hover:text-accent-hover transition-colors">view original</button>
+                {#if isAdmin}
+                  {#if !confirmRestore}
+                    <button onclick={() => confirmRestore = true} class="label-sm text-text-muted hover:text-danger transition-colors">restore</button>
+                  {:else}
+                    <span class="flex items-center gap-2">
+                      <span class="label-sm text-danger">undo?</span>
+                      <button onclick={restoreOriginal} disabled={restoring} class="label-sm text-danger hover:text-red-300 transition-colors">{restoring ? "..." : "yes"}</button>
+                      <button onclick={() => confirmRestore = false} class="label-sm text-text-muted hover:text-text-secondary transition-colors">no</button>
+                    </span>
+                  {/if}
+                {/if}
               </div>
-              <button
-                onclick={() => { punchInMs = mixerPositionMs || (playerRef?.getCurrentTimeMs() ?? 0); }}
-                class="label-sm text-accent hover:text-accent-hover transition-colors"
-              >use player position</button>
-              {#if punchInMs > 0}
-                <button
-                  onclick={() => punchInMs = 0}
-                  class="label-sm text-text-muted hover:text-danger transition-colors"
-                >reset</button>
-                <span class="label-sm text-text-muted font-mono">starts at {formatDuration(punchInMs)}</span>
-              {/if}
-            </div>
-            <p class="label-sm text-text-muted">
-              headphones on — parent plays from {punchInMs > 0 ? formatDuration(punchInMs) : "the start"} when you hit record{calibratedLatency != null ? ` (${calibratedLatency}ms compensation)` : ""}
-            </p>
-            <Recorder
-              bandSlug={slug}
-              onRecorded={() => { showOverdubRecord = false; loadOverdubs(); }}
-              overdubParentId={trackId}
-              parentStreamUrl={streamUrl}
-              latencyCompensation={calibratedLatency ?? 0}
-              {punchInMs}
-              bpm={track?.song?.bpm ?? 0}
-            />
-          </div>
-        {/if}
-      </div>
-    {/if}
-
-    <!-- Notes -->
-    {#if track.notes && !editing}
-      <div class="mb-10">
-        <h3 class="label text-text-secondary mb-4">notes</h3>
-        <pre class="bg-bg-surface border border-border p-6 text-sm font-mono text-text-secondary whitespace-pre-wrap leading-relaxed">{track.notes}</pre>
-      </div>
-    {/if}
-
-    <!-- Comment input -->
-    <div class="mb-10">
-      <form onsubmit={(e) => { e.preventDefault(); if (!mentionOpen) submitComment(); }} class="flex gap-3">
-        <div class="flex-1 relative">
-          {#if commentTimestamp != null}
-            <button
-              type="button"
-              onclick={clearTimestamp}
-              class="absolute left-4 top-1/2 -translate-y-1/2 label-sm text-accent bg-accent/10 px-2 py-1 font-mono hover:bg-accent/20 transition-colors"
-            >
-              @{Math.floor(commentTimestamp / 1000)}s x
-            </button>
-          {/if}
-          <input
-            id="comment-input"
-            bind:value={newComment}
-            type="text"
-            placeholder={commentTimestamp != null ? "" : "add a comment... (use @ to mention)"}
-            oninput={handleCommentInput}
-            onkeydown={handleCommentKeydown}
-            class="w-full bg-bg-surface border border-border px-5 py-4 text-base text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
-            style:padding-left={commentTimestamp != null ? "6rem" : undefined}
-          />
-          {#if mentionOpen && mentionMatches.length > 0}
-            <div class="absolute bottom-full left-0 mb-1 w-64 bg-bg-surface border border-border z-10 max-h-48 overflow-y-auto">
-              {#each mentionMatches as member, i}
-                <button
-                  type="button"
-                  onmousedown={() => insertMention(member)}
-                  class="block w-full text-left px-4 py-2 label-sm transition-colors {i === mentionIndex ? 'bg-accent/10 text-accent' : 'text-text-secondary hover:bg-accent/10 hover:text-accent'}"
-                >
-                  {member.user.display_name || member.user.email}
-                </button>
-              {/each}
             </div>
           {/if}
-        </div>
-        <button
-          type="submit"
-          disabled={posting || !newComment.trim()}
-          class="px-6 py-4 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors"
-        >
-          post
-        </button>
-      </form>
-      <div class="label-sm text-text-muted mt-3">
-        click comment button or alt+click waveform to attach timestamp · type @ to mention
-      </div>
-    </div>
 
-    <!-- Comments -->
-    <div>
-      <h3 class="label text-text-secondary mb-6">
-        comments ({comments.length})
-      </h3>
-      <CommentList
-        {comments}
-        {trackId}
-        onSeek={handleSeek}
-        onRefresh={loadComments}
-      />
-    </div>
+        </aside>
+
+      </div>
+    {/if}
   </div>
 {/if}

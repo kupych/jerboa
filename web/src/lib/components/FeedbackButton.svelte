@@ -1,5 +1,6 @@
 <script lang="ts">
   import { uploadFile } from "../api";
+  import { playerState } from "../stores/globalPlayer";
 
   let open = $state(false);
   let body = $state("");
@@ -85,7 +86,7 @@
 <button
   onclick={captureAndOpen}
   disabled={capturing}
-  class="fixed bottom-4 right-4 z-30 bg-bg-elevated border border-border hover:border-accent/50 text-text-muted hover:text-accent transition-colors px-3 py-2 label flex items-center gap-1.5"
+  class="hidden sm:flex fixed {$playerState.track ? 'bottom-14' : 'bottom-4'} right-4 z-40 bg-bg-elevated border border-border hover:border-accent/50 text-text-muted hover:text-accent transition-all px-3 py-2 label items-center gap-1.5"
   title="Send feedback"
 >
   {#if capturing}

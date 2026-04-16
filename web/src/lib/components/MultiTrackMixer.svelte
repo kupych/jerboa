@@ -261,7 +261,7 @@
   $effect(() => {
     if (totalMs > 0 && scrollContainer && !hasAutoFit) {
       hasAutoFit = true;
-      const availW = scrollContainer.clientWidth - 192;
+      const availW = scrollContainer.clientWidth - 256;
       if (availW > 0) pxPerSec = Math.max(4, availW / (totalMs / 1000));
     }
   });
@@ -772,12 +772,12 @@
 
   <!-- Desktop timeline (≥ sm) — horizontally scrollable DAW layout -->
   <div class="hidden sm:block overflow-x-auto" bind:this={scrollContainer}>
-    <div style="min-width: {timelineWidthPx + 192}px">
+    <div style="min-width: {timelineWidthPx + 256}px">
 
       <!-- Time ruler -->
       <div class="flex h-6 border-b border-border/20 bg-bg-primary/30 select-none sticky top-0 z-20">
         <!-- Left panel stub (sticky) -->
-        <div class="w-48 shrink-0 border-r border-border/20 sticky left-0 z-30 bg-bg-surface"></div>
+        <div class="w-64 shrink-0 border-r border-border/20 sticky left-0 z-30 bg-bg-surface"></div>
         <!-- Ruler ticks at pixel positions -->
         <div class="relative" style="width: {timelineWidthPx}px; flex-shrink: 0;">
           {#each timeMarkers as ms}
@@ -798,28 +798,82 @@
         {@const isSolo = soloId === t.id}
         {@const isDimmed = soloId !== null && soloId !== t.id}
         {@const dur = trackDuration(t)}
-        <div class="flex items-stretch border-b border-border/20 last:border-0 h-[64px] transition-opacity {isDimmed ? 'opacity-35' : ''}">
+        <div class="flex items-stretch border-b border-border/20 last:border-0 h-[80px] transition-opacity {isDimmed ? 'opacity-35' : ''}">
 
-          <!-- Left: controls panel (sticky) -->
-          <div class="w-48 shrink-0 flex items-center gap-1.5 px-2 border-r border-border/20 sticky left-0 z-10 bg-bg-surface">
-            <!-- M/S -->
-            <button
-              onclick={() => toggleMute(t.id)}
-              title={isMuted ? "unmute" : "mute"}
-              class="w-5 h-5 text-[9px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isMuted
-                ? 'bg-bg-primary border-border text-text-muted/50'
-                : 'border-accent/40 text-accent/70 hover:border-accent hover:text-accent'}"
-            >M</button>
-            <button
-              onclick={() => toggleSolo(t.id)}
-              title={isSolo ? "unsolo" : "solo"}
-              class="w-5 h-5 text-[9px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isSolo
-                ? 'border-amber-400 bg-amber-400/10 text-amber-400'
-                : 'border-border text-text-muted/50 hover:border-amber-400/60 hover:text-amber-400/60'}"
-            >S</button>
+          <!-- Left: controls panel (sticky, 2-row layout) -->
+          <div class="w-64 shrink-0 flex flex-col justify-center gap-1 px-2 py-2 border-r border-border/20 sticky left-0 z-10 bg-bg-surface">
+            <!-- Row 1: M/S + gain + actions -->
+            <div class="flex items-center gap-1.5">
+              <button
+                onclick={() => toggleMute(t.id)}
+                title={isMuted ? "unmute" : "mute"}
+                class="w-5 h-5 text-[9px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isMuted
+                  ? 'bg-bg-primary border-border text-text-muted/50'
+                  : 'border-accent/40 text-accent/70 hover:border-accent hover:text-accent'}"
+              >M</button>
+              <button
+                onclick={() => toggleSolo(t.id)}
+                title={isSolo ? "unsolo" : "solo"}
+                class="w-5 h-5 text-[9px] font-bold font-mono border shrink-0 transition-colors flex items-center justify-center {isSolo
+                  ? 'border-amber-400 bg-amber-400/10 text-amber-400'
+                  : 'border-border text-text-muted/50 hover:border-amber-400/60 hover:text-amber-400/60'}"
+              >S</button>
 
-            <!-- Name -->
-            <div class="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
+              <!-- Gain slider — wider now that name has its own row -->
+              <input
+                type="range" min="0" max="8" step="0.05"
+                value={gainValues[t.id] ?? 1}
+                oninput={(e) => setGainVal(t.id, parseFloat((e.target as HTMLInputElement).value))}
+                onchange={(e) => onGainChange?.(t.id, parseFloat((e.target as HTMLInputElement).value))}
+                class="flex-1 h-0.5 accent-accent cursor-pointer min-w-0"
+              />
+              <span class="w-9 font-mono text-text-muted/50 font-semibold tabular-nums text-right shrink-0" style="font-size: 9px;">
+                {gainToDb(gainValues[t.id] ?? 1)}
+              </span>
+
+              <!-- Actions (horizontal) -->
+              <div class="flex items-center gap-2 shrink-0 pl-0.5">
+                {#if !t.isParent}
+                  <button
+                    onclick={() => onVote?.(t.user_voted ? null : t.id)}
+                    title="vote"
+                    class="transition-colors {t.user_voted ? 'text-accent' : 'text-text-muted/30 hover:text-accent/70'}"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill={t.user_voted ? "currentColor" : "none"} stroke="currentColor" stroke-width="2.5">
+                      <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
+                    </svg>
+                  </button>
+                {/if}
+                <a
+                  href={`/api/bands/${bandSlug}/tracks/${t.id}/stream?dl=1`}
+                  title="download"
+                  class="text-text-muted/30 hover:text-accent/70 transition-colors"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                </a>
+                {#if !t.isParent}
+                  {#if confirmDeleteId === t.id}
+                    <div class="flex items-center gap-1">
+                      <button onclick={() => { onDelete?.(t.id); confirmDeleteId = null; }} class="label-sm text-danger hover:text-red-300 transition-colors px-0.5">y</button>
+                      <button onclick={() => confirmDeleteId = null} class="label-sm text-text-muted hover:text-text-secondary transition-colors px-0.5">n</button>
+                    </div>
+                  {:else}
+                    <button onclick={() => confirmDeleteId = t.id} title="delete" class="text-text-muted/30 hover:text-danger transition-colors">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </button>
+                  {/if}
+                {/if}
+              </div>
+            </div>
+
+            <!-- Row 2: track name (full panel width, no truncation fighting with controls) -->
+            <div class="min-w-0">
               {#if editingId === t.id}
                 <input
                   type="text"
@@ -833,62 +887,8 @@
                 <button
                   ondblclick={() => startRename(t)}
                   title="double-click to rename"
-                  class="truncate text-left text-xs font-semibold font-display tracking-wide leading-tight {isMuted ? 'text-text-muted/50' : t.isParent ? 'text-accent/70' : 'text-text-primary'} hover:text-accent transition-colors"
+                  class="truncate w-full text-left text-xs font-semibold font-display tracking-wide leading-tight {isMuted ? 'text-text-muted/50' : t.isParent ? 'text-accent/70' : 'text-text-secondary'} hover:text-accent transition-colors"
                 >{t.title}</button>
-              {/if}
-            </div>
-
-            <!-- Gain -->
-            <div class="flex flex-col items-end gap-0.5 shrink-0">
-              <input
-                type="range" min="0" max="8" step="0.05"
-                value={gainValues[t.id] ?? 1}
-                oninput={(e) => setGainVal(t.id, parseFloat((e.target as HTMLInputElement).value))}
-                onchange={(e) => onGainChange?.(t.id, parseFloat((e.target as HTMLInputElement).value))}
-                class="w-14 h-0.5 accent-accent cursor-pointer"
-              />
-              <span class="font-mono text-text-muted/50 font-semibold tabular-nums leading-none" style="font-size: 8px;">
-                {gainToDb(gainValues[t.id] ?? 1)}
-              </span>
-            </div>
-
-            <!-- Actions -->
-            <div class="flex flex-col items-center justify-center gap-1.5 shrink-0 pl-1">
-              {#if !t.isParent}
-                <button
-                  onclick={() => onVote?.(t.user_voted ? null : t.id)}
-                  title="vote"
-                  class="transition-colors {t.user_voted ? 'text-accent' : 'text-text-muted/30 hover:text-accent/70'}"
-                >
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill={t.user_voted ? "currentColor" : "none"} stroke="currentColor" stroke-width="2.5">
-                    <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
-                  </svg>
-                </button>
-              {/if}
-              <a
-                href={`/api/bands/${bandSlug}/tracks/${t.id}/stream?dl=1`}
-                title="download"
-                class="text-text-muted/30 hover:text-accent/70 transition-colors"
-              >
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="7 10 12 15 17 10"/>
-                  <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-              </a>
-              {#if !t.isParent}
-                {#if confirmDeleteId === t.id}
-                  <div class="flex items-center gap-1">
-                    <button onclick={() => { onDelete?.(t.id); confirmDeleteId = null; }} class="label-sm text-danger hover:text-red-300 transition-colors px-0.5">y</button>
-                    <button onclick={() => confirmDeleteId = null} class="label-sm text-text-muted hover:text-text-secondary transition-colors px-0.5">n</button>
-                  </div>
-                {:else}
-                  <button onclick={() => confirmDeleteId = t.id} title="delete" class="text-text-muted/30 hover:text-danger transition-colors">
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                  </button>
-                {/if}
               {/if}
             </div>
           </div>

@@ -2,9 +2,11 @@
   let {
     text,
     showChords = true,
+    large = false,
   }: {
     text: string;
     showChords?: boolean;
+    large?: boolean;
   } = $props();
 
   type Segment = { chord: string; lyric: string };
@@ -76,22 +78,22 @@
 <div class="chordpro leading-relaxed">
   {#each lines as line}
     {#if line.sectionLabel}
-      <div class="mt-5 mb-2 first:mt-0">
-        <span class="label-sm text-accent/70 tracking-[0.2em]">{line.sectionLabel}</span>
+      <div class="mt-7 mb-2.5 first:mt-0">
+        <span class="label text-accent/70">{line.sectionLabel}</span>
       </div>
     {:else if line.segments.length === 1 && !line.segments[0].lyric.trim() && !line.segments[0].chord}
-      <div class="h-6"></div>
+      <div class="h-5"></div>
     {:else if line.hasChords && showChords}
-      <div>
+      <div class="mb-0.5">
         {#each line.segments as seg}
           <span class="inline-flex flex-col align-bottom" style="gap: 0;">
-            <span class="text-accent font-bold text-sm font-mono" style="line-height: 1; margin-bottom: -1px;">{seg.chord || "\u00a0"}</span>
-            <span class="text-text-primary whitespace-pre-wrap" style="line-height: 1.3; padding-bottom: 4px;">{seg.lyric || "\u00a0"}</span>
+            <span class="text-accent font-bold font-mono {large ? 'text-sm' : 'text-xs'}" style="line-height: 1; margin-bottom: 2px;">{seg.chord || "\u00a0"}</span>
+            <span class="text-text-primary whitespace-pre-wrap {large ? 'text-xl' : 'text-base'}" style="line-height: 1.5; padding-bottom: 3px;">{seg.lyric || "\u00a0"}</span>
           </span>
         {/each}
       </div>
     {:else}
-      <div class="text-text-primary">{line.segments.map(s => s.lyric).join("")}</div>
+      <div class="text-text-primary {large ? 'text-xl leading-[1.5]' : 'text-base leading-[1.45]'}">{line.segments.map(s => s.lyric).join("")}</div>
     {/if}
   {/each}
 </div>

@@ -7,6 +7,7 @@
   import { apiPost } from "../api";
 
   import { initials } from "../utils/format";
+  import { layoutWidth, widthClass } from "../stores/layoutWidth";
 
   let { onChatToggle, chatOpen }: { onChatToggle: () => void; chatOpen: boolean } = $props();
 
@@ -79,8 +80,8 @@
   <div class="fixed inset-0 z-40" onclick={() => (notifOpen = false)}></div>
 {/if}
 
-<header class="border-b border-border bg-bg-secondary" style="box-shadow: 0 1px 0 0 rgba(6, 182, 212, 0.08);">
-  <nav class="flex items-center justify-between h-14 md:h-20 px-5 md:px-12 w-full max-w-[960px] mx-auto">
+<header class="border-b border-border bg-bg-secondary" style="box-shadow: var(--shadow-header);">
+  <nav class="flex items-center justify-between h-14 md:h-20 px-5 md:px-12 w-full {widthClass[$layoutWidth]} mx-auto">
     <div class="flex items-center gap-3 md:gap-4 min-w-0">
       <button
         onclick={handleLogoClick}

@@ -7,6 +7,7 @@
   import WhatsNewModal from "./WhatsNewModal.svelte";
   import PersistentPlayer from "./PersistentPlayer.svelte";
   import { globalPlayer, playerState } from "../stores/globalPlayer";
+  import { layoutWidth, widthClass } from "../stores/layoutWidth";
   import type { Snippet } from "svelte";
 
   let { children }: { children: Snippet } = $props();
@@ -21,7 +22,7 @@
 
 <div class="min-h-screen flex flex-col">
   <Header onChatToggle={() => (chatOpen = !chatOpen)} {chatOpen} />
-  <main class="flex-1 px-5 my-6 md:px-12 md:my-10 w-full max-w-[960px] mx-auto {$playerState.track ? 'pb-20' : 'pb-8'}">
+  <main class="flex-1 px-5 my-6 md:px-12 md:my-10 w-full {widthClass[$layoutWidth]} mx-auto {$playerState.track ? 'pb-20' : 'pb-8'}">
     {@render children()}
   </main>
   <div class="px-5 md:px-12 pb-3">

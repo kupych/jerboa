@@ -20,6 +20,7 @@
     onSeekRequest = undefined,
     onPlay = undefined,
     onPause = undefined,
+    height = 160,
   }: {
     src: string;
     peaks?: number[];
@@ -36,6 +37,7 @@
     onSeekRequest?: (ms: number) => void;
     onPlay?: () => void;
     onPause?: () => void;
+    height?: number;
   } = $props();
 
   const isExternallyControlled = $derived(externalPositionMs !== undefined);
@@ -77,7 +79,7 @@
       barWidth: 2,
       barGap: 1,
       barRadius: 0,
-      height: 160,
+      height,
       normalize: true,
       backend: "MediaElement",
     });
@@ -270,7 +272,7 @@
   </div>
 
   <!-- Waveform -->
-  <div class="overflow-y-visible pt-6" bind:this={scrollContainer}>
+  <div class="{minWidth > 0 ? 'overflow-x-auto' : 'overflow-visible'} pt-6" bind:this={scrollContainer}>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div

@@ -464,7 +464,7 @@ func (q *Queries) CreateSong(ctx context.Context, bandID uuid.UUID, name string)
 
 func (q *Queries) ListSongs(ctx context.Context, bandID uuid.UUID) ([]models.Song, error) {
 	rows, err := q.pool.Query(ctx, `
-		SELECT s.id, s.band_id, s.name, s.notes, s.bpm, s.created_at,
+		SELECT s.id, s.band_id, s.name, s.lyrics, s.tabs, s.notes, s.bpm, s.created_at,
 			COUNT(DISTINCT t.id) +
 			COUNT(DISTINCT CASE WHEN st.id IS NOT NULL THEN si.set_id END) AS take_count
 		FROM songs s
@@ -484,7 +484,7 @@ func (q *Queries) ListSongs(ctx context.Context, bandID uuid.UUID) ([]models.Son
 	var songs []models.Song
 	for rows.Next() {
 		var s models.Song
-		if err := rows.Scan(&s.ID, &s.BandID, &s.Name, &s.Notes, &s.BPM, &s.CreatedAt, &s.TakeCount); err != nil {
+		if err := rows.Scan(&s.ID, &s.BandID, &s.Name, &s.Lyrics, &s.Tabs, &s.Notes, &s.BPM, &s.CreatedAt, &s.TakeCount); err != nil {
 			return nil, err
 		}
 		songs = append(songs, s)

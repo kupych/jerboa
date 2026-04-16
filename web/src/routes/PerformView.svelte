@@ -80,7 +80,7 @@
       if (setId) {
         data = await api<PerformData>(`/api/bands/${slug}/sets/${setId}/perform`);
       } else {
-        allSongs = await api<Song[]>(`/api/bands/${slug}/songs`);
+        allSongs = await api<Song[]>(`/api/bands/${slug}/songs?with_lyrics=true`);
         showPicker = true;
       }
     } finally {
@@ -348,7 +348,8 @@
     ontouchend={handleTouchEnd}
   >
     <!-- Top bar -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+    <div class="flex items-center justify-between px-4 py-3 border-b shrink-0 transition-colors
+      {isRec ? 'border-red-500/40 bg-red-500/5' : 'border-border'}">
       <button onclick={exit} class="label-sm text-text-muted hover:text-accent transition-colors">exit</button>
 
       <button
@@ -358,7 +359,7 @@
         <div class="label text-text-primary">
           {title}
           {#if totalItems > 0}
-            <span class="text-text-muted/40 font-mono ml-2">{currentIndex + 1}/{totalItems}</span>
+            <span class="text-text-muted/60 font-mono ml-2">{currentIndex + 1}/{totalItems}</span>
           {/if}
         </div>
       </button>
@@ -380,8 +381,8 @@
           class="label-sm transition-colors flex items-center gap-1.5 {isRec ? 'text-red-400' : 'text-text-muted/40 hover:text-text-muted'}"
           title="{isRec ? 'stop recording' : 'start recording'} (r)"
         >
-          <span class="w-1.5 h-1.5 rounded-full {isRec ? 'bg-red-400 animate-pulse' : 'bg-current'}"></span>
-          rec
+          <span class="w-2 h-2 rounded-full {isRec ? 'bg-red-400 animate-pulse' : 'bg-current'}"></span>
+          {isRec ? "stop" : "rec"}
         </button>
         {#if savingRecording}
           <span class="label-sm text-text-muted/40 animate-pulse">saving...</span>
@@ -406,17 +407,17 @@
       </div>
     {:else if currentItem}
       <!-- Song title -->
-      <div class="px-6 pt-5 pb-4 shrink-0 border-b border-border/30">
-        <h1 class="text-xl md:text-2xl font-display font-bold tracking-wider text-text-primary">{itemName}</h1>
+      <div class="px-6 pt-6 pb-5 shrink-0 border-b border-border/30">
+        <h1 class="text-2xl md:text-3xl font-display font-bold tracking-wider text-text-primary">{itemName}</h1>
         {#if currentItem.notes}
-          <p class="text-xs font-semibold text-text-muted/50 mt-1">{currentItem.notes}</p>
+          <p class="text-xs font-semibold text-text-muted/50 mt-1.5">{currentItem.notes}</p>
         {/if}
       </div>
 
       <!-- Lyrics area -->
-      <div id="perform-lyrics" class="flex-1 overflow-y-auto px-6 pt-4 pb-24 text-base md:text-lg">
+      <div id="perform-lyrics" class="flex-1 overflow-y-auto px-6 md:px-10 pt-5 pb-32">
         {#if currentItem.lyrics}
-          <ChordProLyrics text={currentItem.lyrics} {showChords} />
+          <ChordProLyrics text={currentItem.lyrics} {showChords} large={true} />
         {:else}
           <div class="flex items-center justify-center h-full">
             <span class="label text-text-muted/30">no lyrics</span>
@@ -425,14 +426,15 @@
       </div>
 
       <!-- Bottom nav -->
-      <div class="absolute bottom-0 left-0 right-0 flex justify-between items-center px-6 py-4 bg-gradient-to-t from-bg-primary via-bg-primary/90 to-transparent pointer-events-none">
+      <div class="absolute bottom-0 left-0 right-0 flex justify-between items-end px-6 py-5 bg-gradient-to-t from-bg-primary via-bg-primary/90 to-transparent pointer-events-none">
         <button
           onclick={prev}
           disabled={currentIndex === 0}
-          class="pointer-events-auto label-sm text-text-muted hover:text-accent disabled:opacity-0 transition-all"
+          class="pointer-events-auto flex flex-col items-start gap-0.5 disabled:opacity-0 transition-all group"
         >
           {#if currentIndex > 0}
-            {items[currentIndex - 1].song_name || items[currentIndex - 1].custom_name}
+            <span class="text-[9px] font-bold tracking-widest uppercase text-text-muted/40 group-hover:text-text-muted/60 transition-colors">← prev</span>
+            <span class="label text-text-secondary group-hover:text-accent transition-colors truncate max-w-[140px] sm:max-w-[200px]">{items[currentIndex - 1].song_name || items[currentIndex - 1].custom_name}</span>
           {/if}
         </button>
 
@@ -445,10 +447,11 @@
           <button
             onclick={next}
             disabled={currentIndex === totalItems - 1}
-            class="pointer-events-auto label-sm text-text-muted hover:text-accent disabled:opacity-0 transition-all"
+            class="pointer-events-auto flex flex-col items-end gap-0.5 disabled:opacity-0 transition-all group"
           >
             {#if currentIndex < totalItems - 1}
-              {items[currentIndex + 1].song_name || items[currentIndex + 1].custom_name}
+              <span class="text-[9px] font-bold tracking-widest uppercase text-text-muted/40 group-hover:text-text-muted/60 transition-colors">next →</span>
+              <span class="label text-text-secondary group-hover:text-accent transition-colors truncate max-w-[140px] sm:max-w-[200px]">{items[currentIndex + 1].song_name || items[currentIndex + 1].custom_name}</span>
             {/if}
           </button>
         {/if}

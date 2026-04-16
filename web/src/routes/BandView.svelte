@@ -175,7 +175,7 @@
   let addingMember = $state(false);
   let addMemberError = $state("");
   let isAdmin = $derived(band?.members.some((m) => m.user.id === $currentUser?.id && m.role === "admin") ?? false);
-
+  let membersExpanded = $state(false);
 
   let ungroupedTracks = $derived(tracks.filter((t) => !t.song_id && !t.set_id && !t.bounced_to && !t.overdub_of));
 
@@ -393,7 +393,7 @@
     <!-- Band header -->
     <div class="mb-2">
       <div class="flex items-center gap-3 mb-1">
-        <h2 class="text-xl md:text-2xl font-bold tracking-wider font-display">{band.band.name}</h2>
+        <h2 class="text-2xl md:text-3xl font-bold tracking-wider font-display">{band.band.name}</h2>
         <div class="flex items-center gap-1">
           <button
             onclick={() => (showInviteForm = !showInviteForm)}
@@ -422,15 +422,21 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-2 md:gap-3 flex-wrap mb-2">
-        {#each band.members as member}
-          <span class="label-sm text-text-muted px-3 py-1.5 bg-bg-surface border border-border">
+      <div class="flex items-center gap-2 flex-wrap mb-2">
+        {#each band.members as member, i}
+          <span class="label-sm text-text-muted px-3 py-1.5 bg-bg-surface border border-border {i >= 4 && !membersExpanded ? 'hidden md:inline-flex' : ''}">
             {member.user.display_name || member.user.email}
             {#if member.user.id === $currentUser?.id}
               <span class="text-accent/60 ml-1">you</span>
             {/if}
           </span>
         {/each}
+        {#if !membersExpanded && band.members.length > 4}
+          <button
+            class="label-sm text-text-muted/60 hover:text-text-muted transition-colors md:hidden"
+            onclick={() => (membersExpanded = true)}
+          >+{band.members.length - 4} more</button>
+        {/if}
         {#each band.pending_invites ?? [] as invite}
           <span class="label-sm text-text-muted/60 px-3 py-1.5 border border-dashed border-border/40">
             {invite.email}
@@ -624,16 +630,20 @@
       </div>
     {/if}
 
-    <!-- Add tracks: Upload / Record / Import -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-1 mb-4">
-      <TrackUpload bandSlug={slug} onUploaded={loadTracks} />
-      <Recorder bandSlug={slug} onRecorded={loadTracks} />
+    <!-- Add material slab -->
+    <div class="border border-border/40 mb-4 mt-6">
+      <div class="px-3 py-2 border-b border-border/25">
+        <span class="label text-text-muted/30">add material</span>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-px bg-border/30">
+      <div class="bg-bg-primary"><TrackUpload bandSlug={slug} onUploaded={loadTracks} /></div>
+      <div class="bg-bg-primary"><Recorder bandSlug={slug} onRecorded={loadTracks} /></div>
 
       <!-- Import URL -->
       {#if showImport}
         <form
           onsubmit={(e) => { e.preventDefault(); importFromUrl(); }}
-          class="border border-accent/40 bg-accent/5 p-3 md:col-span-3"
+          class="bg-accent/5 p-3 col-span-full border-t border-border/40"
         >
           <div class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] gap-2 items-end">
             <input
@@ -665,77 +675,87 @@
           </div>
         </form>
       {:else}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="border border-dashed border-border hover:border-accent/40 hover:bg-accent/[0.02] p-3 md:py-2 text-center transition-colors cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
-          onclick={() => (showImport = true)}
-        >
-          <svg class="text-text-muted shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-          </svg>
-          <span class="text-sm text-text-muted font-semibold">import url</span>
-          <span class="label-sm text-text-muted/30 font-mono hidden md:inline translate-y-px">youtube, etc</span>
+        <div class="bg-bg-primary">
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="border-dashed border border-border/50 hover:border-accent/40 hover:bg-accent/[0.02] p-3 md:py-2 text-center transition-colors cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap h-full"
+            onclick={() => (showImport = true)}
+          >
+            <svg class="text-text-muted shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+            <span class="text-sm text-text-muted font-semibold">import url</span>
+            <span class="label-sm text-text-muted/30 font-mono hidden md:inline translate-y-px">youtube, etc</span>
+          </div>
         </div>
       {/if}
-    </div>
+      </div><!-- /grid -->
+    </div><!-- /add material slab -->
 
-    <!-- Tab toggle -->
-    <div class="flex items-center gap-6 mb-2">
-      <button
-        onclick={() => (viewTab = "feed")}
-        class="label transition-colors {viewTab === 'feed' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
-      >activity</button>
-      <button
-        onclick={() => (viewTab = "songs")}
-        class="label transition-colors {viewTab === 'songs' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
-      >songs</button>
-      <button
-        onclick={() => (viewTab = "sets")}
-        class="label transition-colors {viewTab === 'sets' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
-      >sets</button>
-      {#if taggedTracks.size > 0}
+    <!-- Desktop rail + content grid -->
+    <div class="lg:grid lg:grid-cols-[1fr_160px] lg:gap-6 lg:items-start">
+    <div><!-- main column start -->
+
+    <!-- Tab toggle — sticky on mobile -->
+    <div class="sticky top-0 z-20 bg-bg-primary -mx-5 px-5 md:mx-0 md:px-0 border-b border-border/40 mb-2">
+      <div class="flex items-center gap-5 py-2.5">
         <button
-          onclick={() => (viewTab = "tags")}
-          class="label transition-colors {viewTab === 'tags' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
-        >tags</button>
-      {/if}
-      <button
-        onclick={() => { viewTab = "files"; if (files.length === 0 && !filesLoading) loadFiles(); }}
-        class="label transition-colors {viewTab === 'files' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
-      >files</button>
-
-      {#if viewTab === "songs"}
-        <form onsubmit={(e) => { e.preventDefault(); createSong(); }} class="ml-auto flex gap-2">
-          <input
-            bind:value={newSongName}
-            type="text"
-            placeholder="+ new song"
-            disabled={creatingSong}
-            class="bg-transparent border border-accent/30 px-3 py-1 label-sm text-text-secondary placeholder:text-accent/70 focus:outline-none focus:border-accent focus:bg-accent/[0.03] transition-colors w-40"
-          />
-        </form>
-      {:else if viewTab === "sets"}
-        <form onsubmit={(e) => { e.preventDefault(); createSet(); }} class="ml-auto flex gap-2">
-          <select
-            bind:value={newSetType}
-            class="bg-transparent border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors"
-          >
-            <option value="rehearsal">rehearsal</option>
-            <option value="live">live</option>
-            <option value="pre-production">pre-production</option>
-            <option value="other">other</option>
-          </select>
-          <input
-            bind:value={newSetName}
-            type="text"
-            placeholder="+ new set"
-            disabled={creatingSet}
-            class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40"
-          />
-        </form>
-      {/if}
+          onclick={() => (viewTab = "feed")}
+          class="label transition-colors {viewTab === 'feed' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+        >activity</button>
+        <button
+          onclick={() => (viewTab = "songs")}
+          class="label transition-colors {viewTab === 'songs' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+        >songs</button>
+        <button
+          onclick={() => (viewTab = "sets")}
+          class="label transition-colors {viewTab === 'sets' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+        >sets</button>
+        {#if taggedTracks.size > 0}
+          <button
+            onclick={() => (viewTab = "tags")}
+            class="label transition-colors {viewTab === 'tags' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+          >tags</button>
+        {/if}
+        <button
+          onclick={() => { viewTab = "files"; if (files.length === 0 && !filesLoading) loadFiles(); }}
+          class="label transition-colors {viewTab === 'files' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+        >files</button>
+      </div>
     </div>
+
+    <!-- Creation form — separate row so it never competes with the tabs on mobile -->
+    {#if viewTab === "songs"}
+      <form onsubmit={(e) => { e.preventDefault(); createSong(); }} class="flex gap-2 mb-2">
+        <input
+          bind:value={newSongName}
+          type="text"
+          placeholder="+ new song"
+          disabled={creatingSong}
+          class="bg-transparent border border-accent/30 px-3 py-1 label-sm text-text-secondary placeholder:text-accent/70 focus:outline-none focus:border-accent focus:bg-accent/[0.03] transition-colors w-40"
+        />
+      </form>
+    {:else if viewTab === "sets"}
+      <form onsubmit={(e) => { e.preventDefault(); createSet(); }} class="flex gap-2 mb-2">
+        <select
+          bind:value={newSetType}
+          class="bg-transparent border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors"
+        >
+          <option value="rehearsal">rehearsal</option>
+          <option value="live">live</option>
+          <option value="pre-production">pre-production</option>
+          <option value="other">other</option>
+        </select>
+        <input
+          bind:value={newSetName}
+          type="text"
+          placeholder="+ new set"
+          disabled={creatingSet}
+          class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40"
+        />
+      </form>
+    {/if}
 
     {#if viewTab === "feed"}
       {#if feedGroups.length === 0}
@@ -783,42 +803,48 @@
 
                 <!-- Summary text -->
                 <div class="flex-1 min-w-0">
+                  <!-- Primary sentence + group controls -->
                   <div class="flex items-start justify-between gap-2">
-                    <p class="text-sm text-text-secondary leading-snug">
+                    <p class="text-sm font-medium leading-snug">
                       {#if group.type === "track"}
-                        <span class="font-semibold text-text-primary">{group.actor_name}</span>
-                        {solo ? "recorded a new take for" : `recorded ${n} takes for`}
+                        <span class="font-bold text-text-primary">{group.actor_name}</span>
+                        <span class="text-text-secondary"> {solo ? "recorded a new take for" : `recorded ${n} takes for`} </span>
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/track/${group.link_id}`); }}>'{group.subject}'</span>
+                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/track/${group.link_id}`); }}>{group.subject}</span>
                       {:else if group.type === "overdub"}
-                        <span class="font-semibold text-text-primary">{group.actor_name}</span>
-                        {solo ? "added an overdub to" : `added ${n} overdubs to`}
+                        <span class="font-bold text-text-primary">{group.actor_name}</span>
+                        <span class="text-text-secondary"> {solo ? "added an overdub to" : `added ${n} overdubs to`} </span>
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/track/${group.link_id}`); }}>'{group.subject}'</span>
+                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/track/${group.link_id}`); }}>{group.subject}</span>
                       {:else if group.type === "comment"}
-                        <span class="font-semibold text-text-primary">{group.actor_name}</span>
-                        {solo ? "left a comment on" : `left ${n} comments on`}
+                        <span class="font-bold text-text-primary">{group.actor_name}</span>
+                        <span class="text-text-secondary"> {solo ? "left a comment on" : `left ${n} comments on`} </span>
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/track/${group.link_id}`); }}>'{group.subject}'</span>{#if solo && item.timestamp_ms != null} at {formatDuration(item.timestamp_ms)}{/if}
+                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/track/${group.link_id}`); }}>{group.subject}</span>
                       {:else if group.type === "song"}
                         <!-- svelte-ignore a11y_click_events_have_key_events -->
                         <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/song/${group.link_id}`); }}>'{group.subject}'</span> added to songs
+                        <span class="text-accent hover:underline cursor-pointer" onclick={(e) => { e.stopPropagation(); navigate(`/band/${slug}/song/${group.link_id}`); }}>{group.subject}</span>
+                        <span class="text-text-secondary"> added to songs</span>
                       {/if}
                     </p>
-                    <div class="flex items-center gap-2 shrink-0">
-                      <span class="label-sm text-text-muted/40">{formatRelativeTime(group.latest_at)}</span>
-                      {#if !solo}
+                    {#if !solo}
+                      <div class="flex items-center gap-2 shrink-0">
                         <span class="label-sm text-text-muted/50 bg-bg-elevated px-1.5 py-0.5 tabular-nums">{n}</span>
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-text-muted/50 transition-transform {expanded ? 'rotate-180' : ''}">
                           <polyline points="6 9 12 15 18 9"/>
                         </svg>
-                      {/if}
-                    </div>
+                      </div>
+                    {/if}
                   </div>
+
+                  <!-- Metadata line -->
+                  <p class="mt-0.5 label-sm text-text-muted/45">
+                    {formatRelativeTime(group.latest_at)}{#if solo && item.type === "comment" && item.timestamp_ms != null} · at {formatDuration(item.timestamp_ms)}{/if}
+                  </p>
 
                   <!-- Solo item preview -->
                   {#if solo}
@@ -1016,5 +1042,38 @@
         </div>
       </div>
     {/if}
+
+    </div><!-- /main column -->
+
+    <!-- Desktop context rail -->
+    <aside class="hidden lg:block">
+      <div class="sticky top-6 space-y-3">
+        <div class="border border-border p-3">
+          <div class="label text-text-muted/50 mb-2.5">overview</div>
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between">
+              <span class="label-sm text-text-muted">songs</span>
+              <span class="label-sm text-text-primary font-bold tabular-nums">{songs.length}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="label-sm text-text-muted">sets</span>
+              <span class="label-sm text-text-primary font-bold tabular-nums">{sets.length}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="label-sm text-text-muted">members</span>
+              <span class="label-sm text-text-primary font-bold tabular-nums">{band.members.length}</span>
+            </div>
+            {#if tracks.length > 0}
+              <div class="flex items-center justify-between">
+                <span class="label-sm text-text-muted">takes</span>
+                <span class="label-sm text-text-primary font-bold tabular-nums">{tracks.length}</span>
+              </div>
+            {/if}
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    </div><!-- /rail grid -->
   </div>
 {/if}

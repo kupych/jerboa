@@ -3,6 +3,7 @@
   import { api, apiPost } from "../lib/api";
   import { navigate } from "../lib/stores/router";
   import { user } from "../lib/stores/auth";
+  import { initials } from "../lib/utils/format";
   import { bands as bandsStore, loadBands as refreshBands } from "../lib/stores/bands";
 
   interface Band {
@@ -111,19 +112,32 @@
       <div class="label-sm text-text-muted">create one or join via invite link</div>
     </div>
   {:else}
-    <div class="grid gap-4">
+    <div class="grid gap-3">
       {#each bands as band}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="bg-bg-surface border border-border p-7 hover:border-accent/40 cursor-pointer transition-colors group"
+          class="group flex items-stretch bg-bg-surface border border-border hover:border-accent/50 cursor-pointer transition-colors"
           onclick={() => navigate(`/band/${band.slug}`)}
         >
-          <div class="flex items-center justify-between">
-            <h3 class="text-lg font-semibold tracking-wider group-hover:text-accent transition-colors font-display">
+          <!-- Monogram -->
+          <div class="w-14 shrink-0 flex items-center justify-center border-r border-border/60 group-hover:border-accent/20 group-hover:bg-accent/[0.04] transition-colors">
+            <span class="text-xs font-bold font-display tracking-widest text-accent/40 group-hover:text-accent/70 transition-colors select-none">
+              {initials(band.name)}
+            </span>
+          </div>
+          <!-- Name + role -->
+          <div class="flex-1 min-w-0 px-5 py-4">
+            <div class="text-xl font-bold font-display tracking-wider text-text-primary group-hover:text-accent transition-colors truncate">
               {band.name}
-            </h3>
-            <span class="label-sm text-text-muted">{band.role}</span>
+            </div>
+            <div class="mt-0.5 label-sm text-text-muted/50">{band.role}</div>
+          </div>
+          <!-- Chevron -->
+          <div class="flex items-center pr-4 text-text-muted/20 group-hover:text-accent/50 transition-colors">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
           </div>
         </div>
       {/each}

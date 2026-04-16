@@ -246,30 +246,39 @@
         </div>
       {/if}
     {:else}
-      <!-- Collapsed: thin bar -->
+      <!-- Collapsed: minimal bar -->
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        class="flex items-center gap-2 px-4 py-1 cursor-pointer"
+        class="flex items-center gap-2.5 px-3 py-0.5 cursor-pointer"
         onclick={() => (collapsed = false)}
       >
         <button
           onclick={(e) => { e.stopPropagation(); globalPlayer.toggle(); }}
-          class="text-text-primary hover:text-accent transition-colors shrink-0"
+          class="text-text-muted/50 hover:text-accent transition-colors shrink-0"
         >
           {#if $playerState.playing}
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
               <rect x="6" y="4" width="4" height="16"/>
               <rect x="14" y="4" width="4" height="16"/>
             </svg>
           {:else}
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5,3 19,12 5,21"/>
             </svg>
           {/if}
         </button>
-        <span class="label-sm text-text-muted truncate">{$playerState.track.title}</span>
-        <span class="label-sm text-text-muted/40 font-mono ml-auto shrink-0">{formatTime($playerState.currentTime)}</span>
+        <span class="label-sm text-text-muted/50 truncate">{$playerState.track.title}</span>
+        <span class="label-sm text-text-muted/25 font-mono ml-auto shrink-0 hidden sm:block">{formatTime($playerState.currentTime)}</span>
+        <button
+          onclick={(e) => { e.stopPropagation(); collapsed = false; }}
+          class="text-text-muted/25 hover:text-text-muted/50 transition-colors shrink-0"
+          title="Expand"
+        >
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <polyline points="18 15 12 9 6 15"/>
+          </svg>
+        </button>
       </div>
     {/if}
   </div>

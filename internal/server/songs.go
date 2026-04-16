@@ -44,6 +44,13 @@ func (h *SongHandler) List(w http.ResponseWriter, r *http.Request) {
 		songs = []models.Song{}
 	}
 
+	if r.URL.Query().Get("with_lyrics") != "true" {
+		for i := range songs {
+			songs[i].Lyrics = ""
+			songs[i].Tabs = ""
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(songs)
 }

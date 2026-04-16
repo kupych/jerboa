@@ -1,14 +1,27 @@
 @import "tailwindcss";
 
+/*
+ * Color semantic rules — enforced by convention, not code:
+ *   accent      = active | current | primary action | armed state ONLY. Never decorative.
+ *   danger      = destructive actions and error states.
+ *   success     = confirmed / completed states.
+ *   text-muted  = metadata, labels, and chrome. Not body copy.
+ *   border      = structural separation. Not accent.
+ *
+ * If everything glows, nothing does. Accent must be visibly scarce.
+ */
+
 @theme {
+  --shadow-header: 0 1px 0 0 rgba(46, 196, 182, 0.08);
+
   --color-bg-primary: #131313;
-  --color-bg-secondary: #1a1a1a;
-  --color-bg-surface: #212121;
-  --color-bg-elevated: #2a2a2a;
+  --color-bg-secondary: #1e1e1e;
+  --color-bg-surface: #262626;
+  --color-bg-elevated: #2f2f2f;
   --color-text-primary: #efefef;
-  --color-text-secondary: #b0b0b0;
-  --color-text-muted: #888888;
-  --color-border: #333333;
+  --color-text-secondary: #bcbcbc;
+  --color-text-muted: #9a9a9a;
+  --color-border: #3d3d3d;
   --color-accent: #2ec4b6;
   --color-accent-hover: #4ad4c8;
   --color-accent-muted: #2ec4b622;
@@ -19,31 +32,36 @@
   --color-danger: #d42b2b;
   --color-success: #2baa5a;
 
-  --font-sans: "Inter", system-ui, sans-serif;
+  --font-sans: "Rajdhani", system-ui, sans-serif;
   --font-display: "Chakra Petch", "Inter", system-ui, sans-serif;
   --font-mono: "SF Mono", "Cascadia Code", ui-monospace, monospace;
 }
 
-/* Light theme overrides */
+/* Light theme — designed, not inverted */
 .light {
-  --color-bg-primary: #e8e8e8;
-  --color-bg-secondary: #dedede;
-  --color-bg-surface: #f4f4f4;
-  --color-bg-elevated: #ffffff;
-  --color-text-primary: #101010;
-  --color-text-secondary: #484848;
-  --color-text-muted: #909090;
-  --color-border: #c8c8c8;
+  --shadow-header: 0 2px 0 0 rgba(0, 0, 0, 0.10); /* decisive chrome rule, no glow */
+
+  --color-bg-primary: #f2f4f6;    /* cool-gray base: printed matter, not blank admin */
+  --color-bg-secondary: #e2e5e9;  /* header: clearly darker chrome vs page */
+  --color-bg-surface: #ffffff;    /* panels: white, float visibly on base */
+  --color-bg-elevated: #ffffff;   /* dropdowns/modals: white + border */
+  --color-text-primary: #0c0c0e;
+  --color-text-secondary: #3a3c42;
+  --color-text-muted: #72767d;
+  --color-border: #b8bdc4;        /* stronger, slightly cool — structure reads without accent */
   --color-accent: #1a9e92;
-  --color-accent-hover: #178a80;
-  --color-accent-muted: #1a9e9222;
+  --color-accent-hover: #1eb3a6;  /* lighter on hover — same direction as dark mode */
+  --color-accent-muted: #1a9e9218;
   --color-waveform: #1a9e92;
   --color-waveform-progress: #3dbdb2;
+  --color-danger: #c42020;        /* darkened for contrast on light bg */
+  --color-success: #1e9448;       /* darkened for contrast on light bg */
 }
 
 html {
   font-family: var(--font-sans);
   font-size: 16px;
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -77,15 +95,15 @@ body {
 /* Vectorheart utility: all small text gets weight */
 .label {
   font-weight: 600;
-  font-size: 0.7rem;
-  letter-spacing: 0.2em;
+  font-size: 0.75rem;    /* 12px — min readable chrome */
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
 .label-sm {
   font-weight: 600;
-  font-size: 0.6rem;
-  letter-spacing: 0.15em;
+  font-size: 0.69rem;    /* ~11px — floor for actionable microtype */
+  letter-spacing: 0.13em;
   text-transform: uppercase;
 }
 
@@ -134,7 +152,7 @@ body {
 }
 .prose pre code { background: none; padding: 0; }
 .prose blockquote {
-  border-left: 2px solid var(--color-accent);
+  border-left: 2px solid var(--color-border);
   padding-left: 1em;
   color: var(--color-text-muted);
   margin-bottom: 0.75em;
