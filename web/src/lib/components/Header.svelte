@@ -96,8 +96,9 @@
         <div class="relative min-w-0">
           <button
             onclick={() => (bandMenuOpen = !bandMenuOpen)}
-            class="label text-text-secondary hover:text-text-primary transition-colors flex items-center gap-1.5 truncate"
+            class="sys-chip label text-text-secondary hover:text-text-primary transition-colors truncate inline-flex items-center gap-1.5"
           >
+            <span class="hidden xl:inline sys-code text-text-muted/45">band</span>
             <span class="truncate">{currentBand.name}</span>
             <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="shrink-0 opacity-50">
               <polyline points="6 9 12 15 18 9"/>
@@ -150,7 +151,7 @@
         </div>
       {/if}
 
-      <span class="hidden lg:inline text-[9px] font-mono font-semibold tracking-[0.15em] text-text-muted/30 select-none mt-0.5">SYS·AUD·01·{version}</span>
+      <span class="hidden xl:block"><span class="sys-chip sys-code text-text-muted/35 select-none">SYS.AUD.01.{version}</span></span>
     </div>
 
     <div class="flex items-center gap-4 md:gap-5">

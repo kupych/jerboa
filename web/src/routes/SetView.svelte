@@ -417,8 +417,9 @@
         <!-- Title row -->
         <div class="flex items-start gap-4 mb-4">
           <div class="flex-1 min-w-0">
+            <div class="sys-kicker mb-3">set planner // running order + timestamps</div>
             <div class="flex items-center gap-3 mb-1 flex-wrap">
-              <h1 class="text-3xl md:text-4xl font-bold tracking-wider font-display">{set.name}</h1>
+              <h1 class="text-4xl md:text-[3.55rem] leading-none font-bold tracking-[0.05em] font-display uppercase">{set.name}</h1>
               <span class="label-sm text-accent bg-accent/10 px-2 py-0.5 font-mono" title={setTypeLabel(set.set_type)}>{setTypeCode(set.set_type)}</span>
             </div>
             <div class="flex items-center gap-2 label-sm text-text-muted flex-wrap">
@@ -477,7 +478,7 @@
     {#if tagging}
       <div class="mb-4 bg-accent text-bg-primary px-4 py-3 flex items-center justify-between gap-4">
         <div class="flex items-center gap-4 min-w-0">
-          <span class="label shrink-0">tagging</span>
+          <span class="sys-code shrink-0">TGR</span>
           {#if taggingItemIndex != null && set.items[taggingItemIndex]}
             <span class="label-sm truncate">
               {itemDisplayName(set.items[taggingItemIndex])}
@@ -497,10 +498,10 @@
 
       <!-- Left column: sticky setlist -->
       <div class="min-w-0 md:sticky md:top-4 md:max-h-[calc(100svh-8rem)] md:overflow-y-auto">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="label text-text-muted">setlist</h3>
+        <div class="sys-section-head mb-3">
+          <h3 class="sys-kicker">SLT // setlist</h3>
           {#if set.items.length > 0}
-            <span class="label-sm text-text-muted/50">{set.items.length} songs</span>
+            <span class="sys-code text-text-muted/50">{set.items.length} songs</span>
           {/if}
         </div>
 
@@ -510,7 +511,7 @@
               <!-- svelte-ignore a11y_click_events_have_key_events -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
-                class="bg-bg-surface border px-3 py-2.5 flex items-center gap-3 group transition-all {tagging && taggingItemIndex === index ? 'border-accent bg-accent/5' : 'border-border hover:border-border/80'}"
+                class="sys-panel px-3 py-2.5 flex items-center gap-3 group transition-all {tagging && taggingItemIndex === index ? 'border-accent bg-accent/5' : 'hover:border-border/80'}"
                 onclick={() => { if (tagging) selectTaggingItem(index); }}
               >
                 <!-- Reorder -->
@@ -612,7 +613,10 @@
 
         <!-- Recordings -->
         <div>
-          <h3 class="label text-text-muted mb-3">recordings</h3>
+          <div class="sys-section-head mb-3">
+            <h3 class="sys-kicker">REC // recordings</h3>
+            <span class="sys-code text-text-muted/50">{set.tracks.length} assigned</span>
+          </div>
           {#if set.tracks.length > 0}
             <div class="space-y-1 mb-3">
               {#each set.tracks as track}
@@ -648,7 +652,11 @@
 
         <!-- Waveform workspace -->
         {#if primaryTrack && primaryTrack.status === "ready"}
-          <div class="mt-4 border border-border bg-bg-surface {tagging ? 'ring-2 ring-accent ring-offset-2 ring-offset-bg-primary' : ''}">
+          <div class="sys-section-head border-b-0 mt-4">
+            <span class="sys-kicker">TIM // timestamp workspace</span>
+            <span class="sys-code text-text-muted/45 truncate">{primaryTrack.title}</span>
+          </div>
+          <div class="border border-border bg-bg-surface {tagging ? 'ring-2 ring-accent ring-offset-2 ring-offset-bg-primary' : ''}">
             <div class="overflow-x-auto">
               <WaveformPlayer
                 bind:this={playerRef}
@@ -659,7 +667,7 @@
                 clickToTag={tagging}
                 onTimestampClick={tagging ? handleTaggingClick : undefined}
                 minPxPerMin={120}
-                height={240}
+                height={300}
               />
             </div>
           </div>

@@ -794,18 +794,27 @@
       </div>
     {:else}
       <!-- Desktop 2-col layout: main + rail -->
-      <div class="md:grid md:grid-cols-[1fr_220px] md:gap-6 md:items-start">
+      <div class="md:grid md:grid-cols-[minmax(0,1fr)_220px] lg:grid-cols-[minmax(0,1fr)_232px] md:gap-6 lg:gap-8 md:items-start">
 
         <!-- MAIN COLUMN -->
         <div class="min-w-0">
 
           <!-- Title + meta -->
-          <div class="mb-6">
-            <h2 class="text-3xl md:text-4xl font-bold tracking-wider font-display {highlight ? 'animate-highlight' : ''}">{track.title}</h2>
+          <div class="sys-title-block">
+            <div class="flex items-center gap-2 flex-wrap mb-3">
+              <span class="sys-kicker">track console // review + overdub</span>
+              {#if track.song}
+                <span class="sys-chip-accent sys-code">song linked</span>
+              {/if}
+              {#if track.overdub_of}
+                <span class="sys-chip sys-code text-text-muted/70">overdub node</span>
+              {/if}
+            </div>
+            <h2 class="text-4xl md:text-[3.55rem] leading-none font-bold tracking-[0.05em] font-display uppercase {highlight ? 'animate-highlight' : ''}">{track.title}</h2>
             {#if track.description}
               <p class="text-base font-medium text-text-secondary mt-2">{track.description}</p>
             {/if}
-            <div class="flex items-center gap-3 mt-3 label-sm text-text-muted flex-wrap">
+            <div class="sys-panel-muted flex items-center gap-3 mt-4 px-4 py-3 label-sm text-text-muted flex-wrap">
               <span class="font-mono">{formatDuration(track.duration_ms)}</span>
               <span class="vr-divider">/</span>
               <span>{formatFileSize(track.file_size)}</span>
@@ -822,6 +831,10 @@
           {#if !isRppSession}
             {#if track.status === "ready"}
               <div class="{overdubs.length > 0 ? '' : 'mb-8'}">
+                <div class="sys-section-head border-b-0">
+                  <span class="sys-kicker">PLAYBACK // waveform + markers</span>
+                  <span class="sys-code text-text-muted/45">{timedComments.length} markers</span>
+                </div>
                 {#key streamVersion}
                   <WaveformPlayer
                     bind:this={playerRef}
@@ -870,6 +883,10 @@
 
               <!-- Mixer — always shown for RPP sessions, otherwise only when overdubs exist -->
               {#if overdubs.length > 0 || isRppSession}
+                <div class="sys-section-head border-b-0 mt-4">
+                  <span class="sys-kicker">MIX // lanes + offsets</span>
+                  <span class="sys-code text-text-muted/45">{mixerTracks.length} lanes</span>
+                </div>
                 <MultiTrackMixer
                   bind:this={mixerRef}
                   tracks={mixerTracks}
@@ -1024,7 +1041,11 @@
           {/if}
 
           <!-- Comment input -->
-          <div class="mb-8">
+          <div class="mb-8 border-t border-border/35 pt-6">
+            <div class="sys-section-head mb-4">
+              <span class="sys-kicker">REVIEW // comments + timestamps</span>
+              <span class="sys-code text-text-muted/45">{comments.length} entries</span>
+            </div>
             <form onsubmit={(e) => { e.preventDefault(); if (!mentionOpen) submitComment(); }} class="flex gap-3">
               <div class="flex-1 relative">
                 {#if commentTimestamp != null}
@@ -1074,7 +1095,7 @@
         </div>
 
         <!-- RAIL COLUMN -->
-        <aside class="min-w-0 mt-10 md:mt-0 space-y-5 border-t border-border pt-8 md:border-t-0 md:pt-0 md:sticky md:top-4">
+        <aside class="min-w-0 mt-10 md:mt-0 space-y-5 border-t border-border pt-8 md:border-t-0 md:pt-0 md:sticky md:top-4 md:border-l md:border-border/35 md:pl-6">
 
           <!-- Edit + Delete -->
           <div class="flex items-center gap-4">

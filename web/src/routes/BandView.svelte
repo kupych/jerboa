@@ -133,6 +133,16 @@
 
   let feedGroups = $derived(groupFeedItems(feedItems));
 
+  function feedCode(type: ActivityItem["type"]) {
+    switch (type) {
+      case "track": return "TAK";
+      case "overdub": return "ODB";
+      case "comment": return "CMT";
+      case "song": return "SNG";
+      default: return "---";
+    }
+  }
+
   function toggleGroup(key: string) {
     const next = new Set(expandedGroups);
     next.has(key) ? next.delete(key) : next.add(key);
@@ -391,9 +401,10 @@
 {:else if band}
   <div>
     <!-- Band header -->
-    <div class="mb-2">
+    <div class="mb-2 sys-title-block">
+      <div class="sys-kicker mb-3">band channel // live workspace</div>
       <div class="flex items-center gap-3 mb-1">
-        <h2 class="text-2xl md:text-3xl font-bold tracking-wider font-display">{band.band.name}</h2>
+        <h2 class="text-3xl md:text-[3.4rem] leading-none font-bold tracking-[0.05em] font-display uppercase">{band.band.name}</h2>
         <div class="flex items-center gap-1">
           <button
             onclick={() => (showInviteForm = !showInviteForm)}
@@ -422,25 +433,25 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-2 flex-wrap mb-2">
+      <div class="flex items-center gap-2 flex-wrap mb-3">
         {#each band.members as member, i}
-          <span class="label-sm text-text-muted px-3 py-1.5 bg-bg-surface border border-border {i >= 4 && !membersExpanded ? 'hidden md:inline-flex' : ''}">
+          <span class="sys-chip inline-flex items-center gap-1.5 label-sm {i >= 4 && !membersExpanded ? 'hidden md:inline-flex' : ''}">
             {member.user.display_name || member.user.email}
             {#if member.user.id === $currentUser?.id}
-              <span class="text-accent/60 ml-1">you</span>
+              <span class="sys-code text-accent">YOU</span>
             {/if}
           </span>
         {/each}
         {#if !membersExpanded && band.members.length > 4}
           <button
-            class="label-sm text-text-muted/60 hover:text-text-muted transition-colors md:hidden"
+            class="sys-chip inline-flex items-center label-sm text-text-muted/70 hover:text-text-primary transition-colors md:hidden"
             onclick={() => (membersExpanded = true)}
           >+{band.members.length - 4} more</button>
         {/if}
         {#each band.pending_invites ?? [] as invite}
-          <span class="label-sm text-text-muted/60 px-3 py-1.5 border border-dashed border-border/40">
+          <span class="sys-chip inline-flex items-center gap-1.5 label-sm border-dashed text-text-muted/60">
             {invite.email}
-            <span class="text-text-muted/35 ml-1">invited</span>
+            <span class="sys-code text-text-muted/35">invited</span>
           </span>
         {/each}
       </div>
@@ -631,9 +642,9 @@
     {/if}
 
     <!-- Add material slab -->
-    <div class="border border-border/40 mb-4 mt-6">
+    <div class="sys-panel mb-4 mt-6">
       <div class="px-3 py-2 border-b border-border/25">
-        <span class="label text-text-muted/30">add material</span>
+        <span class="sys-kicker">MAT // add material</span>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-px bg-border/30">
       <div class="bg-bg-primary"><TrackUpload bandSlug={slug} onUploaded={loadTracks} /></div>
@@ -770,7 +781,7 @@
 
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="bg-bg-surface border border-border border-l-2 border-l-transparent transition-all {solo && item.link_id ? 'hover:border-l-accent hover:border-accent/40 group cursor-pointer' : !solo ? 'hover:border-accent/20' : ''}">
+            <div class="sys-panel border-l-2 border-l-transparent transition-all {solo && item.link_id ? 'hover:border-l-accent hover:border-accent/40 group cursor-pointer' : !solo ? 'hover:border-accent/20' : ''}">
 
               <!-- Header row -->
               <div
@@ -780,25 +791,9 @@
                 <!-- New dot -->
                 <div class="shrink-0 mt-1.5 w-1.5 h-1.5 {group.has_new ? 'bg-accent' : 'bg-transparent'} rounded-full -ml-1 mr-0.5"></div>
 
-                <!-- Icon -->
-                <div class="shrink-0 mt-0.5 text-text-muted/40">
-                  {#if group.type === "track"}
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
-                  {:else if group.type === "overdub"}
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/>
-                    </svg>
-                  {:else if group.type === "comment"}
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    </svg>
-                  {:else if group.type === "song"}
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-                    </svg>
-                  {/if}
+                <!-- Event code -->
+                <div class="shrink-0 mt-0.5">
+                  <span class="sys-chip sys-code text-text-muted/70">{feedCode(group.type)}</span>
                 </div>
 
                 <!-- Summary text -->
@@ -901,7 +896,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="bg-bg-surface border border-border border-l-2 border-l-transparent hover:border-l-accent hover:border-accent/40 px-4 py-3 transition-all cursor-pointer group flex items-center justify-between"
+              class="sys-panel border-l-2 border-l-transparent hover:border-l-accent hover:border-accent/40 px-4 py-3 transition-all cursor-pointer group flex items-center justify-between"
               onclick={() => navigate(`/band/${slug}/song/${song.id}`)}
             >
               <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors">{song.name}</h4>
@@ -924,7 +919,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="bg-bg-surface border border-border px-4 py-3 hover:border-accent/40 transition-colors cursor-pointer group flex items-center justify-between"
+              class="sys-panel px-4 py-3 hover:border-accent/40 transition-colors cursor-pointer group flex items-center justify-between"
               onclick={() => navigate(`/band/${slug}/set/${set.id}`)}
             >
               <div class="flex items-center gap-3 min-w-0">
@@ -1018,7 +1013,7 @@
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
-            class="bg-bg-surface border border-border border-l-2 border-l-transparent hover:border-l-accent hover:border-accent/40 px-4 py-3 transition-all cursor-pointer group flex items-center justify-between"
+            class="sys-panel border-l-2 border-l-transparent hover:border-l-accent hover:border-accent/40 px-4 py-3 transition-all cursor-pointer group flex items-center justify-between"
             onclick={() => navigate(`/band/${slug}/tag/${encodeURIComponent(tag)}`)}
           >
             <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors">{tag}</h4>
@@ -1048,8 +1043,8 @@
     <!-- Desktop context rail -->
     <aside class="hidden lg:block">
       <div class="sticky top-6 space-y-3">
-        <div class="border border-border p-3">
-          <div class="label text-text-muted/50 mb-2.5">overview</div>
+        <div class="sys-panel p-3">
+          <div class="sys-kicker mb-2.5">OVR // overview</div>
           <div class="space-y-1.5">
             <div class="flex items-center justify-between">
               <span class="label-sm text-text-muted">songs</span>

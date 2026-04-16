@@ -1,6 +1,9 @@
 version: 1
 title: Jerboa redesign agent spec
 status: active
+source_docs:
+  - docs/redesign/jerboa-redesign-philosophy.md
+  - docs/redesign/jerboa-visual-language-guidelines.md
 
 baseline:
   confirmed_fixes:
