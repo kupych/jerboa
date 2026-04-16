@@ -149,7 +149,7 @@
 
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="flex-1 relative h-8 cursor-pointer" onclick={handleSeek}>
+  <div class="flex-1 min-w-0 relative h-8 cursor-pointer" onclick={handleSeek}>
     {#if hasPeaks}
       <canvas bind:this={canvas} width="300" height="32" class="w-full h-full block"></canvas>
       <div class="absolute top-0 bottom-0 w-px bg-white/50 pointer-events-none" style="left: {playheadPct}%"></div>
@@ -158,7 +158,7 @@
     {/if}
   </div>
 
-  <span class="label-sm font-mono text-text-muted/50 shrink-0 tabular-nums w-20 text-right">
+  <span class="label-sm font-mono text-text-muted/50 shrink-0 tabular-nums w-24 whitespace-nowrap text-right">
     {formatDuration(currentMs)} / {formatDuration(localDuration)}
   </span>
 </div>

@@ -55,20 +55,31 @@
 
 <div>
   <!-- Section header -->
-  <div class="flex items-center justify-between mb-8">
-    <h2 class="label text-text-secondary font-display">bands</h2>
-    {#if $user?.is_admin}
-      <button
-        onclick={() => (showCreate = !showCreate)}
-        class="label text-accent hover:text-accent-hover transition-colors flex items-center gap-2"
-      >
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-          <line x1="12" y1="5" x2="12" y2="19"/>
-          <line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
-        new band
-      </button>
-    {/if}
+  <div class="sys-title-block mb-8">
+    <div class="flex items-start justify-between gap-6">
+      <div>
+        <div class="sys-kicker mb-3">switchboard // band index</div>
+        <div class="flex items-end gap-4 flex-wrap">
+          <div class="sys-mega text-accent/90">{String(bands.length).padStart(2, "0")}</div>
+          <div class="pb-1">
+            <h2 class="label text-text-secondary font-display">bands</h2>
+            <p class="label-sm text-text-muted/50 mt-1">active workspaces you can jump into</p>
+          </div>
+        </div>
+      </div>
+      {#if $user?.is_admin}
+        <button
+          onclick={() => (showCreate = !showCreate)}
+          class="label text-accent hover:text-accent-hover transition-colors flex items-center gap-2 pt-1"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          new band
+        </button>
+      {/if}
+    </div>
   </div>
 
   {#if showCreate}
@@ -107,9 +118,20 @@
   {#if loading}
     <div class="flex items-center justify-center gap-2 py-20 label text-text-muted"><span class="w-1.5 h-1.5 bg-accent/40 animate-pulse"></span><span class="tracking-[0.2em] font-mono">SYS.LOAD</span></div>
   {:else if bands.length === 0}
-    <div class="text-center py-20 space-y-3">
-      <div class="text-text-muted text-base tracking-wider">no bands yet</div>
-      <div class="label-sm text-text-muted">create one or join via invite link</div>
+    <div class="sys-empty">
+      <div class="sys-empty-code">BND // 00</div>
+      <div class="sys-empty-title text-text-primary mt-3">No Bands</div>
+      <p class="sys-empty-copy mt-3">Create a workspace or join one through an invite link. This is the switchboard, so keep it clean and obvious.</p>
+      {#if $user?.is_admin}
+        <div class="mt-5">
+          <button
+            onclick={() => (showCreate = true)}
+            class="px-5 py-2.5 bg-accent hover:bg-accent-hover text-bg-primary label-sm transition-colors"
+          >
+            create band
+          </button>
+        </div>
+      {/if}
     </div>
   {:else}
     <div class="grid gap-3">

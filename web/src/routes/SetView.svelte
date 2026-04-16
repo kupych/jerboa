@@ -90,6 +90,15 @@
   let streamUrl = $derived(
     primaryTrack ? `/api/bands/${slug}/tracks/${primaryTrack.id}/stream` : ""
   );
+  let setRuntimeMs = $derived(
+    set
+      ? Math.max(
+          primaryTrack?.duration_ms ?? 0,
+          ...set.items.map((item) => item.end_ms ?? 0)
+        )
+      : 0
+  );
+  let setRuntimeLabel = $derived(setRuntimeMs > 0 ? formatDuration(setRuntimeMs) : "--:--");
 
   let regions = $derived(() => {
     if (!set?.items) return [];
@@ -436,6 +445,16 @@
             {#if set.notes}
               <p class="text-sm font-medium text-text-secondary mt-2">{set.notes}</p>
             {/if}
+            <div class="sys-stat-grid mt-4 grid-cols-1 sm:grid-cols-2">
+              <div class="sys-stat">
+                <div class="sys-code text-text-muted/45">SLT // songs</div>
+                <div class="sys-stat-value text-accent mt-2">{String(set.items.length).padStart(2, "0")}</div>
+              </div>
+              <div class="sys-stat">
+                <div class="sys-code text-text-muted/45">RUN // runtime</div>
+                <div class="sys-stat-value mt-2">{setRuntimeLabel}</div>
+              </div>
+            </div>
           </div>
           <button onclick={startEditMeta} class="label text-text-muted hover:text-accent transition-colors shrink-0 mt-1">edit</button>
         </div>
@@ -476,19 +495,24 @@
 
     <!-- Tagging mode banner — unmissable -->
     {#if tagging}
-      <div class="mb-4 bg-accent text-bg-primary px-4 py-3 flex items-center justify-between gap-4">
-        <div class="flex items-center gap-4 min-w-0">
-          <span class="sys-code shrink-0">TGR</span>
+      <div class="sys-mode-bar mb-4">
+        <div class="min-w-0">
+          <div class="flex items-center gap-3 flex-wrap">
+            <span class="sys-code text-accent">TGR</span>
+            <span class="label-sm text-accent">interactive state</span>
+          </div>
+          <div class="sys-stat-value text-accent mt-2">Tagging Mode</div>
           {#if taggingItemIndex != null && set.items[taggingItemIndex]}
-            <span class="label-sm truncate">
+            <p class="label-sm text-text-secondary mt-2 truncate">
               {itemDisplayName(set.items[taggingItemIndex])}
-              <span class="opacity-60 ml-1">— click waveform to set {taggingPhase}</span>
-            </span>
+              <span class="text-text-muted/60 ml-1">/ click waveform to set {taggingPhase}</span>
+            </p>
           {/if}
         </div>
-        <div class="flex items-center gap-3 shrink-0">
-          <span class="label-sm opacity-60">{(taggingItemIndex ?? 0) + 1} / {set.items.length}</span>
-          <button onclick={exitTaggingMode} class="label-sm underline underline-offset-2 opacity-70 hover:opacity-100 transition-opacity">exit</button>
+        <div class="shrink-0 text-right">
+          <div class="sys-code text-text-muted/50">{String((taggingItemIndex ?? 0) + 1).padStart(2, "0")} / {String(set.items.length).padStart(2, "0")}</div>
+          <div class="label-sm text-accent mt-2">{taggingPhase} point</div>
+          <button onclick={exitTaggingMode} class="label-sm text-text-muted hover:text-text-primary transition-colors mt-3">exit mode</button>
         </div>
       </div>
     {/if}
@@ -580,8 +604,10 @@
             {/each}
           </div>
         {:else}
-          <div class="text-center py-10 label text-text-muted bg-bg-surface border border-border">
-            no songs in setlist
+          <div class="sys-empty">
+            <div class="sys-empty-code">SLT // 00</div>
+            <div class="sys-empty-title text-text-primary mt-3">No Setlist</div>
+            <p class="sys-empty-copy mt-3">Add songs or covers here first. This column is the running order that everything else keys off.</p>
           </div>
         {/if}
 
@@ -646,7 +672,11 @@
               {/each}
             </select>
           {:else if set.tracks.length === 0}
-            <div class="label-sm text-text-muted/50 py-3">no recordings available to assign</div>
+            <div class="sys-empty">
+              <div class="sys-empty-code">REC // 00</div>
+              <div class="sys-empty-title text-text-primary mt-3">No Recordings</div>
+              <p class="sys-empty-copy mt-3">Assign one take to this set so the timestamp workspace has a source track to tag against.</p>
+            </div>
           {/if}
         </div>
 
@@ -670,6 +700,12 @@
                 height={300}
               />
             </div>
+          </div>
+        {:else}
+          <div class="sys-empty">
+            <div class="sys-empty-code">TIM // ---</div>
+            <div class="sys-empty-title text-text-primary mt-3">Workspace Idle</div>
+            <p class="sys-empty-copy mt-3">Assign a ready recording to unlock the timestamp canvas. This area becomes the main tagging surface once audio is attached.</p>
           </div>
         {/if}
 

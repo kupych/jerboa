@@ -187,6 +187,113 @@ body {
   text-transform: uppercase;
 }
 
+.sys-mega {
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 7vw, 5.2rem);
+  line-height: 0.88;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sys-stat-grid {
+  display: grid;
+  gap: 1px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-border) 45%, transparent);
+}
+
+.sys-stat {
+  background: var(--color-bg-surface);
+  padding: 0.85rem 1rem 0.8rem;
+  min-width: 0;
+}
+
+.sys-stat-value {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 4.5vw, 3rem);
+  line-height: 0.9;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sys-stat-value-compact {
+  font-size: clamp(1.35rem, 3.8vw, 2.5rem);
+  letter-spacing: 0.05em;
+}
+
+.sys-edge-label {
+  position: absolute;
+  top: 0.8rem;
+  right: -1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.32rem 0.38rem;
+  border-left: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-bg-secondary) 74%, var(--color-bg-primary));
+  color: color-mix(in srgb, var(--color-text-muted) 78%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.sys-mode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-bg-surface));
+  box-shadow: var(--shadow-panel);
+  padding: 0.9rem 1rem;
+}
+
+.sys-empty {
+  min-height: 11rem;
+  border: 1px solid var(--color-border);
+  background:
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-bg-secondary) 52%, transparent), transparent 52%),
+    var(--color-bg-surface);
+  box-shadow: var(--shadow-panel-strong);
+  padding: 1.2rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.sys-empty-code {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text-muted) 55%, transparent);
+}
+
+.sys-empty-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 5vw, 3.4rem);
+  line-height: 0.92;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sys-empty-copy {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.45;
+  max-width: 34rem;
+}
+
 /* Small text needs weight on HiDPI */
 .text-sm {
   font-weight: 500;

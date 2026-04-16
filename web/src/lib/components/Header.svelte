@@ -55,6 +55,21 @@
     navigate(`/band/${slug}`);
   }
 
+  function openProfile() {
+    bandMenuOpen = false;
+    navigate("/profile");
+  }
+
+  function openAdmin() {
+    bandMenuOpen = false;
+    navigate("/admin");
+  }
+
+  function signOut() {
+    bandMenuOpen = false;
+    logout();
+  }
+
   async function createBand() {
     if (!newBandName.trim() || submitting) return;
     submitting = true;
@@ -82,7 +97,7 @@
 
 <header class="border-b border-border bg-bg-secondary" style="box-shadow: var(--shadow-header);">
   <nav class="flex items-center justify-between h-14 md:h-20 px-5 md:px-12 w-full {widthClass[$layoutWidth]} mx-auto">
-    <div class="flex items-center gap-3 md:gap-4 min-w-0">
+    <div class="flex items-center gap-2 md:gap-4 min-w-0">
       <button
         onclick={handleLogoClick}
         class="flex items-center gap-2 md:gap-2.5 text-base md:text-lg font-bold tracking-[0.25em] uppercase text-accent hover:text-accent-hover transition-colors font-display shrink-0"
@@ -92,11 +107,11 @@
       </button>
 
       {#if currentBand}
-        <span class="text-text-muted/30 font-mono text-sm select-none">/</span>
+        <span class="hidden sm:inline text-text-muted/30 font-mono text-sm select-none">/</span>
         <div class="relative min-w-0">
           <button
             onclick={() => (bandMenuOpen = !bandMenuOpen)}
-            class="sys-chip label text-text-secondary hover:text-text-primary transition-colors truncate inline-flex items-center gap-1.5"
+            class="sys-chip label text-text-secondary hover:text-text-primary transition-colors truncate inline-flex items-center gap-1.5 h-8 px-3 max-w-[9.25rem] sm:max-w-[11rem] md:max-w-none"
           >
             <span class="hidden xl:inline sys-code text-text-muted/45">band</span>
             <span class="truncate">{currentBand.name}</span>
@@ -146,19 +161,41 @@
                   {/if}
                 </div>
               {/if}
+              <div class="border-t border-border mt-1 pt-1 md:hidden">
+                <button
+                  onclick={openProfile}
+                  class="w-full text-left px-4 py-2.5 label text-text-secondary hover:text-text-primary hover:bg-bg-surface transition-colors"
+                >
+                  profile
+                </button>
+                {#if $user?.is_admin}
+                  <button
+                    onclick={openAdmin}
+                    class="w-full text-left px-4 py-2.5 label text-text-secondary hover:text-text-primary hover:bg-bg-surface transition-colors"
+                  >
+                    admin
+                  </button>
+                {/if}
+                <button
+                  onclick={signOut}
+                  class="w-full text-left px-4 py-2.5 label text-text-muted hover:text-text-primary hover:bg-bg-surface transition-colors"
+                >
+                  sign out
+                </button>
+              </div>
             </div>
           {/if}
         </div>
       {/if}
 
-      <span class="hidden xl:block"><span class="sys-chip sys-code text-text-muted/35 select-none">SYS.AUD.01.{version}</span></span>
+      <span class="hidden xl:inline-flex sys-chip sys-code text-text-muted/35 select-none items-center h-8 px-3">SYS.AUD.01.{version}</span>
     </div>
 
-    <div class="flex items-center gap-4 md:gap-5">
+    <div class="flex items-center gap-2 sm:gap-3 md:gap-5 shrink-0">
       {#if $route.bandSlug}
         <button
           onclick={onChatToggle}
-          class="flex items-center justify-center w-8 h-8 transition-colors {chatOpen ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+          class="flex items-center justify-center w-7 h-7 md:w-8 md:h-8 transition-colors {chatOpen ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
           title="Chat"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -170,7 +207,7 @@
       <div class="relative flex items-center">
         <button
           onclick={() => (notifOpen = !notifOpen)}
-          class="flex items-center justify-center w-8 h-8 transition-colors {notifOpen ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+          class="flex items-center justify-center w-7 h-7 md:w-8 md:h-8 transition-colors {notifOpen ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
           title="What's new"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="translate-y-px">
@@ -210,7 +247,7 @@
       {#if $user?.is_admin}
         <button
           onclick={() => navigate("/admin")}
-          class="flex items-center justify-center w-8 h-8 text-text-muted hover:text-text-secondary transition-colors"
+          class="hidden md:flex items-center justify-center w-8 h-8 text-text-muted hover:text-text-secondary transition-colors"
           title="Admin"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -236,7 +273,7 @@
             {/if}
           </button>
           <button
-            onclick={() => logout()}
+            onclick={signOut}
             class="label text-text-muted hover:text-text-secondary transition-colors hidden md:block"
           >
             out

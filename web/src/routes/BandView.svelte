@@ -135,7 +135,7 @@
 
   function feedCode(type: ActivityItem["type"]) {
     switch (type) {
-      case "track": return "TAK";
+      case "track": return "TRK";
       case "overdub": return "ODB";
       case "comment": return "CMT";
       case "song": return "SNG";
@@ -188,6 +188,27 @@
   let membersExpanded = $state(false);
 
   let ungroupedTracks = $derived(tracks.filter((t) => !t.song_id && !t.set_id && !t.bounced_to && !t.overdub_of));
+  let activeTabCode = $derived(
+    viewTab === "feed" ? "ACT" :
+    viewTab === "songs" ? "SNG" :
+    viewTab === "sets" ? "SET" :
+    viewTab === "tags" ? "TAG" :
+    "FIL"
+  );
+  let activeTabLabel = $derived(
+    viewTab === "feed" ? "activity" :
+    viewTab === "songs" ? "songs" :
+    viewTab === "sets" ? "sets" :
+    viewTab === "tags" ? "tags" :
+    "files"
+  );
+  let activeTabCount = $derived(
+    viewTab === "feed" ? feedGroups.length :
+    viewTab === "songs" ? songs.length :
+    viewTab === "sets" ? sets.length :
+    viewTab === "tags" ? taggedTracks.size :
+    files.length
+  );
 
   // Reload when slug changes (band switching)
   $effect(() => {
@@ -770,7 +791,11 @@
 
     {#if viewTab === "feed"}
       {#if feedGroups.length === 0}
-        <div class="text-center py-12 label text-text-muted mb-4">no activity yet</div>
+        <div class="sys-empty mb-4">
+          <div class="sys-empty-code">ACT // 00</div>
+          <div class="sys-empty-title text-text-primary mt-3">No Activity</div>
+          <p class="sys-empty-copy mt-3">Fresh takes, comments, and overdubs will land here as soon as the band starts moving.</p>
+        </div>
       {:else}
         <div class="space-y-px mb-4">
           {#each feedGroups as group (group.key + group.latest_at)}
@@ -785,21 +810,17 @@
 
               <!-- Header row -->
               <div
-                class="flex items-start gap-3 px-4 py-3 {!solo ? 'cursor-pointer' : ''}"
+                class="flex items-start gap-3 pl-3 pr-4 py-3 {!solo ? 'cursor-pointer' : ''}"
                 onclick={() => solo ? (item.link_id && navigate(`/band/${slug}/track/${item.link_id}`)) : toggleGroup(group.key + group.latest_at)}
               >
-                <!-- New dot -->
-                <div class="shrink-0 mt-1.5 w-1.5 h-1.5 {group.has_new ? 'bg-accent' : 'bg-transparent'} rounded-full -ml-1 mr-0.5"></div>
-
-                <!-- Event code -->
-                <div class="shrink-0 mt-0.5">
-                  <span class="sys-chip sys-code text-text-muted/70">{feedCode(group.type)}</span>
+                <!-- Event code gutter -->
+                <div class="shrink-0 flex w-10 self-stretch items-center justify-center">
+                  <span class="sys-code text-center {group.has_new ? 'text-accent/90' : 'text-text-muted/45'}">{feedCode(group.type)}</span>
                 </div>
 
                 <!-- Summary text -->
-                <div class="flex-1 min-w-0">
-                  <!-- Primary sentence + group controls -->
-                  <div class="flex items-start justify-between gap-2">
+                <div class="flex-1 min-w-0 flex items-center justify-between gap-3">
+                  <div class="min-w-0 flex-1">
                     <p class="text-sm font-medium leading-snug">
                       {#if group.type === "track"}
                         <span class="font-bold text-text-primary">{group.actor_name}</span>
@@ -826,32 +847,35 @@
                         <span class="text-text-secondary"> added to songs</span>
                       {/if}
                     </p>
-                    {#if !solo}
-                      <div class="flex items-center gap-2 shrink-0">
-                        <span class="label-sm text-text-muted/50 bg-bg-elevated px-1.5 py-0.5 tabular-nums">{n}</span>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-text-muted/50 transition-transform {expanded ? 'rotate-180' : ''}">
-                          <polyline points="6 9 12 15 18 9"/>
-                        </svg>
-                      </div>
+
+                    <!-- Metadata line -->
+                    <p class="mt-0.5 label-sm text-text-muted/45">
+                      {formatRelativeTime(group.latest_at)}{#if solo && item.type === "comment" && item.timestamp_ms != null} · at {formatDuration(item.timestamp_ms)}{/if}
+                    </p>
+
+                    <!-- Solo item preview -->
+                    {#if solo}
+                      {#if (item.type === "track" || item.type === "overdub") && (item.stream_id || item.link_id)}
+                        <MiniPlayer
+                          src={`/api/bands/${slug}/tracks/${item.stream_id || item.link_id}/stream`}
+                          peaks={item.peaks ?? []}
+                          duration_ms={item.duration_ms ?? 0}
+                        />
+                      {:else if item.type === "comment" && item.preview}
+                        <p class="mt-1.5 text-sm text-text-muted italic border-l-2 border-border pl-2 leading-snug">"{item.preview}"</p>
+                      {/if}
                     {/if}
                   </div>
 
-                  <!-- Metadata line -->
-                  <p class="mt-0.5 label-sm text-text-muted/45">
-                    {formatRelativeTime(group.latest_at)}{#if solo && item.type === "comment" && item.timestamp_ms != null} · at {formatDuration(item.timestamp_ms)}{/if}
-                  </p>
-
-                  <!-- Solo item preview -->
-                  {#if solo}
-                    {#if (item.type === "track" || item.type === "overdub") && (item.stream_id || item.link_id)}
-                      <MiniPlayer
-                        src={`/api/bands/${slug}/tracks/${item.stream_id || item.link_id}/stream`}
-                        peaks={item.peaks ?? []}
-                        duration_ms={item.duration_ms ?? 0}
-                      />
-                    {:else if item.type === "comment" && item.preview}
-                      <p class="mt-1.5 text-sm text-text-muted italic border-l-2 border-border pl-2 leading-snug">"{item.preview}"</p>
-                    {/if}
+                  {#if !solo}
+                    <div class="flex items-center gap-2 shrink-0 self-center">
+                      <span class="label-sm text-text-muted/50 bg-bg-elevated px-1.5 py-0.5 tabular-nums min-w-5 h-5 inline-flex items-center justify-center">{n}</span>
+                      <span class="w-4 h-4 inline-flex items-center justify-center">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-text-muted/50 transition-transform {expanded ? 'rotate-180' : ''}">
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      </span>
+                    </div>
                   {/if}
                 </div>
               </div>
@@ -863,7 +887,7 @@
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
-                      class="pl-10 pr-4 py-2.5 {item.link_id ? 'cursor-pointer hover:bg-bg-elevated/30 group/item' : ''}"
+                      class="pl-16 pr-4 py-2.5 {item.link_id ? 'cursor-pointer hover:bg-bg-elevated/30 group/item' : ''}"
                       onclick={() => item.link_id && navigate(`/band/${slug}/track/${item.link_id}`)}
                     >
                       <div class="flex items-center justify-between gap-2 mb-0.5">
@@ -907,9 +931,11 @@
             </div>
           {/each}
         </div>
-      {:else if tracks.length === 0}
-        <div class="text-center py-12 label text-text-muted mb-4">
-          no songs yet
+      {:else}
+        <div class="sys-empty mb-4">
+          <div class="sys-empty-code">SNG // 00</div>
+          <div class="sys-empty-title text-text-primary mt-3">No Songs</div>
+          <p class="sys-empty-copy mt-3">Start a song document here, then attach takes, notes, lyrics, and set usage around it.</p>
         </div>
       {/if}
     {:else if viewTab === "sets"}
@@ -938,8 +964,10 @@
           {/each}
         </div>
       {:else}
-        <div class="text-center py-12 label text-text-muted mb-4">
-          no sets yet
+        <div class="sys-empty mb-4">
+          <div class="sys-empty-code">SET // 00</div>
+          <div class="sys-empty-title text-text-primary mt-3">No Sets</div>
+          <p class="sys-empty-copy mt-3">Build rehearsal runs, live sequences, or pre-production lists here, then tag them against recordings.</p>
         </div>
       {/if}
     {/if}
@@ -977,7 +1005,11 @@
       {#if filesLoading}
         <div class="text-center py-8 label text-text-muted">loading...</div>
       {:else if files.length === 0}
-        <div class="text-center py-8 label text-text-muted">no files yet</div>
+        <div class="sys-empty mb-4">
+          <div class="sys-empty-code">FIL // 00</div>
+          <div class="sys-empty-title text-text-primary mt-3">No Files</div>
+          <p class="sys-empty-copy mt-3">Drop stems, charts, reference docs, or session exports here so the band always has a clean shared stash.</p>
+        </div>
       {:else}
         <div class="space-y-1 mb-4">
           {#each files as file}
@@ -1008,22 +1040,30 @@
     {/if}
 
     {#if viewTab === "tags"}
-      <div class="space-y-1 mb-4">
-        {#each [...taggedTracks.entries()] as [tag, tagTracks]}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="sys-panel border-l-2 border-l-transparent hover:border-l-accent hover:border-accent/40 px-4 py-3 transition-all cursor-pointer group flex items-center justify-between"
-            onclick={() => navigate(`/band/${slug}/tag/${encodeURIComponent(tag)}`)}
-          >
-            <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors">{tag}</h4>
-            <div class="flex items-center gap-3">
-              <span class="label-sm text-text-muted group-hover:text-accent transition-colors">{tagTracks.length} {tagTracks.length === 1 ? 'take' : 'takes'}</span>
-              <span class="label-sm text-text-muted/0 group-hover:text-accent transition-colors">&rsaquo;</span>
+      {#if taggedTracks.size > 0}
+        <div class="space-y-1 mb-4">
+          {#each [...taggedTracks.entries()] as [tag, tagTracks]}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="sys-panel border-l-2 border-l-transparent hover:border-l-accent hover:border-accent/40 px-4 py-3 transition-all cursor-pointer group flex items-center justify-between"
+              onclick={() => navigate(`/band/${slug}/tag/${encodeURIComponent(tag)}`)}
+            >
+              <h4 class="text-base font-semibold tracking-wider text-text-primary font-display group-hover:text-accent transition-colors">{tag}</h4>
+              <div class="flex items-center gap-3">
+                <span class="label-sm text-text-muted group-hover:text-accent transition-colors">{tagTracks.length} {tagTracks.length === 1 ? 'take' : 'takes'}</span>
+                <span class="label-sm text-text-muted/0 group-hover:text-accent transition-colors">&rsaquo;</span>
+              </div>
             </div>
-          </div>
-        {/each}
-      </div>
+          {/each}
+        </div>
+      {:else}
+        <div class="sys-empty mb-4">
+          <div class="sys-empty-code">TAG // 00</div>
+          <div class="sys-empty-title text-text-primary mt-3">No Tags</div>
+          <p class="sys-empty-copy mt-3">Tags become useful once takes start piling up. Use them to sort moods, revisions, instrumentation, or decisions.</p>
+        </div>
+      {/if}
     {/if}
 
     <!-- Ungrouped tracks -->
@@ -1043,7 +1083,11 @@
     <!-- Desktop context rail -->
     <aside class="hidden lg:block">
       <div class="sticky top-6 space-y-3">
-        <div class="sys-panel p-3">
+        <div class="sys-panel relative overflow-hidden p-3 pr-10">
+          <span class="sys-edge-label">OVR</span>
+          <div class="sys-code text-text-muted/45">{activeTabCode} // {activeTabLabel}</div>
+          <div class="sys-stat-value text-accent mt-2">{String(activeTabCount).padStart(2, "0")}</div>
+          <div class="label-sm text-text-muted/55 mt-1 mb-3">{activeTabLabel} visible</div>
           <div class="sys-kicker mb-2.5">OVR // overview</div>
           <div class="space-y-1.5">
             <div class="flex items-center justify-between">

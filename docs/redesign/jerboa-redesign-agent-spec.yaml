@@ -4,6 +4,7 @@ status: active
 source_docs:
   - docs/redesign/jerboa-redesign-philosophy.md
   - docs/redesign/jerboa-visual-language-guidelines.md
+  - docs/redesign/jerboa-iconography-spec.md
 
 baseline:
   confirmed_fixes:
@@ -35,6 +36,11 @@ visual_doctrine:
     - one_dominant_anchor_per_screen
     - accent_means_active_current_primary_or_armed
     - geometry_and_proportion_create_attitude_more_than_decoration
+  sanctioned_motifs:
+    - oversized_numeric_anchors_for_primary_counts_only
+    - edge_labels_for_rails_modules_and_sidecars
+    - mode_bars_for_high_value_state_changes_only
+    - poster_like_empty_states_with_one_anchor_one_line_one_cta
   typography:
     body_font: Rajdhani
     display_font: Chakra Petch

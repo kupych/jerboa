@@ -201,6 +201,151 @@ Avoid:
 
 A panel should feel like it opens or reveals. It should not feel like it drifts.
 
+## TDR/Warp Extensions
+These are sanctioned ways to push the visual language harder without breaking usability.
+
+Use them selectively. They should sharpen hierarchy and identity, not turn every page into a poster.
+
+### 1. Oversized Numeric Anchors
+Use giant numerals or counters when a number is central to the page's meaning.
+
+Good candidates:
+
+- `7 SONGS`
+- `3 TAKES`
+- `2 MARKERS`
+- `120 BPM`
+- `36:38`
+
+Rules:
+
+- the number must reflect the page's dominant anchor or primary task
+- it should sit near the title or section header, not deep inside metadata
+- it should feel like a structural heading, not decorative wallpaper
+- use at most one oversized numeric anchor per major page region
+
+Best uses:
+
+- Dashboard counts
+- Band overview counts
+- Song BPM or take totals
+- Track marker counts or duration
+- Set song count or runtime
+
+Avoid:
+
+- scattering giant numbers everywhere
+- using oversized numbers for low-value metadata
+- letting the number outshout the page title unless it is the page title
+
+### 2. Edge Labeling
+Use short coded labels on the edge of rails, modules, or page regions to make the interface feel cataloged and instrument-like.
+
+Examples:
+
+- `OVR`
+- `META`
+- `MIX`
+- `LIVE`
+- `REV`
+
+Rules:
+
+- edge labels must be short, coded, and quiet
+- they belong on side rails, module edges, drawer edges, or narrow vertical surfaces
+- they should support orientation, not replace the main heading
+- they should be aligned to the geometry of the layout, not floating freely
+
+Best uses:
+
+- Track side rails
+- Set planner side modules
+- Band overview rails
+- narrow utility modules in desktop layouts
+
+Avoid:
+
+- putting edge labels on every panel
+- using long words where a short code works better
+- making them brighter than the main content
+
+### 3. Mode Bars
+Whenever the product enters a special mode, use a dedicated bar or banner to make that state unmistakable.
+
+Good candidates:
+
+- tagging
+- armed record
+- queue active
+- perform live
+- review focus
+
+Rules:
+
+- mode bars should be immediate and hard to miss
+- they should span the local work surface, not hide inside a small chip
+- they may use accent or high-contrast reversal because mode changes are high-value state
+- their copy should be blunt and operational
+
+Examples:
+
+- `TAGGING MODE`
+- `RECORD ARMED`
+- `QUEUE ACTIVE`
+- `LIVE MODE`
+
+Best uses:
+
+- Set timestamp tagging
+- Track overdub and record states
+- Perform mode variants
+- any temporary state that changes how clicks or taps behave
+
+Avoid:
+
+- using a mode bar for routine passive states
+- stacking multiple mode bars on one screen
+- burying mode state inside metadata rows
+
+### 4. Poster-Like Empty States
+Empty states should feel designed, not apologetic.
+
+The correct mood is not "nothing here." The correct mood is "this slot is ready."
+
+Rules:
+
+- one bold anchor
+- one line of utility instruction
+- one obvious next action
+- optional code or count treatment
+
+Good structure:
+
+- big code or title
+- one short supporting line
+- one CTA or next step
+
+Examples:
+
+- `NO SONGS`
+- `0 TAKES`
+- `QUEUE EMPTY`
+- `NO RECORDINGS ASSIGNED`
+
+Best uses:
+
+- Dashboard when there are no bands
+- Band tabs with no songs, sets, or activity
+- Song pages with no takes or empty document sections
+- Set pages with no recordings
+
+Avoid:
+
+- multi-paragraph empty states
+- playful filler language
+- generic illustration-driven empties
+- more than one CTA in an empty state
+
 ## Shared Primitives In Code
 Prefer reusing the existing system utilities before inventing new visual patterns.
 

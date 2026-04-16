@@ -177,6 +177,24 @@
       } catch { return null; }
     })()
   );
+  let activeOverdubMode = $derived(
+    showOverdubRecord ? {
+      code: "REC",
+      title: "Record Armed",
+      detail: `Parent rolls from ${punchInMs > 0 ? formatDuration(punchInMs) : "0:00"}${calibratedLatency != null ? ` with ${calibratedLatency}ms compensation` : ""}.`
+    } :
+    showOverdubUpload ? {
+      code: "UPL",
+      title: "Upload Mode",
+      detail: "Import a pre-recorded overdub and place it against the parent track."
+    } :
+    showLinkTrack ? {
+      code: "LNK",
+      title: "Link Mode",
+      detail: "Attach an existing track as a shared overdub reference instead of creating a duplicate file."
+    } :
+    null
+  );
 
   async function calibrate() {
     calibrating = true;
@@ -912,6 +930,25 @@
 
               <!-- Overdub actions module -->
               <div class="mt-3">
+                {#if activeOverdubMode}
+                  <div class="sys-mode-bar mb-3">
+                    <div class="min-w-0">
+                      <div class="flex items-center gap-3 flex-wrap">
+                        <span class="sys-code text-accent">{activeOverdubMode.code}</span>
+                        <span class="label-sm text-accent">overdub mode</span>
+                      </div>
+                      <div class="sys-stat-value text-accent mt-2">{activeOverdubMode.title}</div>
+                      <p class="label-sm text-text-secondary mt-2">{activeOverdubMode.detail}</p>
+                    </div>
+                    <button
+                      onclick={() => { showOverdubUpload = false; showOverdubRecord = false; showLinkTrack = false; }}
+                      class="label-sm text-text-muted hover:text-text-primary transition-colors shrink-0"
+                    >
+                      exit mode
+                    </button>
+                  </div>
+                {/if}
+
                 <!-- Mobile: collapsed by default -->
                 <button
                   class="md:hidden w-full flex items-center justify-between px-4 py-2.5 border border-border bg-bg-surface label-sm text-text-muted hover:text-text-secondary transition-colors"
@@ -1096,6 +1133,22 @@
 
         <!-- RAIL COLUMN -->
         <aside class="min-w-0 mt-10 md:mt-0 space-y-5 border-t border-border pt-8 md:border-t-0 md:pt-0 md:sticky md:top-4 md:border-l md:border-border/35 md:pl-6">
+
+          <div class="sys-panel relative overflow-hidden p-4">
+            <span class="sys-edge-label">META</span>
+            <div class="sys-code text-text-muted/45">TME // duration</div>
+            <div class="sys-stat-value sys-stat-value-compact text-accent mt-2">{track ? formatDuration(track.duration_ms) : "--:--"}</div>
+            <div class="sys-stat-grid mt-4 grid-cols-2">
+              <div class="sys-stat">
+                <div class="sys-code text-text-muted/45">MRK</div>
+                <div class="sys-stat-value sys-stat-value-compact mt-2">{String(timedComments.length).padStart(2, "0")}</div>
+              </div>
+              <div class="sys-stat">
+                <div class="sys-code text-text-muted/45">LAN</div>
+                <div class="sys-stat-value sys-stat-value-compact mt-2">{String(mixerTracks.length).padStart(2, "0")}</div>
+              </div>
+            </div>
+          </div>
 
           <!-- Edit + Delete -->
           <div class="flex items-center gap-4">

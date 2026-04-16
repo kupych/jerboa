@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { user } from "../lib/stores/auth";
+  import { user, logout } from "../lib/stores/auth";
   import { apiPatch } from "../lib/api";
   import { navigate } from "../lib/stores/router";
   import { bands } from "../lib/stores/bands";
@@ -73,6 +73,15 @@
           >{label}</button>
         {/each}
       </div>
+    </div>
+
+    <div class="pt-3 border-t border-border/40">
+      <button
+        onclick={() => logout()}
+        class="px-5 py-2.5 border border-danger/45 bg-danger/10 text-danger label-sm hover:bg-danger hover:text-white hover:border-danger transition-colors"
+      >
+        sign out
+      </button>
     </div>
   </div>
 </div>
