@@ -1829,3 +1829,113 @@ func (q *Queries) GetUnreadCounts(ctx context.Context, userID uuid.UUID) ([]mode
 	}
 	return counts, nil
 }
+
+// Events (analytics)
+
+type EventInput struct {
+	SessionID string
+	UserID    *uuid.UUID
+	Kind      string
+	Path      string
+	Metadata  json.RawMessage
+	CreatedAt time.Time
+}
+
+func (q *Queries) InsertEvents(ctx context.Context, events []EventInput) error {
+	if len(events) == 0 {
+		return nil
+	}
+	batch := &pgx.Batch{}
+	for _, e := range events {
+		meta := e.Metadata
+		if len(meta) == 0 {
+			meta = json.RawMessage(`{}`)
+		}
+		batch.Queue(
+			`INSERT INTO events (session_id, user_id, kind, path, metadata, created_at)
+			 VALUES ($1, $2, $3, $4, $5, $6)`,
+			e.SessionID, e.UserID, e.Kind, e.Path, meta, e.CreatedAt,
+		)
+	}
+	br := q.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for range events {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (q *Queries) ListEventSessions(ctx context.Context, limit int) ([]models.EventSession, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := q.pool.Query(ctx, `
+		SELECT e.session_id, e.user_id,
+		       COALESCE(u.display_name, ''), COALESCE(u.email, ''),
+		       MIN(e.created_at), MAX(e.created_at), COUNT(*)
+		FROM events e
+		LEFT JOIN users u ON e.user_id = u.id
+		GROUP BY e.session_id, e.user_id, u.display_name, u.email
+		ORDER BY MAX(e.created_at) DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []models.EventSession
+	for rows.Next() {
+		var s models.EventSession
+		if err := rows.Scan(&s.SessionID, &s.UserID, &s.DisplayName, &s.Email, &s.FirstSeen, &s.LastSeen, &s.EventCount); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, s)
+	}
+	return sessions, nil
+}
+
+func (q *Queries) ListEventsBySession(ctx context.Context, sessionID string) ([]models.Event, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT id, session_id, user_id, kind, path, metadata, created_at
+		FROM events
+		WHERE session_id = $1
+		ORDER BY created_at ASC, id ASC
+	`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []models.Event
+	for rows.Next() {
+		var e models.Event
+		if err := rows.Scan(&e.ID, &e.SessionID, &e.UserID, &e.Kind, &e.Path, &e.Metadata, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, nil
+}
+
+func (q *Queries) EventKindCounts(ctx context.Context, since time.Time) (map[string]int, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT kind, COUNT(*) FROM events WHERE created_at >= $1 GROUP BY kind ORDER BY COUNT(*) DESC
+	`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var k string
+		var c int
+		if err := rows.Scan(&k, &c); err != nil {
+			return nil, err
+		}
+		out[k] = c
+	}
+	return out, nil
+}

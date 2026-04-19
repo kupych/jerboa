@@ -61,12 +61,79 @@
     user: { display_name: string; email: string };
   };
 
+  type EventSession = {
+    session_id: string;
+    user_id?: string;
+    display_name: string;
+    email: string;
+    first_seen: string;
+    last_seen: string;
+    event_count: number;
+  };
+
+  type AnalyticsEvent = {
+    id: number;
+    session_id: string;
+    user_id?: string;
+    kind: string;
+    path: string;
+    metadata: Record<string, any>;
+    created_at: string;
+  };
+
   let users = $state<AdminUser[]>([]);
   let bands = $state<AdminBand[]>([]);
   let invites = $state<AdminInvite[]>([]);
   let feedback = $state<FeedbackItem[]>([]);
+  let eventSessions = $state<EventSession[]>([]);
+  let eventKindCounts = $state<Record<string, number>>({});
+  let selectedSession = $state<string | null>(null);
+  let selectedEvents = $state<AnalyticsEvent[]>([]);
+  let loadingEvents = $state(false);
   let loading = $state(true);
-  let tab = $state<"users" | "bands" | "invites" | "feedback">("users");
+  let tab = $state<"users" | "bands" | "invites" | "feedback" | "events">("users");
+
+  async function loadEvents() {
+    const data = await api<{ sessions: EventSession[]; kind_counts: Record<string, number> }>(
+      "/api/admin/events/sessions"
+    );
+    eventSessions = data.sessions;
+    eventKindCounts = data.kind_counts;
+  }
+
+  async function openSession(id: string) {
+    selectedSession = id;
+    loadingEvents = true;
+    try {
+      selectedEvents = await api<AnalyticsEvent[]>(
+        `/api/admin/events/session?id=${encodeURIComponent(id)}`
+      );
+    } finally {
+      loadingEvents = false;
+    }
+  }
+
+  function closeSession() {
+    selectedSession = null;
+    selectedEvents = [];
+  }
+
+  function describeTarget(m: Record<string, any>): string {
+    const t = m?.target;
+    if (!t) return "";
+    const parts: string[] = [];
+    parts.push(t.tag);
+    if (t.id) parts.push("#" + t.id);
+    if (t.classes) parts.push("." + String(t.classes).split(/\s+/).slice(0, 2).join("."));
+    if (t.text) parts.push(`"${t.text}"`);
+    return parts.join("");
+  }
+
+  $effect(() => {
+    if (tab === "events" && eventSessions.length === 0 && !loading) {
+      loadEvents();
+    }
+  });
 
   onMount(async () => {
     if (!$user?.is_admin) {
@@ -123,7 +190,7 @@
 
   <!-- Tabs -->
   <div class="flex items-center gap-4 md:gap-6 border-b border-border pb-2">
-    {#each ["users", "bands", "invites", "feedback"] as t}
+    {#each ["users", "bands", "invites", "feedback", "events"] as t}
       <button
         onclick={() => (tab = t as typeof tab)}
         class="label-sm md:label transition-colors pb-2 -mb-2 {tab === t ? 'text-accent border-b-2 border-accent' : 'text-text-muted hover:text-text-secondary'}"
@@ -259,5 +326,73 @@
         <div class="text-center py-10 label text-text-muted">no feedback yet</div>
       {/if}
     </div>
+
+  {:else if tab === "events"}
+    {#if selectedSession}
+      <div class="space-y-3">
+        <button onclick={closeSession} class="label-sm text-text-muted hover:text-text-secondary transition-colors">
+          ← back to sessions
+        </button>
+        <div class="label-sm font-mono text-text-muted/60 break-all">{selectedSession}</div>
+        {#if loadingEvents}
+          <div class="py-10 text-center label text-text-muted">loading…</div>
+        {:else}
+          <div class="space-y-0.5">
+            {#each selectedEvents as e}
+              <div class="bg-bg-surface border border-border px-3 py-2 flex gap-3 items-start text-sm">
+                <span class="label-sm font-mono text-text-muted shrink-0 w-20">{new Date(e.created_at).toLocaleTimeString()}</span>
+                <span class="label-sm font-mono shrink-0 w-24 {e.kind === 'click_dead' ? 'text-amber-400' : e.kind === 'click' ? 'text-accent' : 'text-text-muted'}">{e.kind}</span>
+                <span class="label-sm font-mono text-text-muted shrink-0 max-w-[200px] truncate">{e.path}</span>
+                <span class="flex-1 min-w-0 text-text-secondary truncate">{describeTarget(e.metadata)}</span>
+                {#if e.metadata?.vx != null}
+                  <span class="label-sm font-mono text-text-muted/60 shrink-0">{e.metadata.vx}%,{e.metadata.vy}%</span>
+                {/if}
+              </div>
+            {/each}
+            {#if selectedEvents.length === 0}
+              <div class="text-center py-10 label text-text-muted">no events in this session</div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    {:else}
+      <div class="space-y-4">
+        {#if Object.keys(eventKindCounts).length > 0}
+          <div class="flex flex-wrap gap-2">
+            {#each Object.entries(eventKindCounts) as [k, n]}
+              <div class="bg-bg-surface border border-border px-3 py-2">
+                <div class="font-mono text-sm font-semibold text-text-primary">{n}</div>
+                <div class="label-sm text-text-muted">{k}</div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+        <div class="space-y-1">
+          {#each eventSessions as s}
+            <button
+              onclick={() => openSession(s.session_id)}
+              class="w-full text-left bg-bg-surface border border-border p-3 md:p-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 hover:border-accent/40 transition-colors"
+            >
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-sm font-semibold text-text-primary truncate">{s.display_name || s.email || "anonymous"}</span>
+                  {#if !s.user_id}
+                    <span class="label-sm text-text-muted bg-bg-primary px-1.5 py-0.5">anon</span>
+                  {/if}
+                </div>
+                <div class="label-sm font-mono text-text-muted/50 truncate">{s.session_id}</div>
+              </div>
+              <div class="flex items-center gap-3 label-sm text-text-muted shrink-0 flex-wrap">
+                <span class="font-mono text-text-secondary">{s.event_count} events</span>
+                <span class="font-mono">{formatRelativeTime(s.last_seen)}</span>
+              </div>
+            </button>
+          {/each}
+          {#if eventSessions.length === 0}
+            <div class="text-center py-10 label text-text-muted">no events yet</div>
+          {/if}
+        </div>
+      </div>
+    {/if}
   {/if}
 </div>

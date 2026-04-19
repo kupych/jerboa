@@ -41,6 +41,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	chatH := NewChatHandler(queries, hub)
 	feedbackH := NewFeedbackHandler(queries, store)
 	adminH := NewAdminHandler(queries)
+	eventsH := NewEventsHandler(queries)
 	overdubH := NewOverdubHandler(queries, store, processor, hub)
 	activityH := NewActivityHandler(queries)
 	fileH := NewFileHandler(queries, s3, cfg.MaxFileMB)
@@ -158,6 +159,11 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Post("/api/bands/{slug}/files", fileH.Upload)
 		r.Get("/api/bands/{slug}/files/{fileID}/download", fileH.Download)
 		r.Delete("/api/bands/{slug}/files/{fileID}", fileH.Delete)
+
+		// Analytics events
+		r.Post("/api/events", eventsH.Ingest)
+		r.Get("/api/admin/events/sessions", eventsH.ListSessions)
+		r.Get("/api/admin/events/session", eventsH.GetSession)
 
 		// Admin
 		r.Get("/api/admin/overview", adminH.Overview)

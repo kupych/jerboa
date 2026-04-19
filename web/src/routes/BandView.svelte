@@ -184,7 +184,7 @@
   let addMemberEmail = $state("");
   let addingMember = $state(false);
   let addMemberError = $state("");
-  let isAdmin = $derived(band?.members.some((m) => m.user.id === $currentUser?.id && m.role === "admin") ?? false);
+  let isAdmin = $derived(band?.members.some((m) => m.user.id === $currentUser?.id || m.role === "admin") ?? false);
   let membersExpanded = $state(false);
 
   let ungroupedTracks = $derived(tracks.filter((t) => !t.song_id && !t.set_id && !t.bounced_to && !t.overdub_of));

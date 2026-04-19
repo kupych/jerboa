@@ -292,6 +292,27 @@ type BandFile struct {
 	Uploader    *User     `json:"uploader,omitempty"`
 }
 
+type Event struct {
+	ID        int64           `json:"id"`
+	SessionID string          `json:"session_id"`
+	UserID    *uuid.UUID      `json:"user_id,omitempty"`
+	Kind      string          `json:"kind"`
+	Path      string          `json:"path"`
+	Metadata  json.RawMessage `json:"metadata"`
+	CreatedAt time.Time       `json:"created_at"`
+	User      *User           `json:"user,omitempty"`
+}
+
+type EventSession struct {
+	SessionID   string     `json:"session_id"`
+	UserID      *uuid.UUID `json:"user_id,omitempty"`
+	DisplayName string     `json:"display_name"`
+	Email       string     `json:"email"`
+	FirstSeen   time.Time  `json:"first_seen"`
+	LastSeen    time.Time  `json:"last_seen"`
+	EventCount  int        `json:"event_count"`
+}
+
 type Comment struct {
 	ID          uuid.UUID  `json:"id"`
 	TrackID     uuid.UUID  `json:"track_id"`
