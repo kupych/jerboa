@@ -184,7 +184,6 @@
   let addMemberEmail = $state("");
   let addingMember = $state(false);
   let addMemberError = $state("");
-  let isAdmin = $derived(band?.members.some((m) => m.user.id === $currentUser?.id || m.role === "admin") ?? false);
   let membersExpanded = $state(false);
 
   let ungroupedTracks = $derived(tracks.filter((t) => !t.song_id && !t.set_id && !t.bounced_to && !t.overdub_of));
@@ -439,18 +438,17 @@
               <line x1="23" y1="11" x2="17" y2="11"/>
             </svg>
           </button>
-          {#if isAdmin}
-            <button
-              onclick={() => { showSettings = !showSettings; if (showSettings && band) editBandName = band.band.name; }}
-              class="w-7 h-7 flex items-center justify-center transition-colors {showSettings ? 'text-accent' : 'text-text-muted/40 hover:text-accent'}"
-              title="Band settings"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-              </svg>
-            </button>
-          {/if}
+
+          <button
+            onclick={() => { showSettings = !showSettings; if (showSettings && band) editBandName = band.band.name; }}
+            class="w-7 h-7 flex items-center justify-center transition-colors {showSettings ? 'text-accent' : 'text-text-muted/40 hover:text-accent'}"
+            title="Band settings"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -554,7 +552,7 @@
     {/if}
 
     <!-- Settings panel -->
-    {#if showSettings && isAdmin && band}
+    {#if showSettings && band}
       <div class="mb-4 bg-bg-surface border border-border p-3 md:p-4 space-y-4">
         <div>
           <span class="label-sm md:label text-text-muted block mb-2">band name</span>
