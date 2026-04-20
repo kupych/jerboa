@@ -1,5 +1,6 @@
 <script lang="ts">
   import { uploadFile, apiPatch } from "../api";
+  import { isDemo } from "../stores/auth";
 
   let { bandSlug, songId, onUploaded }: {
     bandSlug: string;
@@ -18,11 +19,13 @@
   function handleDrop(e: DragEvent) {
     e.preventDefault();
     isDragging = false;
+    if ($isDemo) return;
     const file = e.dataTransfer?.files[0];
     if (file) upload(file);
   }
 
   function handleSelect(e: Event) {
+    if ($isDemo) return;
     const file = (e.target as HTMLInputElement).files?.[0];
     if (file) upload(file);
   }
@@ -78,11 +81,15 @@
         <line x1="12" y1="3" x2="12" y2="15"/>
       </svg>
       <span class="text-sm text-text-muted font-semibold">
-        drop audio or
-        <button
-          onclick={() => fileInput?.click()}
-          class="text-accent hover:text-accent-hover underline underline-offset-4"
-        >browse</button>
+        {#if $isDemo}
+          demo: uploads disabled
+        {:else}
+          drop audio or
+          <button
+            onclick={() => fileInput?.click()}
+            class="text-accent hover:text-accent-hover underline underline-offset-4"
+          >browse</button>
+        {/if}
       </span>
     </div>
     <input

@@ -6,6 +6,7 @@
   import { player } from "../lib/stores/player";
   import { formatDuration, formatRelativeTime, formatTimestamp, setTypeCode, setTypeLabel } from "../lib/utils/format";
   import { sanitizeHtml } from "../lib/utils/sanitize";
+  import { isDemo } from "../lib/stores/auth";
 
   // marked.parse emits raw HTML — route every render through sanitizeHtml
   // so stored <script>/on*=/javascript: payloads can't execute in other
@@ -45,6 +46,7 @@
     created_at: string;
     uploader?: { display_name: string; email: string };
     personnel?: Array<{ user: { display_name: string; email: string }; role: string }>;
+    overdub_count?: number;
   };
 
   type SetTake = {
@@ -521,7 +523,7 @@
             type="text"
             class="flex-1 bg-bg-primary border border-border px-4 py-2 text-3xl md:text-4xl font-display font-bold tracking-wider text-text-primary focus:outline-none focus:border-accent transition-colors"
           />
-          <button type="submit" disabled={savingTitle || !titleInput.trim()} class="label text-accent hover:text-accent-hover disabled:opacity-50 transition-colors">{savingTitle ? "..." : "save"}</button>
+          <button type="submit" disabled={savingTitle || !titleInput.trim() || $isDemo} title={$isDemo ? "demo account is read-only" : ""} class="label text-accent hover:text-accent-hover disabled:opacity-50 transition-colors">{$isDemo ? "demo" : savingTitle ? "..." : "save"}</button>
           <button type="button" onclick={() => (editingTitle = false)} class="label text-text-muted hover:text-text-secondary transition-colors">cancel</button>
         </form>
       {:else}
@@ -647,6 +649,12 @@
                     onclick={() => navigate(`/band/${slug}/track/${track.id}`)}
                     class="flex-1 min-w-0 text-sm font-semibold text-text-primary hover:text-accent transition-colors truncate text-left font-display tracking-wide"
                   >{track.title}</button>
+                  {#if track.overdub_count && track.overdub_count > 0}
+                    <span
+                      title="mixdown: parent + {track.overdub_count} overdub{track.overdub_count === 1 ? '' : 's'}"
+                      class="label-sm tracking-widest text-accent border border-accent/40 px-1.5 py-0.5 shrink-0 font-semibold"
+                    >MIX · {track.overdub_count + 1}</span>
+                  {/if}
                 </div>
                 <!-- Bottom row: meta + tags + personnel, indented past play button -->
                 <div class="flex items-center gap-2 flex-wrap pl-[3.5rem] label-sm text-text-muted">

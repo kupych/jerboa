@@ -13,6 +13,7 @@ type User struct {
 	DisplayName string    `json:"display_name"`
 	AvatarURL   string    `json:"avatar_url,omitempty"`
 	IsAdmin     bool      `json:"is_admin"`
+	IsDemo      bool      `json:"is_demo"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -108,6 +109,7 @@ type Track struct {
 	RppSessionName *string           `json:"rpp_session_name,omitempty"`
 	Gain           float64           `json:"gain"`
 	LoudnessLUFS   *float64          `json:"loudness_lufs,omitempty"`
+	OverdubCount   int               `json:"overdub_count,omitempty"`
 }
 
 type OverdubVote struct {
@@ -187,6 +189,7 @@ type AdminUser struct {
 	DisplayName string    `json:"display_name"`
 	AvatarURL   string    `json:"avatar_url,omitempty"`
 	IsAdmin     bool      `json:"is_admin"`
+	IsDemo      bool      `json:"is_demo"`
 	CreatedAt   time.Time `json:"created_at"`
 	Bands       string    `json:"bands"`
 }

@@ -112,16 +112,36 @@
     }
   }
 
-  function handleSeek(e: MouseEvent) {
-    e.stopPropagation();
+  let scrubbing = $state(false);
+
+  function seekFromPointer(el: HTMLElement, clientX: number) {
     if (localDuration <= 0) return;
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const rect = el.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     currentMs = frac * localDuration;
     const a = ensureAudio();
     a.currentTime = currentMs / 1000;
     if (hasPeaks) drawWaveform(frac);
+  }
+
+  function handleSeekDown(e: PointerEvent) {
+    e.stopPropagation();
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    scrubbing = true;
+    seekFromPointer(el, e.clientX);
+    const a = ensureAudio();
     if (!playing) { a.play(); playing = true; }
+  }
+
+  function handleSeekMove(e: PointerEvent) {
+    if (!scrubbing) return;
+    seekFromPointer(e.currentTarget as HTMLElement, e.clientX);
+  }
+
+  function handleSeekUp(e: PointerEvent) {
+    scrubbing = false;
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
   }
 
   onDestroy(() => { audio?.pause(); });
@@ -132,7 +152,7 @@
 <div class="flex items-center gap-2 mt-2" onclick={(e) => e.stopPropagation()}>
   <button
     onclick={togglePlay}
-    class="w-6 h-6 flex items-center justify-center bg-accent/10 hover:bg-accent/20 text-accent transition-colors shrink-0"
+    class="w-8 h-8 sm:w-6 sm:h-6 flex items-center justify-center bg-accent/10 hover:bg-accent/20 text-accent transition-colors shrink-0"
   >
     {#if peaksLoading}
       <div class="w-2.5 h-2.5 border border-accent/60 border-t-accent animate-spin"></div>
@@ -149,10 +169,16 @@
 
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="flex-1 min-w-0 relative h-8 cursor-pointer" onclick={handleSeek}>
+  <div
+    class="flex-1 min-w-0 relative h-10 sm:h-8 cursor-pointer touch-none select-none flex items-center"
+    onpointerdown={handleSeekDown}
+    onpointermove={handleSeekMove}
+    onpointerup={handleSeekUp}
+    onpointercancel={handleSeekUp}
+  >
     {#if hasPeaks}
-      <canvas bind:this={canvas} width="300" height="32" class="w-full h-full block"></canvas>
-      <div class="absolute top-0 bottom-0 w-px bg-white/50 pointer-events-none" style="left: {playheadPct}%"></div>
+      <canvas bind:this={canvas} width="300" height="32" class="w-full h-8 block pointer-events-none"></canvas>
+      <div class="absolute top-1 bottom-1 sm:top-0 sm:bottom-0 w-px bg-white/50 pointer-events-none" style="left: {playheadPct}%"></div>
     {:else}
       <div class="w-full h-px bg-border/40 absolute top-1/2 -translate-y-1/2"></div>
     {/if}

@@ -3,7 +3,7 @@
   import { api, apiPost, apiPatch, apiDelete } from "../lib/api";
   import { markBandSeen } from "../lib/stores/notifications";
   import { ws } from "../lib/ws";
-  import { user as currentUser } from "../lib/stores/auth";
+  import { user as currentUser, isDemo } from "../lib/stores/auth";
   import { navigate } from "../lib/stores/router";
   import { loadBands } from "../lib/stores/bands";
   import { colorSchemes, applyColorScheme } from "../lib/colorSchemes";
@@ -537,10 +537,11 @@
         <div class="flex items-center gap-3">
           <button
             type="submit"
-            disabled={generatingInvite || !inviteEmail.trim()}
+            disabled={generatingInvite || !inviteEmail.trim() || $isDemo}
+            title={$isDemo ? "demo account is read-only" : ""}
             class="px-5 py-2.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors whitespace-nowrap"
           >
-            {generatingInvite ? "..." : "send invite"}
+            {$isDemo ? "demo: read-only" : generatingInvite ? "..." : "send invite"}
           </button>
           <button
             type="button"
@@ -564,10 +565,11 @@
             />
             <button
               type="submit"
-              disabled={savingBandName || !editBandName.trim() || editBandName.trim() === band.band.name}
+              disabled={savingBandName || !editBandName.trim() || editBandName.trim() === band.band.name || $isDemo}
+              title={$isDemo ? "demo account is read-only" : ""}
               class="px-4 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors shrink-0"
             >
-              {savingBandName ? "..." : "save"}
+              {$isDemo ? "demo" : savingBandName ? "..." : "save"}
             </button>
           </form>
         </div>
@@ -627,10 +629,11 @@
             />
             <button
               type="submit"
-              disabled={addingMember || !addMemberEmail.trim()}
+              disabled={addingMember || !addMemberEmail.trim() || $isDemo}
+              title={$isDemo ? "demo account is read-only" : ""}
               class="px-4 py-2 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors shrink-0"
             >
-              {addingMember ? "..." : "add"}
+              {$isDemo ? "demo" : addingMember ? "..." : "add"}
             </button>
           </form>
           {#if addMemberError}
@@ -690,10 +693,11 @@
             />
             <button
               type="submit"
-              disabled={importing || !importUrl.trim()}
+              disabled={importing || !importUrl.trim() || $isDemo}
+              title={$isDemo ? "demo account is read-only" : ""}
               class="px-4 py-2.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label-sm transition-colors"
             >
-              {importing ? "..." : "import"}
+              {$isDemo ? "demo" : importing ? "..." : "import"}
             </button>
             <button
               type="button"
@@ -761,16 +765,18 @@
         <input
           bind:value={newSongName}
           type="text"
-          placeholder="+ new song"
-          disabled={creatingSong}
-          class="bg-transparent border border-accent/30 px-3 py-1 label-sm text-text-secondary placeholder:text-accent/70 focus:outline-none focus:border-accent focus:bg-accent/[0.03] transition-colors w-40"
+          placeholder={$isDemo ? "demo: read-only" : "+ new song"}
+          disabled={creatingSong || $isDemo}
+          title={$isDemo ? "demo account is read-only" : ""}
+          class="bg-transparent border border-accent/30 px-3 py-1 label-sm text-text-secondary placeholder:text-accent/70 focus:outline-none focus:border-accent focus:bg-accent/[0.03] transition-colors w-40 disabled:opacity-50"
         />
       </form>
     {:else if viewTab === "sets"}
       <form onsubmit={(e) => { e.preventDefault(); createSet(); }} class="flex gap-2 mb-2">
         <select
           bind:value={newSetType}
-          class="bg-transparent border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors"
+          disabled={$isDemo}
+          class="bg-transparent border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
         >
           <option value="rehearsal">rehearsal</option>
           <option value="live">live</option>
@@ -780,9 +786,10 @@
         <input
           bind:value={newSetName}
           type="text"
-          placeholder="+ new set"
-          disabled={creatingSet}
-          class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40"
+          placeholder={$isDemo ? "demo: read-only" : "+ new set"}
+          disabled={creatingSet || $isDemo}
+          title={$isDemo ? "demo account is read-only" : ""}
+          class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-40 disabled:opacity-50"
         />
       </form>
     {/if}

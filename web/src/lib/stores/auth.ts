@@ -1,4 +1,4 @@
-import { writable } from "svelte/store";
+import { derived, writable } from "svelte/store";
 import { api } from "../api";
 
 export interface User {
@@ -7,10 +7,12 @@ export interface User {
   display_name: string;
   avatar_url?: string;
   is_admin: boolean;
+  is_demo: boolean;
 }
 
 export const user = writable<User | null>(null);
 export const authLoading = writable(true);
+export const isDemo = derived(user, ($u) => !!$u?.is_demo);
 
 export async function checkAuth() {
   authLoading.set(true);

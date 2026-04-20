@@ -32,8 +32,8 @@ func (q *Queries) UpsertUser(ctx context.Context, email, displayName, avatarURL 
 		ON CONFLICT (email) DO UPDATE SET
 			display_name = COALESCE(NULLIF($2, ''), users.display_name),
 			avatar_url = COALESCE(NULLIF($3, ''), users.avatar_url)
-		RETURNING id, email, display_name, avatar_url, is_admin, created_at
-	`, email, displayName, avatarURL).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt)
+		RETURNING id, email, display_name, avatar_url, is_admin, is_demo, created_at
+	`, email, displayName, avatarURL).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt)
 	return &u, err
 }
 
@@ -42,17 +42,17 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, id uuid.UUID, displayNa
 	err := q.pool.QueryRow(ctx, `
 		UPDATE users SET display_name = $2
 		WHERE id = $1
-		RETURNING id, email, display_name, avatar_url, is_admin, created_at
-	`, id, displayName).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt)
+		RETURNING id, email, display_name, avatar_url, is_admin, is_demo, created_at
+	`, id, displayName).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt)
 	return &u, err
 }
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	var u models.User
 	err := q.pool.QueryRow(ctx, `
-		SELECT id, email, display_name, avatar_url, is_admin, created_at
+		SELECT id, email, display_name, avatar_url, is_admin, is_demo, created_at
 		FROM users WHERE id = $1
-	`, id).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt)
+	`, id).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -87,10 +87,10 @@ func (q *Queries) CreateSession(ctx context.Context, userID uuid.UUID, ttl time.
 func (q *Queries) GetSession(ctx context.Context, token string) (*models.User, error) {
 	var u models.User
 	err := q.pool.QueryRow(ctx, `
-		SELECT u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
+		SELECT u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at
 		FROM sessions s JOIN users u ON s.user_id = u.id
 		WHERE s.token = $1 AND s.expires_at > now()
-	`, token).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt)
+	`, token).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -223,7 +223,7 @@ func (q *Queries) IsBandMember(ctx context.Context, bandID, userID uuid.UUID) (b
 func (q *Queries) GetBandMembers(ctx context.Context, bandID uuid.UUID) ([]models.BandMember, error) {
 	rows, err := q.pool.Query(ctx, `
 		SELECT bm.band_id, bm.user_id, bm.role, bm.joined_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at
 		FROM band_members bm JOIN users u ON bm.user_id = u.id
 		WHERE bm.band_id = $1
 		ORDER BY split_part(u.display_name, ' ', array_length(string_to_array(u.display_name, ' '), 1)), u.display_name
@@ -238,7 +238,7 @@ func (q *Queries) GetBandMembers(ctx context.Context, bandID uuid.UUID) ([]model
 		var m models.BandMember
 		var u models.User
 		if err := rows.Scan(&m.BandID, &m.UserID, &m.Role, &m.JoinedAt,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt); err != nil {
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		m.User = &u
@@ -368,8 +368,20 @@ func (q *Queries) UserExists(ctx context.Context, email string) (bool, error) {
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	var u models.User
 	err := q.pool.QueryRow(ctx, `
-		SELECT id, email, display_name, avatar_url, is_admin, created_at FROM users WHERE email = $1
-	`, email).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt)
+		SELECT id, email, display_name, avatar_url, is_admin, is_demo, created_at FROM users WHERE email = $1
+	`, email).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &u, err
+}
+
+func (q *Queries) GetDemoUser(ctx context.Context) (*models.User, error) {
+	var u models.User
+	err := q.pool.QueryRow(ctx, `
+		SELECT id, email, display_name, avatar_url, is_admin, is_demo, created_at
+		FROM users WHERE is_demo = true ORDER BY created_at LIMIT 1
+	`).Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -605,6 +617,41 @@ func (q *Queries) UpdateTrackGain(ctx context.Context, id uuid.UUID, gain float6
 	return err
 }
 
+// CountOverdubs returns the number of active (non-bounced) overdubs for a parent track.
+func (q *Queries) CountOverdubs(ctx context.Context, parentID uuid.UUID) (int, error) {
+	var n int
+	err := q.pool.QueryRow(ctx,
+		`SELECT count(*) FROM tracks WHERE overdub_of = $1 AND bounced_to IS NULL`,
+		parentID,
+	).Scan(&n)
+	return n, err
+}
+
+// CountOverdubsForBand returns a map of parentID → active overdub count for
+// all parent tracks in the band, in one query.
+func (q *Queries) CountOverdubsForBand(ctx context.Context, bandID uuid.UUID) (map[uuid.UUID]int, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT overdub_of, count(*)
+		FROM tracks
+		WHERE band_id = $1 AND overdub_of IS NOT NULL AND bounced_to IS NULL
+		GROUP BY overdub_of
+	`, bandID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[uuid.UUID]int)
+	for rows.Next() {
+		var id uuid.UUID
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, nil
+}
+
 func (q *Queries) ResetTrackStatus(ctx context.Context, id uuid.UUID) error {
 	_, err := q.pool.Exec(ctx, "UPDATE tracks SET status = 'processing' WHERE id = $1", id)
 	return err
@@ -621,7 +668,7 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
 		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to,
 		       t.rpp_session_name, t.gain, t.loudness_lufs, t.created_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at,
 		       s.name
 		FROM tracks t
 		JOIN users u ON t.uploaded_by = u.id
@@ -632,7 +679,7 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 		&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
 		&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo,
 		&t.RppSessionName, &t.Gain, &t.LoudnessLUFS, &t.CreatedAt,
-		&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
+		&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt,
 		&songName)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -652,7 +699,7 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
 		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to,
 		       t.gain, t.loudness_lufs, t.created_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at,
 		       s.name
 		FROM tracks t
 		JOIN users u ON t.uploaded_by = u.id
@@ -676,7 +723,7 @@ func (q *Queries) ListTracks(ctx context.Context, bandID uuid.UUID) ([]models.Tr
 			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
 			&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo,
 			&t.Gain, &t.LoudnessLUFS, &t.CreatedAt,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt,
 			&songName); err != nil {
 			return nil, err
 		}
@@ -747,7 +794,7 @@ func (q *Queries) CloneTrackAsOverdub(ctx context.Context, sourceID, parentID uu
 func (q *Queries) ListTrackPersonnel(ctx context.Context, trackID uuid.UUID) ([]models.TrackPersonnel, error) {
 	rows, err := q.pool.Query(ctx, `
 		SELECT tp.track_id, tp.user_id, tp.role,
-		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at
 		FROM track_personnel tp JOIN users u ON tp.user_id = u.id
 		WHERE tp.track_id = $1
 		ORDER BY tp.role, u.display_name
@@ -762,7 +809,7 @@ func (q *Queries) ListTrackPersonnel(ctx context.Context, trackID uuid.UUID) ([]
 		var p models.TrackPersonnel
 		var u models.User
 		if err := rows.Scan(&p.TrackID, &p.UserID, &p.Role,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt); err != nil {
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		p.User = &u
@@ -799,7 +846,7 @@ func (q *Queries) ListComments(ctx context.Context, trackID uuid.UUID) ([]models
 	rows, err := q.pool.Query(ctx, `
 		SELECT c.id, c.track_id, c.user_id, c.parent_id, c.body, c.timestamp_ms,
 		       c.created_at, c.updated_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at
 		FROM comments c JOIN users u ON c.user_id = u.id
 		WHERE c.track_id = $1
 		ORDER BY c.timestamp_ms ASC NULLS LAST, c.created_at ASC
@@ -815,7 +862,7 @@ func (q *Queries) ListComments(ctx context.Context, trackID uuid.UUID) ([]models
 		var u models.User
 		if err := rows.Scan(&c.ID, &c.TrackID, &c.UserID, &c.ParentID, &c.Body, &c.TimestampMS,
 			&c.CreatedAt, &c.UpdatedAt,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt); err != nil {
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		c.User = &u
@@ -1037,7 +1084,7 @@ func (q *Queries) ListSetTracks(ctx context.Context, setID uuid.UUID) ([]models.
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
 		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to,
 		       t.gain, t.loudness_lufs, t.created_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at,
 		       s.name
 		FROM tracks t
 		JOIN users u ON t.uploaded_by = u.id
@@ -1061,7 +1108,7 @@ func (q *Queries) ListSetTracks(ctx context.Context, setID uuid.UUID) ([]models.
 			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
 			&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo,
 			&t.Gain, &t.LoudnessLUFS, &t.CreatedAt,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt,
 			&songName); err != nil {
 			return nil, err
 		}
@@ -1080,7 +1127,7 @@ func (q *Queries) ListSetTakesBySong(ctx context.Context, bandID, songID uuid.UU
 		SELECT si.id, s.id, s.name, s.set_type, si.start_ms, si.end_ms,
 		       t.id, t.title, t.duration_ms, t.format, t.file_size,
 		       t.tags, t.recorded_at, t.created_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at
 		FROM set_items si
 		JOIN sets s ON si.set_id = s.id
 		JOIN tracks t ON t.set_id = s.id AND t.status = 'ready'
@@ -1101,7 +1148,7 @@ func (q *Queries) ListSetTakesBySong(ctx context.Context, bandID, songID uuid.UU
 		if err := rows.Scan(&st.SetItemID, &st.SetID, &st.SetName, &st.SetType, &st.StartMS, &st.EndMS,
 			&st.TrackID, &st.TrackTitle, &st.DurationMS, &st.Format, &st.FileSize,
 			&st.Tags, &st.RecordedAt, &st.CreatedAt,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt); err != nil {
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		st.Uploader = &u
@@ -1180,7 +1227,7 @@ func (q *Queries) CreateFeedback(ctx context.Context, fb *models.Feedback) error
 func (q *Queries) ListFeedback(ctx context.Context) ([]models.Feedback, error) {
 	rows, err := q.pool.Query(ctx, `
 		SELECT f.id, f.user_id, f.body, f.page_url, f.image_path, f.status, f.created_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at
 		FROM feedback f
 		JOIN users u ON f.user_id = u.id
 		ORDER BY f.created_at DESC
@@ -1195,7 +1242,7 @@ func (q *Queries) ListFeedback(ctx context.Context) ([]models.Feedback, error) {
 		var fb models.Feedback
 		var u models.User
 		if err := rows.Scan(&fb.ID, &fb.UserID, &fb.Body, &fb.PageURL, &fb.ImagePath, &fb.Status, &fb.CreatedAt,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt); err != nil {
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		fb.HasImage = fb.ImagePath != ""
@@ -1220,7 +1267,7 @@ func (q *Queries) GetFeedbackImagePath(ctx context.Context, id uuid.UUID) (strin
 
 func (q *Queries) ListAllUsers(ctx context.Context) ([]models.AdminUser, error) {
 	rows, err := q.pool.Query(ctx, `
-		SELECT u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
+		SELECT u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at,
 		       COALESCE(
 		         (SELECT string_agg(b.name, ', ' ORDER BY b.name)
 		          FROM band_members bm JOIN bands b ON bm.band_id = b.id
@@ -1237,7 +1284,7 @@ func (q *Queries) ListAllUsers(ctx context.Context) ([]models.AdminUser, error) 
 	var users []models.AdminUser
 	for rows.Next() {
 		var u models.AdminUser
-		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt, &u.Bands); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt, &u.Bands); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
@@ -1307,7 +1354,7 @@ func (q *Queries) ListOverdubs(ctx context.Context, parentID, viewerID uuid.UUID
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
 		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to,
 		       t.gain, t.loudness_lufs, t.created_at,
-		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.created_at,
+		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at,
 		       (SELECT count(*) FROM overdub_votes WHERE overdub_id = t.id),
 		       EXISTS(SELECT 1 FROM overdub_votes WHERE overdub_id = t.id AND user_id = $2)
 		FROM tracks t
@@ -1330,7 +1377,7 @@ func (q *Queries) ListOverdubs(ctx context.Context, parentID, viewerID uuid.UUID
 			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
 			&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo,
 			&t.Gain, &t.LoudnessLUFS, &t.CreatedAt,
-			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.CreatedAt,
+			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt,
 			&t.VoteCount, &t.UserVoted); err != nil {
 			return nil, err
 		}

@@ -12,11 +12,29 @@
   let collapsed = $state(false);
   let showQueue = $state(false);
 
-  function handleBarClick(e: MouseEvent) {
-    const bar = e.currentTarget as HTMLElement;
+  let scrubbing = $state(false);
+
+  function seekFromPointer(bar: HTMLElement, clientX: number) {
     const rect = bar.getBoundingClientRect();
-    const frac = (e.clientX - rect.left) / rect.width;
+    const frac = (clientX - rect.left) / rect.width;
     globalPlayer.seekFraction(Math.max(0, Math.min(1, frac)));
+  }
+
+  function handleBarPointerDown(e: PointerEvent) {
+    const bar = e.currentTarget as HTMLElement;
+    bar.setPointerCapture(e.pointerId);
+    scrubbing = true;
+    seekFromPointer(bar, e.clientX);
+  }
+
+  function handleBarPointerMove(e: PointerEvent) {
+    if (!scrubbing) return;
+    seekFromPointer(e.currentTarget as HTMLElement, e.clientX);
+  }
+
+  function handleBarPointerUp(e: PointerEvent) {
+    scrubbing = false;
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
   }
 
   let upcomingCount = $derived(
@@ -28,17 +46,22 @@
 
 {#if $playerState.track}
   <div class="fixed bottom-0 left-0 right-0 z-40 bg-bg-surface border-t border-border">
-    <!-- Progress bar -->
+    <!-- Progress bar — thin visual, tall hit zone for touch -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="h-1 bg-bg-primary cursor-pointer group/bar"
-      onclick={handleBarClick}
+      class="relative h-5 sm:h-3 flex items-center cursor-pointer group/bar touch-none select-none"
+      onpointerdown={handleBarPointerDown}
+      onpointermove={handleBarPointerMove}
+      onpointerup={handleBarPointerUp}
+      onpointercancel={handleBarPointerUp}
     >
-      <div
-        class="h-full bg-accent group-hover/bar:h-1.5 transition-[height]"
-        style="width: {$playerState.duration > 0 ? ($playerState.currentTime / $playerState.duration) * 100 : 0}%"
-      ></div>
+      <div class="w-full h-1 sm:h-1 bg-bg-primary transition-[height] {scrubbing ? 'h-2 sm:h-1.5' : 'group-hover/bar:h-1.5'}">
+        <div
+          class="h-full bg-accent"
+          style="width: {$playerState.duration > 0 ? ($playerState.currentTime / $playerState.duration) * 100 : 0}%"
+        ></div>
+      </div>
     </div>
 
     {#if !collapsed}

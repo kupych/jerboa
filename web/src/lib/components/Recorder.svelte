@@ -3,6 +3,7 @@
   import { uploadFile } from "../api";
   import { apiPatch } from "../api";
   import { saveChunk, getPendingRecordings, clearRecording, type PendingRecording } from "../recordingStore";
+  import { isDemo } from "../stores/auth";
 
   let {
     bandSlug,
@@ -381,12 +382,13 @@
 {#if recState === "idle"}
   <button
     onclick={handleRecord}
-    disabled={parentLoading}
-    class="border border-dashed border-border hover:border-red-400/50 p-3 md:py-2 text-center transition-colors w-full flex items-center justify-center gap-3 group"
+    disabled={parentLoading || $isDemo}
+    title={$isDemo ? "demo account is read-only" : ""}
+    class="border border-dashed border-border hover:border-red-400/50 p-3 md:py-2 text-center transition-colors w-full flex items-center justify-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed"
   >
     <div class="w-3 h-3 rounded-full bg-red-400/60 group-hover:bg-red-400 animate-pulse transition-colors"></div>
     <span class="text-sm text-text-muted font-semibold group-hover:text-red-400 transition-colors">
-      {parentLoading ? "loading track..." : (overdubParentId ? "record overdub" : "record a take")}
+      {$isDemo ? "demo: recording disabled" : parentLoading ? "loading track..." : (overdubParentId ? "record overdub" : "record a take")}
     </span>
   </button>
 {:else if recState === "warming"}

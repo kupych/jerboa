@@ -28,12 +28,13 @@ type TrackHandler struct {
 	store       *storage.Store
 	processor   *audio.Processor
 	hub         *Hub
+	mix         *MixBuilder
 	maxBytes    int64
 	transcoding sync.Map    // keyed by opus path, prevents duplicate background transcodes
 	transcodeSem chan struct{} // limits concurrent ffmpeg processes
 }
 
-func NewTrackHandler(queries *db.Queries, store *storage.Store, processor *audio.Processor, hub *Hub, maxUploadMB int64) *TrackHandler {
+func NewTrackHandler(queries *db.Queries, store *storage.Store, processor *audio.Processor, hub *Hub, mix *MixBuilder, maxUploadMB int64) *TrackHandler {
 	sem := make(chan struct{}, maxConcurrentTranscodes)
 	for i := 0; i < maxConcurrentTranscodes; i++ {
 		sem <- struct{}{}
@@ -43,6 +44,7 @@ func NewTrackHandler(queries *db.Queries, store *storage.Store, processor *audio
 		store:        store,
 		processor:    processor,
 		hub:          hub,
+		mix:          mix,
 		maxBytes:     maxUploadMB * 1024 * 1024,
 		transcodeSem: sem,
 	}
@@ -96,6 +98,13 @@ func (h *TrackHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if tracks == nil {
 		tracks = []models.Track{}
+	}
+	if counts, err := h.queries.CountOverdubsForBand(r.Context(), band.ID); err == nil {
+		for i := range tracks {
+			if n, ok := counts[tracks[i].ID]; ok {
+				tracks[i].OverdubCount = n
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -263,6 +272,11 @@ func (h *TrackHandler) Get(w http.ResponseWriter, r *http.Request) {
 	// Check if this track has pre-bounce versions
 	track.PreBounceID = h.queries.GetPreBounceID(r.Context(), trackID)
 	track.BounceVersions = h.queries.CountBounceVersions(r.Context(), trackID)
+	if track.OverdubOf == nil {
+		if n, err := h.queries.CountOverdubs(r.Context(), trackID); err == nil {
+			track.OverdubCount = n
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(track)
@@ -334,11 +348,20 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 
 	isDownload := r.URL.Query().Get("dl") == "1"
 
-	// For streaming, prefer the Opus sibling if it exists on disk.
+	// For streaming, prefer the ephemeral session mix sibling when present
+	// (parent + all overdubs baked together), else the plain Opus transcode.
 	// Downloads always get the original file (WAV/FLAC/etc).
 	servePath := track.FilePath
 	useOpus := false
-	if !isDownload {
+	mixHit := false
+	if !isDownload && track.OverdubOf == nil {
+		if mix := mixSibling(track.FilePath); fileExists(mix) {
+			servePath = mix
+			useOpus = true
+			mixHit = true
+		}
+	}
+	if !isDownload && !mixHit {
 		opus := opusSibling(track.FilePath)
 		if fileExists(opus) {
 			servePath = opus
@@ -634,6 +657,8 @@ func (h *TrackHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	parentOfOverdub := track.OverdubOf
+
 	filePath, err := h.queries.DeleteTrack(r.Context(), trackID)
 	if err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
@@ -642,6 +667,10 @@ func (h *TrackHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	if filePath != "" {
 		safeDeleteFile(r.Context(), h.queries, h.store, filePath)
+	}
+
+	if parentOfOverdub != nil && h.mix != nil {
+		h.mix.Schedule(*parentOfOverdub)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

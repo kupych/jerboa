@@ -31,9 +31,10 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 
 	hub := NewHub(queries, cfg.BaseURL)
 	mailer := email.NewMailer(cfg)
+	mix := NewMixBuilder(queries, hub)
 	authH := NewAuthHandler(authProvider, queries, mailer, cfg.BaseURL, cfg.DevAuth)
 	bandH := NewBandHandler(queries, cfg.BaseURL, mailer)
-	trackH := NewTrackHandler(queries, store, processor, hub, cfg.MaxUploadMB)
+	trackH := NewTrackHandler(queries, store, processor, hub, mix, cfg.MaxUploadMB)
 	commentH := NewCommentHandler(queries, hub)
 	songH := NewSongHandler(queries)
 	importH := NewImportHandler(queries, store, processor, hub, cfg.YTDLPCookies)
@@ -42,7 +43,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	feedbackH := NewFeedbackHandler(queries, store)
 	adminH := NewAdminHandler(queries)
 	eventsH := NewEventsHandler(queries)
-	overdubH := NewOverdubHandler(queries, store, processor, hub)
+	overdubH := NewOverdubHandler(queries, store, processor, hub, mix)
 	activityH := NewActivityHandler(queries)
 	fileH := NewFileHandler(queries, s3, cfg.MaxFileMB)
 	syncH := NewSyncHandler(queries, store, processor, hub, cfg.MaxUploadMB, cfg.BinDir)
@@ -52,6 +53,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	r.Group(func(r chi.Router) {
 		r.Use(authLimiter)
 		r.Get("/auth/login", authH.Login)
+		r.Get("/auth/demo", authH.DemoLogin)
 		r.Get("/auth/callback", authH.Callback)
 		r.Get("/auth/invite/{token}", authH.InviteLogin)
 		r.Post("/auth/magic-link", authH.SendMagicLink)
@@ -61,6 +63,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(AuthMiddleware(queries))
+		r.Use(BlockDemoWrites)
 
 		r.Post("/auth/logout", authH.Logout)
 		r.Get("/auth/me", authH.Me)

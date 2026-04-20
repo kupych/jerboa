@@ -9,6 +9,7 @@
   import Recorder from "../lib/components/Recorder.svelte";
   import MultiTrackMixer, { type MixerTrack } from "../lib/components/MultiTrackMixer.svelte";
   import { layoutWidth } from "../lib/stores/layoutWidth";
+  import { isDemo } from "../lib/stores/auth";
 
   let { slug, trackId }: { slug: string; trackId: string } = $props();
 
@@ -1169,10 +1170,10 @@
             <div class="label-sm text-text-muted/50 tracking-widest mb-2">tags</div>
             <div class="flex items-center gap-2 flex-wrap">
               {#each track.tags as tag}
-                <button onclick={() => removeTag(tag)} class="label-sm text-accent bg-accent/10 px-3 py-1 hover:bg-danger/20 hover:text-danger transition-colors" title="Remove tag">{tag} x</button>
+                <button onclick={() => removeTag(tag)} disabled={$isDemo} title={$isDemo ? "demo account is read-only" : "Remove tag"} class="label-sm text-accent bg-accent/10 px-3 py-1 hover:bg-danger/20 hover:text-danger disabled:opacity-50 disabled:cursor-not-allowed transition-colors">{tag} x</button>
               {/each}
               <form onsubmit={(e) => { e.preventDefault(); addTag(); }} class="flex">
-                <input bind:value={newTag} type="text" placeholder="+ tag" disabled={savingTags} class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-24" />
+                <input bind:value={newTag} type="text" placeholder={$isDemo ? "demo" : "+ tag"} disabled={savingTags || $isDemo} title={$isDemo ? "demo account is read-only" : ""} class="bg-transparent border border-border px-3 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors w-24 disabled:opacity-50" />
               </form>
             </div>
           </div>
@@ -1247,15 +1248,15 @@
                 </div>
               {/each}
               <form onsubmit={(e) => { e.preventDefault(); addPersonnel(); }} class="flex items-center gap-2 mt-2">
-                <select bind:value={addPersonnelId} class="flex-1 min-w-0 bg-bg-surface border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors">
-                  <option value="">+ add</option>
+                <select bind:value={addPersonnelId} disabled={$isDemo} title={$isDemo ? "demo account is read-only" : ""} class="flex-1 min-w-0 bg-bg-surface border border-border px-2 py-1 label-sm text-text-secondary focus:outline-none focus:border-accent transition-colors disabled:opacity-50">
+                  <option value="">{$isDemo ? "demo: read-only" : "+ add"}</option>
                   {#each members.filter((m) => !personnel.some((p) => p.user_id === m.user.id)) as member}
                     <option value={member.user.id}>{member.user.display_name || member.user.email}</option>
                   {/each}
                 </select>
                 {#if addPersonnelId}
                   <input bind:value={addPersonnelRole} type="text" placeholder="role..." class="flex-1 min-w-0 bg-bg-surface border border-border px-2 py-1 label-sm text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors" />
-                  <button type="submit" class="label-sm text-accent hover:text-accent-hover transition-colors shrink-0">add</button>
+                  <button type="submit" disabled={$isDemo} title={$isDemo ? "demo account is read-only" : ""} class="label-sm text-accent hover:text-accent-hover disabled:opacity-50 transition-colors shrink-0">add</button>
                 {/if}
               </form>
             </div>

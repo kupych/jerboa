@@ -86,6 +86,20 @@ func AuthMiddleware(q *db.Queries) func(http.Handler) http.Handler {
 	}
 }
 
+func BlockDemoWrites(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := UserFrom(r.Context())
+		if u != nil && u.IsDemo && r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+			// Demo users must still be able to log out.
+			if r.URL.Path != "/auth/logout" {
+				http.Error(w, `{"error":"demo account is read-only"}`, http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func CORSMiddleware(baseURL string) func(http.Handler) http.Handler {
 	origin := baseURL
 	// Strip path from baseURL to get just the origin

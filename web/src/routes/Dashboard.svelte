@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { api, apiPost } from "../lib/api";
   import { navigate } from "../lib/stores/router";
-  import { user } from "../lib/stores/auth";
+  import { user, isDemo } from "../lib/stores/auth";
   import { initials } from "../lib/utils/format";
   import { bands as bandsStore, loadBands as refreshBands } from "../lib/stores/bands";
 
@@ -99,10 +99,11 @@
       <div class="flex gap-4 mt-6">
         <button
           type="submit"
-          disabled={creating || !newBandName.trim()}
+          disabled={creating || !newBandName.trim() || $isDemo}
+          title={$isDemo ? "demo account is read-only" : ""}
           class="px-8 py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors"
         >
-          {creating ? "..." : "create"}
+          {$isDemo ? "demo: read-only" : creating ? "..." : "create"}
         </button>
         <button
           type="button"

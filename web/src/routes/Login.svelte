@@ -119,5 +119,19 @@
         </button>
       {/if}
     </div>
+
+    <!-- Demo callout -->
+    <a
+      href="/auth/demo"
+      class="mt-6 block border border-dashed border-accent/25 hover:border-accent/60 hover:bg-accent/[0.03] px-4 py-3 transition-colors group"
+    >
+      <div class="flex items-baseline justify-between gap-3">
+        <span class="text-[10px] font-bold tracking-[0.2em] uppercase text-accent/60 group-hover:text-accent">try the demo →</span>
+        <span class="text-[9px] font-semibold tracking-[0.15em] uppercase text-accent/25">read-only</span>
+      </div>
+      <p class="text-xs font-semibold text-text-muted mt-1.5 leading-snug">
+        no signup — explore a seeded band with real takes, comments, and setlists.
+      </p>
+    </a>
   </div>
 </div>

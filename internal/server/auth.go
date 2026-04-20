@@ -100,6 +100,41 @@ func (h *AuthHandler) devLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, h.baseURL, http.StatusFound)
 }
 
+// DemoLogin handles GET /auth/demo — logs the caller in as the read-only
+// demo user. Returns 503 if no demo user is seeded.
+func (h *AuthHandler) DemoLogin(w http.ResponseWriter, r *http.Request) {
+	user, err := h.queries.GetDemoUser(r.Context())
+	if err != nil {
+		slog.Error("demo login: lookup", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if user == nil {
+		http.Error(w, `{"error":"demo unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	token, err := h.queries.CreateSession(r.Context(), user.ID, 24*time.Hour)
+	if err != nil {
+		slog.Error("demo login: create session", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    token,
+		Path:     "/",
+		MaxAge:   24 * 60 * 60,
+		HttpOnly: true,
+		Secure:   h.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	slog.Info("demo login", "user_id", user.ID)
+	http.Redirect(w, r, h.baseURL, http.StatusFound)
+}
+
 func (h *AuthHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	stateCookie, err := r.Cookie("oauth_state")
 	if err != nil || stateCookie.Value != r.URL.Query().Get("state") {

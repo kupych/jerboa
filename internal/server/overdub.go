@@ -25,10 +25,11 @@ type OverdubHandler struct {
 	store     *storage.Store
 	processor *audio.Processor
 	hub       *Hub
+	mix       *MixBuilder
 }
 
-func NewOverdubHandler(queries *db.Queries, store *storage.Store, processor *audio.Processor, hub *Hub) *OverdubHandler {
-	return &OverdubHandler{queries: queries, store: store, processor: processor, hub: hub}
+func NewOverdubHandler(queries *db.Queries, store *storage.Store, processor *audio.Processor, hub *Hub, mix *MixBuilder) *OverdubHandler {
+	return &OverdubHandler{queries: queries, store: store, processor: processor, hub: hub, mix: mix}
 }
 
 // List returns overdubs for a parent track.
@@ -180,6 +181,11 @@ func (h *OverdubHandler) processOverdub(trackID uuid.UUID, filePath string, band
 		Type:    "activity.update",
 		Payload: map[string]string{"band_id": bandID.String()},
 	})
+
+	// Rebuild the parent's ephemeral session mix.
+	if ov, err := h.queries.GetTrack(ctx, trackID); err == nil && ov != nil && ov.OverdubOf != nil {
+		h.mix.Schedule(*ov.OverdubOf)
+	}
 }
 
 // UpdateOffset adjusts the offset_ms of an overdub for fine-tuning sync.
@@ -215,6 +221,10 @@ func (h *OverdubHandler) UpdateOffset(w http.ResponseWriter, r *http.Request) {
 	if err := h.queries.UpdateOverdubOffset(r.Context(), overdubID, req.OffsetMS); err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
+	}
+
+	if od, err := h.queries.GetTrack(r.Context(), overdubID); err == nil && od != nil && od.OverdubOf != nil {
+		h.mix.Schedule(*od.OverdubOf)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -435,6 +445,7 @@ func (h *OverdubHandler) doBounce(parent, overdub *models.Track, band *models.Ba
 		Type:    "activity.update",
 		Payload: map[string]string{"band_id": band.ID.String()},
 	})
+	h.mix.Schedule(parent.ID)
 }
 
 func (h *OverdubHandler) doBounceToNew(parent, overdub *models.Track, band *models.Band, user *models.User) {
@@ -756,6 +767,7 @@ func (h *OverdubHandler) doBounceMix(parent *models.Track, overdubs []*models.Tr
 
 	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{Type: "track.ready", Payload: map[string]any{"track_id": parent.ID}})
 	h.hub.Broadcast("band:"+band.ID.String(), WSMessage{Type: "activity.update", Payload: map[string]string{"band_id": band.ID.String()}})
+	h.mix.Schedule(parent.ID)
 }
 
 // RestoreOriginal rolls back a track to its pre-bounce original state.
@@ -840,6 +852,7 @@ func (h *OverdubHandler) RestoreOriginal(w http.ResponseWriter, r *http.Request)
 		Type:    "track.ready",
 		Payload: map[string]any{"track_id": parent.ID},
 	})
+	h.mix.Schedule(trackID)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -941,6 +954,7 @@ func (h *OverdubHandler) Scrub(w http.ResponseWriter, r *http.Request) {
 	// Clean up votes
 	h.queries.DeleteOverdubVotes(r.Context(), trackID)
 
+	h.mix.Schedule(trackID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1013,6 +1027,7 @@ func (h *OverdubHandler) LinkOverdub(w http.ResponseWriter, r *http.Request) {
 		Type:    "overdub.linked",
 		Payload: map[string]any{"track_id": trackID, "overdub_id": cloned.ID},
 	})
+	h.mix.Schedule(trackID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

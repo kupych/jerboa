@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { user, logout } from "../stores/auth";
+  import { user, logout, isDemo } from "../stores/auth";
   import { navigate, route } from "../stores/router";
   import { bands, loadBands } from "../stores/bands";
   import { activityFeed, totalUnread, markBandSeen } from "../stores/notifications";
@@ -141,10 +141,11 @@
                       />
                       <button
                         type="submit"
-                        disabled={submitting || !newBandName.trim()}
+                        disabled={submitting || !newBandName.trim() || $isDemo}
+                        title={$isDemo ? "demo account is read-only" : ""}
                         class="px-3 py-1.5 bg-accent hover:bg-accent-hover disabled:opacity-50 text-bg-primary label transition-colors shrink-0"
                       >
-                        {submitting ? "..." : "go"}
+                        {$isDemo ? "demo" : submitting ? "..." : "go"}
                       </button>
                     </form>
                   {:else}
