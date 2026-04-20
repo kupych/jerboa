@@ -123,14 +123,22 @@ func (b *MixBuilder) rebuild(parentID uuid.UUID) error {
 		return fmt.Errorf("list overdubs: %w", err)
 	}
 
-	// Drop muted overdubs from the bake (muted contributes nothing).
+	// Drop muted overdubs from the bake (muted contributes nothing), and skip
+	// any with a missing file path or file on disk.
 	active := overdubs[:0]
 	for _, od := range overdubs {
-		if !od.Muted {
-			active = append(active, od)
+		if od.Muted || od.FilePath == "" || !fileExists(od.FilePath) {
+			continue
 		}
+		active = append(active, od)
 	}
 	overdubs = active
+
+	// A parent with no audio file (e.g. a Reaper session container) can't be
+	// baked against — there's no path to hand ffmpeg and no sibling to write.
+	if parent.FilePath == "" {
+		return nil
+	}
 
 	mixPath := mixSibling(parent.FilePath)
 	// No audible stems at all — nothing worth baking. Drop any stale mix.
