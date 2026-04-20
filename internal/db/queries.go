@@ -617,6 +617,11 @@ func (q *Queries) UpdateTrackGain(ctx context.Context, id uuid.UUID, gain float6
 	return err
 }
 
+func (q *Queries) UpdateTrackMuted(ctx context.Context, id uuid.UUID, muted bool) error {
+	_, err := q.pool.Exec(ctx, "UPDATE tracks SET muted = $2 WHERE id = $1", id, muted)
+	return err
+}
+
 // CountOverdubs returns the number of active (non-bounced) overdubs for a parent track.
 func (q *Queries) CountOverdubs(ctx context.Context, parentID uuid.UUID) (int, error) {
 	var n int
@@ -667,7 +672,7 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
 		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to,
-		       t.rpp_session_name, t.gain, t.loudness_lufs, t.created_at,
+		       t.rpp_session_name, t.gain, t.muted, t.loudness_lufs, t.created_at,
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at,
 		       s.name
 		FROM tracks t
@@ -678,7 +683,7 @@ func (q *Queries) GetTrack(ctx context.Context, id uuid.UUID) (*models.Track, er
 		&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
 		&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
 		&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo,
-		&t.RppSessionName, &t.Gain, &t.LoudnessLUFS, &t.CreatedAt,
+		&t.RppSessionName, &t.Gain, &t.Muted, &t.LoudnessLUFS, &t.CreatedAt,
 		&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt,
 		&songName)
 	if err == pgx.ErrNoRows {
@@ -1353,7 +1358,7 @@ func (q *Queries) ListOverdubs(ctx context.Context, parentID, viewerID uuid.UUID
 		       t.waveform_data, t.duration_ms, t.format, t.sample_rate, t.file_size,
 		       t.status, t.tags, t.notes, t.song_id, t.source_url,
 		       t.recorded_at, t.set_id, t.overdub_of, t.offset_ms, t.bounced_to,
-		       t.gain, t.loudness_lufs, t.created_at,
+		       t.gain, t.muted, t.loudness_lufs, t.created_at,
 		       u.id, u.email, u.display_name, u.avatar_url, u.is_admin, u.is_demo, u.created_at,
 		       (SELECT count(*) FROM overdub_votes WHERE overdub_id = t.id),
 		       EXISTS(SELECT 1 FROM overdub_votes WHERE overdub_id = t.id AND user_id = $2)
@@ -1376,7 +1381,7 @@ func (q *Queries) ListOverdubs(ctx context.Context, parentID, viewerID uuid.UUID
 			&t.WaveformData, &t.DurationMS, &t.Format, &t.SampleRate, &t.FileSize,
 			&t.Status, &t.Tags, &t.Notes, &songID, &t.SourceURL,
 			&t.RecordedAt, &t.SetID, &t.OverdubOf, &t.OffsetMS, &t.BouncedTo,
-			&t.Gain, &t.LoudnessLUFS, &t.CreatedAt,
+			&t.Gain, &t.Muted, &t.LoudnessLUFS, &t.CreatedAt,
 			&u.ID, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsAdmin, &u.IsDemo, &u.CreatedAt,
 			&t.VoteCount, &t.UserVoted); err != nil {
 			return nil, err

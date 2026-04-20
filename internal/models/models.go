@@ -108,6 +108,7 @@ type Track struct {
 	BounceVersions int               `json:"bounce_versions,omitempty"`
 	RppSessionName *string           `json:"rpp_session_name,omitempty"`
 	Gain           float64           `json:"gain"`
+	Muted          bool              `json:"muted"`
 	LoudnessLUFS   *float64          `json:"loudness_lufs,omitempty"`
 	OverdubCount   int               `json:"overdub_count,omitempty"`
 }

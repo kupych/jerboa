@@ -586,8 +586,69 @@ func (h *TrackHandler) UpdateGain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Gain change on a parent or overdub invalidates the session mix.
+	if h.mix != nil {
+		if track.OverdubOf != nil {
+			h.mix.Schedule(*track.OverdubOf)
+		} else {
+			h.mix.Schedule(track.ID)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"gain": req.Gain})
+}
+
+func (h *TrackHandler) UpdateMuted(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	slug := chi.URLParam(r, "slug")
+	trackID, err := uuid.Parse(chi.URLParam(r, "trackID"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid track id"}`, http.StatusBadRequest)
+		return
+	}
+
+	band, err := h.queries.GetBandBySlug(r.Context(), slug)
+	if err != nil || band == nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	isMember, _ := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	if !isMember {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	track, err := h.queries.GetTrack(r.Context(), trackID)
+	if err != nil || track == nil || track.BandID != band.ID {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Muted bool `json:"muted"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.queries.UpdateTrackMuted(r.Context(), trackID, req.Muted); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if h.mix != nil {
+		if track.OverdubOf != nil {
+			h.mix.Schedule(*track.OverdubOf)
+		} else {
+			h.mix.Schedule(track.ID)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"muted": req.Muted})
 }
 
 // BackfillLoudness measures loudness for all ready tracks that are missing it.

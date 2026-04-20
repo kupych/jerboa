@@ -140,6 +140,7 @@
                 isParent: true,
                 streamUrl: `/api/bands/${slug}/tracks/${trackId}/stream`,
                 gain: track.gain,
+                muted: track.muted,
                 loudness_lufs: track.loudness_lufs,
               }]
             : []),
@@ -154,6 +155,7 @@
             vote_count: od.vote_count,
             user_voted: od.user_voted,
             gain: od.gain,
+            muted: od.muted,
             loudness_lufs: od.loudness_lufs,
           })),
         ]
@@ -535,6 +537,10 @@
 
   async function saveGain(id: string, gain: number) {
     await apiPatch(`/api/bands/${slug}/tracks/${id}/gain`, { gain });
+  }
+
+  async function saveMuted(id: string, muted: boolean) {
+    await apiPatch(`/api/bands/${slug}/tracks/${id}/mute`, { muted });
   }
 
   async function scrubOverdubs(keepId?: string) {
@@ -923,6 +929,7 @@
                   onBounceMix={(ids, toNew) => bounceMix(ids, toNew)}
                   onRefresh={() => loadOverdubs()}
                   onGainChange={(id, gain) => saveGain(id, gain)}
+                  onMuteChange={(id, muted) => saveMuted(id, muted)}
                 />
                 {#if isAdmin && overdubs.length > 1}
                   <button onclick={() => scrubOverdubs()} disabled={scrubbing} class="label-sm text-red-400/60 hover:text-red-400 transition-colors mt-3">{scrubbing ? "scrubbing..." : "scrub all overdubs"}</button>

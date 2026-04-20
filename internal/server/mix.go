@@ -123,9 +123,24 @@ func (b *MixBuilder) rebuild(parentID uuid.UUID) error {
 		return fmt.Errorf("list overdubs: %w", err)
 	}
 
+	// Drop muted overdubs from the bake (muted contributes nothing).
+	active := overdubs[:0]
+	for _, od := range overdubs {
+		if !od.Muted {
+			active = append(active, od)
+		}
+	}
+	overdubs = active
+
 	mixPath := mixSibling(parent.FilePath)
+	// No audible stems at all — nothing worth baking. Drop any stale mix.
+	if len(overdubs) == 0 && parent.Muted {
+		_ = os.Remove(mixPath)
+		b.broadcast(parent)
+		return nil
+	}
 	if len(overdubs) == 0 {
-		// No overdubs — drop any stale mix file so Stream falls back to base opus.
+		// Only the parent plays — no need for a mix sibling; Stream falls back to base opus.
 		_ = os.Remove(mixPath)
 		b.broadcast(parent)
 		return nil
@@ -176,6 +191,19 @@ func (b *MixBuilder) broadcast(parent *models.Track) {
 	})
 }
 
+// buildStemChain builds a filter chain for one ffmpeg input: optional adelay to
+// position it, then volume. Output is labelled [outLabel].
+func buildStemChain(inputIdx int, delayMS int64, gain float64, outLabel string) string {
+	var parts []string
+	src := fmt.Sprintf("[%d]", inputIdx)
+	if delayMS > 0 {
+		parts = append(parts, fmt.Sprintf("%sadelay=%d|%d", src, delayMS, delayMS))
+		src = ""
+	}
+	parts = append(parts, fmt.Sprintf("%svolume=%.4f[%s]", src, gain, outLabel))
+	return strings.Join(parts, ",")
+}
+
 // buildMixArgs constructs ffmpeg args to mix parent + overdubs into an Opus file.
 // Same filter shape as doBounceMix but writes opus directly, no DB work.
 func buildMixArgs(parent *models.Track, overdubs []models.Track, outPath string) ([]string, error) {
@@ -199,23 +227,24 @@ func buildMixArgs(parent *models.Track, overdubs []models.Track, outPath string)
 	var filterParts []string
 	var mixLabels []string
 
-	if parentDelay > 0 {
-		filterParts = append(filterParts, fmt.Sprintf("[0]adelay=%d|%d[p]", parentDelay, parentDelay))
-		mixLabels = append(mixLabels, "[p]")
-	} else {
-		mixLabels = append(mixLabels, "[0]")
+	// Each input: optional adelay + volume, producing a labelled stream.
+	parentGain := parent.Gain
+	if parent.Muted {
+		parentGain = 0
 	}
+	filterParts = append(filterParts, buildStemChain(0, parentDelay, parentGain, "p"))
+	mixLabels = append(mixLabels, "[p]")
 
 	for i, od := range overdubs {
 		ffIdx := i + 1
 		delay := parentDelay + od.OffsetMS
-		if delay > 0 {
-			label := fmt.Sprintf("[d%d]", i)
-			filterParts = append(filterParts, fmt.Sprintf("[%d]adelay=%d|%d%s", ffIdx, delay, delay, label))
-			mixLabels = append(mixLabels, label)
-		} else {
-			mixLabels = append(mixLabels, fmt.Sprintf("[%d]", ffIdx))
+		label := fmt.Sprintf("d%d", i)
+		g := od.Gain
+		if od.Muted {
+			g = 0
 		}
+		filterParts = append(filterParts, buildStemChain(ffIdx, delay, g, label))
+		mixLabels = append(mixLabels, "["+label+"]")
 	}
 
 	mixFilter := strings.Join(mixLabels, "") + fmt.Sprintf("amix=inputs=%d:duration=longest:normalize=0", numInputs)

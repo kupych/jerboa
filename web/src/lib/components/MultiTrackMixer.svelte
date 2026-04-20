@@ -13,6 +13,7 @@
     vote_count?: number;
     user_voted?: boolean;
     gain?: number;
+    muted?: boolean;
     loudness_lufs?: number | null;
   }
 
@@ -33,6 +34,7 @@
     onPlayingChange,
     onTrimChange,
     onGainChange,
+    onMuteChange,
   }: {
     tracks: MixerTrack[];
     isAdmin?: boolean;
@@ -50,6 +52,7 @@
     onPlayingChange?: (playing: boolean) => void;
     onTrimChange?: (id: string, startMs: number, endMs: number) => void;
     onGainChange?: (id: string, gain: number) => void;
+    onMuteChange?: (id: string, muted: boolean) => void;
   } = $props();
 
   export function seekTo(ms: number) { commitSeek(ms); }
@@ -100,6 +103,11 @@
     const nextT = { ...trimValues };
     for (const t of tracks) {
       if (!(t.id in nextG)) { nextG[t.id] = t.gain ?? 1; gChanged = true; }
+      if (t.muted && !muted.has(t.id)) {
+        const next = new Set(muted);
+        next.add(t.id);
+        muted = next;
+      }
       if (!(t.id in nextT)) {
         nextT[t.id] = { startMs: 0, endMs: t.duration_ms > 0 ? t.duration_ms : 9999999 };
         tChanged = true;
@@ -503,9 +511,11 @@
   // === Per-track controls ===
   function toggleMute(id: string) {
     const next = new Set(muted);
-    next.has(id) ? next.delete(id) : next.add(id);
+    const isMuted = !next.has(id);
+    isMuted ? next.add(id) : next.delete(id);
     muted = next;
     applyGain(id);
+    onMuteChange?.(id, isMuted);
   }
 
   function toggleSolo(id: string) {
