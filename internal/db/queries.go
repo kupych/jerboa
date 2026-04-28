@@ -537,11 +537,15 @@ func (q *Queries) CreateTrack(ctx context.Context, t *models.Track) error {
 	if gain == 0 {
 		gain = 1.0
 	}
+	var kind any
+	if t.Kind != "" {
+		kind = t.Kind
+	}
 	return q.pool.QueryRow(ctx, `
-		INSERT INTO tracks (band_id, title, description, uploaded_by, file_path, file_size, status, overdub_of, offset_ms, bounced_to, gain)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO tracks (band_id, title, description, uploaded_by, file_path, file_size, status, overdub_of, offset_ms, bounced_to, gain, kind)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id, created_at
-	`, t.BandID, t.Title, t.Description, t.UploadedBy, t.FilePath, t.FileSize, t.Status, t.OverdubOf, t.OffsetMS, t.BouncedTo, gain).Scan(&t.ID, &t.CreatedAt)
+	`, t.BandID, t.Title, t.Description, t.UploadedBy, t.FilePath, t.FileSize, t.Status, t.OverdubOf, t.OffsetMS, t.BouncedTo, gain, kind).Scan(&t.ID, &t.CreatedAt)
 }
 
 func (q *Queries) UpdateTrackFile(ctx context.Context, id uuid.UUID, filePath string, fileSize int64) error {
@@ -1779,6 +1783,127 @@ func (q *Queries) ListSyncSessions(ctx context.Context, bandID uuid.UUID) ([]Syn
 		sessions = append(sessions, s)
 	}
 	return sessions, nil
+}
+
+func (q *Queries) GetBandSlug(ctx context.Context, bandID uuid.UUID) (string, error) {
+	var slug string
+	err := q.pool.QueryRow(ctx, `SELECT slug FROM bands WHERE id = $1`, bandID).Scan(&slug)
+	return slug, err
+}
+
+// Pair codes (Reaper device-pairing flow)
+
+func (q *Queries) CreatePairCode(ctx context.Context, code string, ttl time.Duration) error {
+	_, err := q.pool.Exec(ctx, `
+		INSERT INTO pair_codes (code, expires_at) VALUES ($1, now() + $2)
+	`, code, ttl)
+	return err
+}
+
+func (q *Queries) AuthorizePairCode(ctx context.Context, code string, userID, bandID uuid.UUID) error {
+	tag, err := q.pool.Exec(ctx, `
+		UPDATE pair_codes SET user_id = $2, band_id = $3
+		WHERE code = $1 AND consumed_at IS NULL AND expires_at > now()
+	`, code, userID, bandID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// PollPairCode returns the (userID, bandID) bound to a code, or (nil, nil) if
+// still pending. On success, marks the code consumed atomically so it can't
+// be re-polled.
+func (q *Queries) PollPairCode(ctx context.Context, code string) (*uuid.UUID, *uuid.UUID, error) {
+	var userID, bandID *uuid.UUID
+	err := q.pool.QueryRow(ctx, `
+		UPDATE pair_codes SET consumed_at = now()
+		WHERE code = $1
+		  AND consumed_at IS NULL
+		  AND expires_at > now()
+		  AND user_id IS NOT NULL
+		  AND band_id IS NOT NULL
+		RETURNING user_id, band_id
+	`, code).Scan(&userID, &bandID)
+	if err == pgx.ErrNoRows {
+		// Still pending OR expired/invalid — distinguish.
+		var exists bool
+		err2 := q.pool.QueryRow(ctx, `
+			SELECT EXISTS(SELECT 1 FROM pair_codes WHERE code = $1 AND expires_at > now() AND consumed_at IS NULL)
+		`, code).Scan(&exists)
+		if err2 != nil {
+			return nil, nil, err2
+		}
+		if !exists {
+			return nil, nil, pgx.ErrNoRows
+		}
+		return nil, nil, nil // pending
+	}
+	return userID, bandID, err
+}
+
+func (q *Queries) ListBakedStems(ctx context.Context, trackID uuid.UUID) ([]models.BakedStem, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT reaper_guid, reaper_name, render_hash, overdub_id
+		FROM sync_baked_stems WHERE track_id = $1
+	`, trackID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var stems []models.BakedStem
+	for rows.Next() {
+		var s models.BakedStem
+		if err := rows.Scan(&s.ReaperGUID, &s.ReaperName, &s.RenderHash, &s.OverdubID); err != nil {
+			return nil, err
+		}
+		stems = append(stems, s)
+	}
+	return stems, nil
+}
+
+// UpsertBakedStem records a baked stem for (trackID, reaperGUID), returning
+// the previous overdub_id (if any) so callers can clean it up.
+func (q *Queries) UpsertBakedStem(ctx context.Context, trackID uuid.UUID, reaperGUID, reaperName, renderHash string, overdubID uuid.UUID) (*uuid.UUID, error) {
+	var prev *uuid.UUID
+	tx, err := q.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	err = tx.QueryRow(ctx, `
+		SELECT overdub_id FROM sync_baked_stems
+		WHERE track_id = $1 AND reaper_guid = $2
+	`, trackID, reaperGUID).Scan(&prev)
+	if err != nil && err != pgx.ErrNoRows {
+		return nil, err
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO sync_baked_stems (track_id, reaper_guid, reaper_name, render_hash, overdub_id)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (track_id, reaper_guid) DO UPDATE SET
+		    reaper_name = EXCLUDED.reaper_name,
+		    render_hash = EXCLUDED.render_hash,
+		    overdub_id  = EXCLUDED.overdub_id,
+		    updated_at  = now()
+	`, trackID, reaperGUID, reaperName, renderHash, overdubID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	if err != nil {
+		return nil, err
+	}
+	if prev != nil && *prev == overdubID {
+		return nil, nil
+	}
+	return prev, nil
 }
 
 func (q *Queries) GetLatestRppVersion(ctx context.Context, trackID uuid.UUID) (*models.RppVersion, error) {

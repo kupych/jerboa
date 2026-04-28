@@ -98,10 +98,20 @@ func (h *SyncHandler) State(w http.ResponseWriter, r *http.Request) {
 		files = []models.SyncFile{}
 	}
 
+	stems, err := h.queries.ListBakedStems(r.Context(), track.ID)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	if stems == nil {
+		stems = []models.BakedStem{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"track_id": track.ID,
-		"files":    files,
+		"track_id":     track.ID,
+		"files":        files,
+		"baked_stems":  stems,
 	})
 }
 
@@ -168,6 +178,88 @@ func (h *SyncHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.queries.UpsertSyncFile(r.Context(), trackID, &overdub.ID, filename, fileHash); err != nil {
 		slog.Warn("upsert sync file", "error", err)
+	}
+
+	go h.processTrack(overdub.ID, filePath, band.ID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]any{"id": overdub.ID})
+}
+
+// UploadBaked uploads a per-Reaper-track bounce (post-FX/automation/levels)
+// as an overdub on the session track. Replaces any prior baked stem for the
+// same reaper_guid.
+// POST /api/bands/{slug}/sync/baked
+func (h *SyncHandler) UploadBaked(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	band, ok := h.getBand(w, r, user)
+	if !ok {
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, `{"error":"file too large"}`, http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	trackID, err := uuid.Parse(r.FormValue("track_id"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid track_id"}`, http.StatusBadRequest)
+		return
+	}
+	reaperGUID := r.FormValue("reaper_guid")
+	reaperName := r.FormValue("reaper_name")
+	renderHash := r.FormValue("render_hash")
+	if reaperGUID == "" || renderHash == "" {
+		http.Error(w, `{"error":"reaper_guid and render_hash required"}`, http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, `{"error":"file is required"}`, http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	filePath, fileSize, err := h.store.Save(band.ID, header.Filename, file)
+	if err != nil {
+		http.Error(w, `{"error":"failed to save file"}`, http.StatusInternalServerError)
+		return
+	}
+
+	title := reaperName
+	if title == "" {
+		title = header.Filename
+	}
+	overdub := &models.Track{
+		BandID:     band.ID,
+		Title:      title,
+		UploadedBy: user.ID,
+		FilePath:   filePath,
+		FileSize:   fileSize,
+		Status:     "processing",
+		OverdubOf:  &trackID,
+		Kind:       "baked_stem",
+	}
+	if err := h.queries.CreateTrack(r.Context(), overdub); err != nil {
+		h.store.Delete(filePath)
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+
+	prevOverdubID, err := h.queries.UpsertBakedStem(r.Context(), trackID, reaperGUID, reaperName, renderHash, overdub.ID)
+	if err != nil {
+		slog.Warn("upsert baked stem", "error", err)
+	}
+	if prevOverdubID != nil {
+		if oldPath, err := h.queries.DeleteTrack(r.Context(), *prevOverdubID); err == nil && oldPath != "" {
+			if shared, err := h.queries.IsFileShared(r.Context(), oldPath); err == nil && !shared {
+				h.store.Delete(oldPath)
+			}
+		}
 	}
 
 	go h.processTrack(overdub.ID, filePath, band.ID)

@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS sync_baked_stems;
+ALTER TABLE tracks DROP COLUMN IF EXISTS kind;

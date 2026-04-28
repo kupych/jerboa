@@ -44,9 +44,11 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	adminH := NewAdminHandler(queries)
 	eventsH := NewEventsHandler(queries)
 	overdubH := NewOverdubHandler(queries, store, processor, hub, mix)
+	demucsH := NewDemucsHandler(queries, store, processor, hub, mix, cfg.ReplicateToken, cfg.ReplicateDemucsModel)
 	activityH := NewActivityHandler(queries)
 	fileH := NewFileHandler(queries, s3, cfg.MaxFileMB)
 	syncH := NewSyncHandler(queries, store, processor, hub, cfg.MaxUploadMB, cfg.BinDir)
+	pairH := NewPairHandler(queries, cfg.BaseURL)
 
 	// Auth routes (no auth middleware). Rate-limited to slow brute-force
 	// and mailer abuse on the magic-link send endpoint.
@@ -58,6 +60,11 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/auth/invite/{token}", authH.InviteLogin)
 		r.Post("/auth/magic-link", authH.SendMagicLink)
 		r.Get("/auth/magic-link/verify", authH.VerifyMagicLink)
+
+		// Reaper device-pairing (start + poll are unauthenticated; the code
+		// itself is the bearer until an authenticated user authorizes it).
+		r.Post("/api/pair/start", pairH.Start)
+		r.Post("/api/pair/poll", pairH.Poll)
 	})
 
 	// Authenticated routes
@@ -118,6 +125,9 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Delete("/api/bands/{slug}/tracks/{trackID}/bounce-versions", overdubH.PurgeBounceVersions)
 		r.Post("/api/bands/{slug}/tracks/{trackID}/restore", overdubH.RestoreOriginal)
 
+		// Demucs (stem separation via Replicate)
+		r.Post("/api/bands/{slug}/tracks/{trackID}/demucs", demucsH.Separate)
+
 		// Sets
 		r.Get("/api/bands/{slug}/sets", setH.List)
 		r.Post("/api/bands/{slug}/sets", setH.Create)
@@ -154,9 +164,12 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/bands/{slug}/sync/sessions", syncH.Sessions)
 		r.Get("/api/bands/{slug}/sync/state/{sessionName}", syncH.State)
 		r.Post("/api/bands/{slug}/sync/file", syncH.UploadFile)
+		r.Post("/api/bands/{slug}/sync/baked", syncH.UploadBaked)
 		r.Post("/api/bands/{slug}/sync/rpp", syncH.UploadRPP)
 		r.Get("/api/bands/{slug}/sync/binary", syncH.DownloadBinary)
 		r.Get("/api/bands/{slug}/sync/rpp/{trackID}", syncH.ServeRPP)
+
+		r.Post("/api/pair/authorize", pairH.Authorize)
 
 		// Band files
 		r.Get("/api/bands/{slug}/files", fileH.List)

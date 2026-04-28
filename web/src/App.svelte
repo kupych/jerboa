@@ -22,6 +22,7 @@
   import Changelog from "./routes/Changelog.svelte";
   import AuthOpen from "./routes/AuthOpen.svelte";
   import TagView from "./routes/TagView.svelte";
+  import Connect from "./routes/Connect.svelte";
 
   let onboardName = $state("");
   let onboardSaving = $state(false);
@@ -107,6 +108,8 @@
   <AuthOpen />
 {:else if !$user}
   <Login />
+{:else if $route.isConnect}
+  <Connect />
 {:else if needsOnboarding}
   <div class="min-h-screen flex flex-col items-center justify-center px-6">
     <div class="w-full max-w-sm space-y-6">

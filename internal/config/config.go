@@ -33,6 +33,9 @@ type Config struct {
 
 	YTDLPCookies string
 
+	ReplicateToken       string
+	ReplicateDemucsModel string
+
 	S3Endpoint  string
 	S3Bucket    string
 	S3Region    string
@@ -97,6 +100,9 @@ func Load() (*Config, error) {
 		SMTPFrom: env("JERBOA_SMTP_FROM", ""),
 
 		YTDLPCookies: env("JERBOA_YTDLP_COOKIES", ""),
+
+		ReplicateToken:       env("JERBOA_REPLICATE_TOKEN", ""),
+		ReplicateDemucsModel: env("JERBOA_REPLICATE_DEMUCS_MODEL", "ryan5453/demucs"),
 
 		S3Endpoint:  env("JERBOA_S3_ENDPOINT", ""),
 		S3Bucket:    env("JERBOA_S3_BUCKET", ""),

@@ -48,6 +48,8 @@ export const route = derived(path, ($path) => {
     isNoAccess: parts[0] === "no-access",
     // /auth/open
     isAuthOpen: parts[0] === "auth" && parts[1] === "open",
+    // /connect?code=… — Reaper device-pairing landing
+    isConnect: parts[0] === "connect",
     bandSlug: parts[0] === "band" ? parts[1] : null,
     trackId: parts[0] === "band" && parts[2] === "track" ? parts[3] : null,
     songId: parts[0] === "band" && parts[2] === "song" ? parts[3] : null,

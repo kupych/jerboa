@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,8 +27,9 @@ type Config struct {
 }
 
 type syncState struct {
-	TrackID string     `json:"track_id"`
-	Files   []fileInfo `json:"files"`
+	TrackID    string       `json:"track_id"`
+	Files      []fileInfo   `json:"files"`
+	BakedStems []bakedStem  `json:"baked_stems"`
 }
 
 type fileInfo struct {
@@ -36,20 +38,46 @@ type fileInfo struct {
 	OverdubID *string `json:"overdub_id,omitempty"`
 }
 
+type bakedStem struct {
+	ReaperGUID string  `json:"reaper_guid"`
+	ReaperName string  `json:"reaper_name"`
+	RenderHash string  `json:"render_hash"`
+	OverdubID  *string `json:"overdub_id,omitempty"`
+}
+
 type sessionInfo struct {
 	TrackID     string `json:"track_id"`
 	SessionName string `json:"session_name"`
 }
 
 func main() {
+	manifestMode := false
+	for _, a := range os.Args[1:] {
+		if a == "--manifest" {
+			manifestMode = true
+		}
+	}
+
 	cfg, err := loadConfig()
 	if err != nil {
 		fatalf("config: %v\n\nMake sure you downloaded this utility from Jerboa — it needs to be pre-configured.", err)
 	}
 
-	fmt.Printf("jerboa-sync  →  %s / %s\n\n", cfg.ServerURL, cfg.BandSlug)
-
 	client := &http.Client{Timeout: 10 * time.Minute}
+
+	if manifestMode {
+		rppPath, err := findRPP(".")
+		if err != nil {
+			fatalf("manifest: %v", err)
+		}
+		sessionName := strings.TrimSuffix(filepath.Base(rppPath), filepath.Ext(rppPath))
+		if err := emitManifest(client, cfg, rppPath, sessionName); err != nil {
+			fatalf("manifest: %v", err)
+		}
+		return
+	}
+
+	fmt.Printf("jerboa-sync  →  %s / %s\n\n", cfg.ServerURL, cfg.BandSlug)
 
 	rppPath, err := findRPP(".")
 	if err != nil {
@@ -62,7 +90,64 @@ func main() {
 	sessionName := strings.TrimSuffix(filepath.Base(rppPath), filepath.Ext(rppPath))
 
 	runPush(client, cfg, rppPath, sessionName)
+	runBake(client, cfg, rppPath, sessionName)
 	runPullInto(client, cfg, sessionName, filepath.Dir(rppPath))
+}
+
+// emitManifest writes one TSV line to stdout per Reaper track whose render
+// hash differs from the server's known baked stem. Format:
+//
+//	# session_name=<name>
+//	# rpp_path=<abs path>
+//	# track_id=<uuid>
+//	# bake_dir=<abs path>
+//	<reaper_guid>\t<reaper_name>\t<render_hash>
+//
+// Used by the Lua driver inside Reaper to drive the per-track bake step.
+func emitManifest(client *http.Client, cfg *Config, rppPath, sessionName string) error {
+	tracks, err := ParseRPPTracks(rppPath)
+	if err != nil {
+		return fmt.Errorf("parse rpp: %w", err)
+	}
+	state, err := getState(client, cfg, sessionName)
+	if err != nil {
+		return fmt.Errorf("get state: %w", err)
+	}
+
+	serverHash := map[string]string{}
+	for _, s := range state.BakedStems {
+		serverHash[s.ReaperGUID] = s.RenderHash
+	}
+
+	absRPP, _ := filepath.Abs(rppPath)
+	bakeDir := filepath.Join(filepath.Dir(absRPP), ".jerboa-bake")
+
+	fmt.Printf("# session_name=%s\n", sessionName)
+	fmt.Printf("# rpp_path=%s\n", absRPP)
+	fmt.Printf("# track_id=%s\n", state.TrackID)
+	fmt.Printf("# bake_dir=%s\n", bakeDir)
+
+	for _, t := range tracks {
+		if t.GUID == "" {
+			continue
+		}
+		hash, err := renderHash(t)
+		if err != nil {
+			continue
+		}
+		known, present := serverHash[t.GUID]
+		var status string
+		switch {
+		case !present:
+			status = "unbaked"
+		case known == hash:
+			status = "clean"
+		default:
+			status = "stale"
+		}
+		fmt.Printf("%s\t%s\t%s\t%s\n", t.GUID, t.Name, hash, status)
+	}
+	return nil
 }
 
 // runPush uploads local audio files and .rpp to the server.
@@ -130,6 +215,143 @@ func runPush(client *http.Client, cfg *Config, rppPath, sessionName string) {
 	if failed > 0 {
 		os.Exit(1)
 	}
+}
+
+// runBake computes per-track render hashes, diffs them against the server's
+// known baked stems, and uploads any matching WAVs found in .jerboa-bake/.
+// It does NOT invoke Reaper itself — the GUI/script step does that — but it
+// always reports which tracks are stale so an external bake step can act.
+func runBake(client *http.Client, cfg *Config, rppPath, sessionName string) {
+	tracks, err := ParseRPPTracks(rppPath)
+	if err != nil {
+		fmt.Printf("\nbake — skipped: parse rpp tracks: %v\n", err)
+		return
+	}
+	if len(tracks) == 0 {
+		return
+	}
+
+	state, err := getState(client, cfg, sessionName)
+	if err != nil {
+		fmt.Printf("\nbake — skipped: get state: %v\n", err)
+		return
+	}
+
+	serverHash := map[string]string{}
+	for _, s := range state.BakedStems {
+		serverHash[s.ReaperGUID] = s.RenderHash
+	}
+
+	bakeDir := filepath.Join(filepath.Dir(rppPath), ".jerboa-bake")
+
+	fmt.Printf("\nbake — %d track(s)\n", len(tracks))
+	staleNoFile := 0
+	uploaded, skipped, failed := 0, 0, 0
+
+	for _, t := range tracks {
+		if t.GUID == "" {
+			continue // track has no TRACKID line; skip silently
+		}
+		hash, err := renderHash(t)
+		if err != nil {
+			fmt.Printf("  error %s: hash: %v\n", t.Name, err)
+			failed++
+			continue
+		}
+		label := t.Name
+		if label == "" {
+			label = t.GUID[:8]
+		}
+		if serverHash[t.GUID] == hash {
+			fmt.Printf("  ok    %s\n", label)
+			skipped++
+			continue
+		}
+
+		// Stale or missing — look for a baked WAV.
+		wavPath := filepath.Join(bakeDir, t.GUID+".wav")
+		if _, err := os.Stat(wavPath); err != nil {
+			fmt.Printf("  need  %s  (no %s)\n", label, filepath.Join(".jerboa-bake", t.GUID+".wav"))
+			staleNoFile++
+			continue
+		}
+
+		fmt.Printf("  up    %s ... ", label)
+		if err := uploadBaked(client, cfg, state.TrackID, t.GUID, t.Name, hash, wavPath); err != nil {
+			fmt.Printf("FAILED: %v\n", err)
+			failed++
+		} else {
+			fmt.Printf("done\n")
+			uploaded++
+		}
+	}
+
+	fmt.Printf("\nbake — %d uploaded, %d up-to-date, %d stale (need render), %d failed\n", uploaded, skipped, staleNoFile, failed)
+}
+
+// renderHash hashes the verbatim <TRACK> block plus the sorted SHA-256 hashes
+// of every source media file referenced inside it. Stable across cosmetic
+// re-saves and changes the moment FX, automation, fader, or media changes.
+func renderHash(t RPPTrack) (string, error) {
+	h := sha256.New()
+	h.Write(t.BlockBytes)
+
+	var mediaHashes []string
+	for _, item := range t.Items {
+		mh, err := hashFile(item.FilePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue // missing media — render hash still meaningful from block bytes
+			}
+			return "", err
+		}
+		mediaHashes = append(mediaHashes, mh)
+	}
+	sort.Strings(mediaHashes)
+	for _, mh := range mediaHashes {
+		h.Write([]byte(mh))
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func uploadBaked(client *http.Client, cfg *Config, trackID, reaperGUID, reaperName, renderHash, wavPath string) error {
+	f, err := os.Open(wavPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	mw.WriteField("track_id", trackID)
+	mw.WriteField("reaper_guid", reaperGUID)
+	mw.WriteField("reaper_name", reaperName)
+	mw.WriteField("render_hash", renderHash)
+
+	fw, err := mw.CreateFormFile("file", filepath.Base(wavPath))
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(fw, f); err != nil {
+		return err
+	}
+	mw.Close()
+
+	url := fmt.Sprintf("%s/api/bands/%s/sync/baked", cfg.ServerURL, cfg.BandSlug)
+	req, _ := http.NewRequest("POST", url, &buf)
+	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%d: %s", resp.StatusCode, body)
+	}
+	return nil
 }
 
 // runPull is the interactive no-.rpp mode: list sessions, prompt, pull.

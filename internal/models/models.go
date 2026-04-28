@@ -111,6 +111,7 @@ type Track struct {
 	Muted          bool              `json:"muted"`
 	LoudnessLUFS   *float64          `json:"loudness_lufs,omitempty"`
 	OverdubCount   int               `json:"overdub_count,omitempty"`
+	Kind           string            `json:"kind,omitempty"`
 }
 
 type OverdubVote struct {
@@ -282,6 +283,13 @@ type SyncFile struct {
 	Filename  string     `json:"filename"`
 	FileHash  string     `json:"file_hash"`
 	OverdubID *uuid.UUID `json:"overdub_id,omitempty"`
+}
+
+type BakedStem struct {
+	ReaperGUID string     `json:"reaper_guid"`
+	ReaperName string     `json:"reaper_name"`
+	RenderHash string     `json:"render_hash"`
+	OverdubID  *uuid.UUID `json:"overdub_id,omitempty"`
 }
 
 type BandFile struct {
