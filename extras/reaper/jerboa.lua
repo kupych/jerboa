@@ -18,7 +18,7 @@
 local r = reaper
 
 -- Default Jerboa server. Override here if you self-host.
-local JERBOA_SERVER = "https://jerboa.app"
+local JERBOA_SERVER = "https://jerboa.dad"
 
 ------------------------------------------------------------------- platform
 
@@ -191,7 +191,11 @@ local function task_bake()
     local ok, err = refresh_now()
     if not ok then log("error: " .. err); return end
     if not state.meta.bake_dir or state.meta.bake_dir == "" then
-        log("error: missing bake_dir"); return
+        log("error: missing bake_dir — sync binary may be out of date")
+        log("  session=" .. tostring(state.meta.session_name))
+        log("  track_id=" .. tostring(state.meta.track_id))
+        log("  rpp_path=" .. tostring(state.meta.rpp_path))
+        return
     end
     r.RecursiveCreateDirectory(state.meta.bake_dir, 0)
 
@@ -257,11 +261,12 @@ local function open_browser(url)
     os.execute(cmd .. " >/dev/null 2>&1 &")
 end
 
--- Sleeps for `secs` seconds while keeping the UI responsive: yields once,
--- then busy-waits using os.clock(). Coarse but works without timers.
+-- Wall-clock sleep that yields each frame so the UI keeps painting.
+-- Must use os.time() (wall) not os.clock() (CPU) — a yielded coroutine
+-- consumes no CPU time, so an os.clock-based loop never expires.
 local function coro_sleep(secs)
-    local t0 = os.clock()
-    while os.clock() - t0 < secs do
+    local deadline = os.time() + secs
+    while os.time() < deadline do
         coroutine.yield()
     end
 end
@@ -341,7 +346,13 @@ local function task_sync()
     if not rpp then log("error: project must be saved"); return end
     local out, ok = run_capture(jerboa_sync_cmd(), dirname(rpp))
     if out then for line in out:gmatch("[^\r\n]+") do log(line) end end
-    if not ok then log("sync exited non-zero") end
+    if not ok then
+        log("sync exited non-zero")
+        if out and out:find("401") then
+            log("auth token rejected — removing stale binary; click Connect to re-pair")
+            os.remove(bin_path())
+        end
+    end
     step("Refreshing...")
     refresh_now()
 end
