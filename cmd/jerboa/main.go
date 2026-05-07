@@ -105,11 +105,11 @@ func run() error {
 	router := server.NewRouter(cfg, queries, authProvider, store, s3Client, processor, webFS)
 
 	srv := &http.Server{
-		Addr:         cfg.Addr,
-		Handler:      router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 5 * time.Minute, // Long for audio streaming
-		IdleTimeout:  2 * time.Minute,
+		Addr:              cfg.Addr,
+		Handler:           router,
+		ReadHeaderTimeout: 30 * time.Second,
+		WriteTimeout:      5 * time.Minute, // Long for audio streaming
+		IdleTimeout:       2 * time.Minute,
 	}
 
 	go func() {
