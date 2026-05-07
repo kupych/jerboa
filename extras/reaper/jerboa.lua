@@ -118,7 +118,7 @@ end
 local function parse_manifest(text)
     local meta, tracks = {}, {}
     for line in text:gmatch("[^\r\n]+") do
-        local k, v = line:match("^# (%w+)=(.*)$")
+        local k, v = line:match("^# ([%w_]+)=(.*)$")
         if k then
             meta[k] = v
         elseif line:sub(1, 1) ~= "#" and line ~= "" then

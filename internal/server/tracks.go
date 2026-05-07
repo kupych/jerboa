@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -127,47 +128,43 @@ func (h *TrackHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, `{"error":"file too large"}`, http.StatusRequestEntityTooLarge)
-		return
-	}
-
-	file, header, err := r.FormFile("file")
+	up, err := streamMultipartToStorage(w, r, h.store, band.ID, h.maxBytes)
 	if err != nil {
+		if up != nil && up.FilePath != "" {
+			h.store.Delete(up.FilePath)
+		}
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, `{"error":"file too large"}`, http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, `{"error":"file is required"}`, http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
 
-	if !h.processor.IsSupported(header.Filename) {
+	if !h.processor.IsSupported(up.Filename) {
+		h.store.Delete(up.FilePath)
 		http.Error(w, `{"error":"unsupported audio format"}`, http.StatusBadRequest)
 		return
 	}
 
-	title := r.FormValue("title")
+	title := up.Fields["title"]
 	if title == "" {
-		title = strings.TrimSuffix(header.Filename, "."+fileExt(header.Filename))
-	}
-
-	filePath, fileSize, err := h.store.Save(band.ID, header.Filename, file)
-	if err != nil {
-		http.Error(w, `{"error":"failed to save file"}`, http.StatusInternalServerError)
-		return
+		title = strings.TrimSuffix(up.Filename, "."+fileExt(up.Filename))
 	}
 
 	track := &models.Track{
 		BandID:      band.ID,
 		Title:       title,
-		Description: r.FormValue("description"),
+		Description: up.Fields["description"],
 		UploadedBy:  user.ID,
-		FilePath:    filePath,
-		FileSize:    fileSize,
+		FilePath:    up.FilePath,
+		FileSize:    up.FileSize,
 		Status:      "processing",
 	}
 
 	if err := h.queries.CreateTrack(r.Context(), track); err != nil {
-		h.store.Delete(filePath)
+		h.store.Delete(up.FilePath)
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
 	}
@@ -175,7 +172,7 @@ func (h *TrackHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	track.Uploader = user
 
 	// Process audio in background
-	go h.processTrack(track.ID, filePath, band.ID)
+	go h.processTrack(track.ID, up.FilePath, band.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

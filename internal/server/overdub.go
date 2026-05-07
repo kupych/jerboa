@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -95,56 +96,50 @@ func (h *OverdubHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, 200*1024*1024)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, `{"error":"file too large"}`, http.StatusRequestEntityTooLarge)
-		return
-	}
-
-	file, header, err := r.FormFile("file")
+	up, err := streamMultipartToStorage(w, r, h.store, band.ID, 200*1024*1024)
 	if err != nil {
+		if up != nil && up.FilePath != "" {
+			h.store.Delete(up.FilePath)
+		}
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, `{"error":"file too large"}`, http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, `{"error":"file is required"}`, http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
 
-	// Parse offset
 	var offsetMS int64
-	if v := r.FormValue("offset_ms"); v != "" {
+	if v := up.Fields["offset_ms"]; v != "" {
 		fmt.Sscanf(v, "%d", &offsetMS)
 	}
 
-	title := r.FormValue("title")
+	title := up.Fields["title"]
 	if title == "" {
 		title = "overdub of " + parent.Title
-	}
-
-	filePath, fileSize, err := h.store.Save(band.ID, header.Filename, file)
-	if err != nil {
-		http.Error(w, `{"error":"failed to save file"}`, http.StatusInternalServerError)
-		return
 	}
 
 	track := &models.Track{
 		BandID:     band.ID,
 		Title:      title,
 		UploadedBy: user.ID,
-		FilePath:   filePath,
-		FileSize:   fileSize,
+		FilePath:   up.FilePath,
+		FileSize:   up.FileSize,
 		Status:     "processing",
 		OverdubOf:  &trackID,
 		OffsetMS:   offsetMS,
 	}
 
 	if err := h.queries.CreateTrack(r.Context(), track); err != nil {
-		h.store.Delete(filePath)
+		h.store.Delete(up.FilePath)
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
 	}
 
 	track.Uploader = user
 
-	go h.processOverdub(track.ID, filePath, band.ID)
+	go h.processOverdub(track.ID, up.FilePath, band.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
