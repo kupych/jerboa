@@ -180,6 +180,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		// Band files – resumable multipart upload (browser → S3 direct)
 		r.Post("/api/bands/{slug}/files/multipart/initiate", fileH.InitiateMultipart)
 		r.Get("/api/bands/{slug}/files/multipart/part", fileH.PresignPart)
+		r.Get("/api/bands/{slug}/files/multipart/parts", fileH.ListParts)
 		r.Post("/api/bands/{slug}/files/multipart/complete", fileH.CompleteMultipart)
 		r.Delete("/api/bands/{slug}/files/multipart", fileH.AbortMultipart)
 

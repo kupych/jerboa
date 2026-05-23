@@ -89,3 +89,29 @@ func (s *S3Client) CompleteMultipart(ctx context.Context, key, uploadID string, 
 func (s *S3Client) AbortMultipart(ctx context.Context, key, uploadID string) error {
 	return s.core.AbortMultipartUpload(ctx, s.bucket, key, uploadID)
 }
+
+type UploadedPart struct {
+	PartNumber int
+	ETag       string
+}
+
+// ListParts returns all parts already uploaded for a multipart upload.
+// Paginates automatically; returns an error if the upload ID is unknown.
+func (s *S3Client) ListParts(ctx context.Context, key, uploadID string) ([]UploadedPart, error) {
+	var out []UploadedPart
+	marker := 0
+	for {
+		res, err := s.core.ListObjectParts(ctx, s.bucket, key, uploadID, marker, 1000)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range res.ObjectParts {
+			out = append(out, UploadedPart{PartNumber: p.PartNumber, ETag: p.ETag})
+		}
+		if !res.IsTruncated {
+			break
+		}
+		marker = res.NextPartNumberMarker
+	}
+	return out, nil
+}

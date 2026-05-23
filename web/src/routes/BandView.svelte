@@ -263,7 +263,7 @@
   // Files larger than this threshold use the multipart path (browser → S3 direct).
   // Smaller files still go through the regular POST endpoint.
   const MULTIPART_THRESHOLD = 100 * 1024 * 1024; // 100 MB
-  const CHUNK_SIZE = 10 * 1024 * 1024; // 10 MB per part (S3 minimum is 5 MB)
+  const CHUNK_SIZE = 25 * 1024 * 1024; // 25 MB per part
 
   // PUT a chunk directly to a presigned S3 URL via XHR so we get upload progress
   // events within the chunk. Returns the ETag S3 puts on the part.
@@ -321,46 +321,94 @@
     }
 
     // Large file: chunk directly to S3 via presigned multipart URLs.
-    // Four workers run in parallel so we saturate the connection rather than
-    // waiting for each chunk's round-trip before starting the next.
+    // State is persisted to localStorage so uploads survive page refreshes.
     const CONCURRENCY = 4;
+    const stateKey = `jerboa:upload:${slug}:${file.name}:${file.size}`;
+
+    const saveState = (id: string, done: { part_number: number; etag: string }[]) => {
+      try { localStorage.setItem(stateKey, JSON.stringify({ fileId: id, parts: done })); } catch {}
+    };
+    const clearState = () => { try { localStorage.removeItem(stateKey); } catch {} };
+
     let fileId = "";
     try {
-      const initiated = await apiPost<{ file_id: string }>(
-        `/api/bands/${slug}/files/multipart/initiate`,
-        { name: file.name, content_type: file.type || "application/octet-stream", file_size: file.size },
-      );
-      fileId = initiated.file_id;
-
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-      const parts: { part_number: number; etag: string }[] = new Array(totalChunks);
-      // Per-chunk bytes-sent for smooth aggregate progress across parallel uploads.
+      const parts: ({ part_number: number; etag: string } | undefined)[] = new Array(totalChunks);
       const chunkLoaded = new Float64Array(totalChunks);
+
+      // Try to resume a previous upload for this exact file.
+      let resumedCount = 0;
+      const saved = (() => { try { const s = localStorage.getItem(stateKey); return s ? JSON.parse(s) : null; } catch { return null; } })();
+      if (saved?.fileId) {
+        try {
+          // Ask S3 (via server) which parts it actually has — don't trust client state alone.
+          const { parts: doneParts } = await api<{ parts: { part_number: number; etag: string }[] }>(
+            `/api/bands/${slug}/files/multipart/parts?file_id=${saved.fileId}`,
+          );
+          fileId = saved.fileId;
+          for (const p of doneParts) {
+            const i = p.part_number - 1;
+            parts[i] = p;
+            chunkLoaded[i] = file.slice(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, file.size)).size;
+            resumedCount++;
+          }
+        } catch {
+          // Upload no longer valid (expired, aborted, or already complete) — start fresh.
+          clearState();
+        }
+      }
+
+      if (!fileId) {
+        const initiated = await apiPost<{ file_id: string }>(
+          `/api/bands/${slug}/files/multipart/initiate`,
+          { name: file.name, content_type: file.type || "application/octet-stream", file_size: file.size },
+        );
+        fileId = initiated.file_id;
+        saveState(fileId, []);
+      }
 
       const updateProgress = () => {
         let total = 0;
         for (let j = 0; j < totalChunks; j++) total += chunkLoaded[j];
         fileUploadProgress = Math.round((total / file.size) * 100);
       };
+      if (resumedCount > 0) updateProgress();
+
+      const urlCache = new Map<number, Promise<string>>();
+      const prefetch = (i: number) => {
+        if (i < totalChunks && !parts[i] && !urlCache.has(i)) {
+          urlCache.set(i, api<{ url: string }>(
+            `/api/bands/${slug}/files/multipart/part?file_id=${fileId}&part=${i + 1}`,
+          ).then(r => r.url));
+        }
+      };
+      // Seed the first batch of URLs, skipping already-done chunks.
+      let seeded = 0;
+      for (let i = 0; i < totalChunks && seeded < CONCURRENCY * 2; i++) {
+        if (!parts[i]) { prefetch(i); seeded++; }
+      }
 
       let nextIndex = 0;
       const worker = async () => {
         while (nextIndex < totalChunks) {
           const i = nextIndex++;
-          const partNumber = i + 1;
+          if (parts[i]) continue; // already uploaded, skip
+
+          prefetch(i + CONCURRENCY);
           const start = i * CHUNK_SIZE;
           const chunk = file.slice(start, Math.min(start + CHUNK_SIZE, file.size));
+          const url = await (urlCache.get(i) ?? api<{ url: string }>(
+            `/api/bands/${slug}/files/multipart/part?file_id=${fileId}&part=${i + 1}`,
+          ).then(r => r.url));
 
-          const { url } = await api<{ url: string }>(
-            `/api/bands/${slug}/files/multipart/part?file_id=${fileId}&part=${partNumber}`,
-          );
           const etag = await putChunk(url, chunk, (loaded) => {
             chunkLoaded[i] = loaded;
             updateProgress();
           });
           chunkLoaded[i] = chunk.size;
+          parts[i] = { part_number: i + 1, etag };
           updateProgress();
-          parts[i] = { part_number: partNumber, etag };
+          saveState(fileId, parts.filter(Boolean) as { part_number: number; etag: string }[]);
         }
       };
 
@@ -368,14 +416,14 @@
 
       const created = await apiPost<BandFile>(
         `/api/bands/${slug}/files/multipart/complete`,
-        { file_id: fileId, parts },
+        { file_id: fileId, parts: parts as { part_number: number; etag: string }[] },
       );
+      clearState();
       files = [created, ...files];
     } catch (e: any) {
       fileUploadError = e.message || "Upload failed";
-      if (fileId) {
-        api(`/api/bands/${slug}/files/multipart?file_id=${fileId}`, { method: "DELETE" }).catch(() => {});
-      }
+      // Don't clear localStorage on error — leave state so the user can resume.
+      // Only abort the S3 upload if the user explicitly deletes the pending file.
     } finally {
       fileUploading = false;
       fileUploadProgress = 0;

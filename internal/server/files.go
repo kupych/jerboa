@@ -335,6 +335,52 @@ func (h *FileHandler) CompleteMultipart(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(bf)
 }
 
+// ListParts returns the parts S3 already has for a pending multipart upload.
+// The client uses this on resume to know which chunks it can skip.
+func (h *FileHandler) ListParts(w http.ResponseWriter, r *http.Request) {
+	if h.s3 == nil {
+		http.Error(w, `{"error":"object storage not configured"}`, http.StatusNotImplemented)
+		return
+	}
+
+	user := UserFrom(r.Context())
+	band, ok := h.getBand(w, r, user)
+	if !ok {
+		return
+	}
+
+	fileID, err := uuid.Parse(r.URL.Query().Get("file_id"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid file_id"}`, http.StatusBadRequest)
+		return
+	}
+
+	bf, err := h.queries.GetBandFile(r.Context(), fileID, band.ID)
+	if err != nil || bf == nil || bf.Status != "pending" {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+
+	parts, err := h.s3.ListParts(r.Context(), bf.StorageKey, bf.UploadID)
+	if err != nil {
+		// Upload ID no longer known to S3 (expired or aborted externally).
+		http.Error(w, `{"error":"upload not found"}`, http.StatusNotFound)
+		return
+	}
+
+	type partJSON struct {
+		PartNumber int    `json:"part_number"`
+		ETag       string `json:"etag"`
+	}
+	out := make([]partJSON, len(parts))
+	for i, p := range parts {
+		out[i] = partJSON{PartNumber: p.PartNumber, ETag: p.ETag}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"parts": out})
+}
+
 // AbortMultipart cancels an in-progress multipart upload and removes the DB row.
 func (h *FileHandler) AbortMultipart(w http.ResponseWriter, r *http.Request) {
 	if h.s3 == nil {
