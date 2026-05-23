@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "0.24.0",
+    date: "2026-05-23",
+    summary: [
+      "Big files allowed now. Just don't upload anything illegal pls"
+    ]
+  },
+  {
     version: "0.20.0",
     date: "2026-04-15",
     summary: [

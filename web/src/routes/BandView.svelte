@@ -260,20 +260,82 @@
     }
   }
 
+  // Files larger than this threshold use the multipart path (browser → S3 direct).
+  // Smaller files still go through the regular POST endpoint.
+  const MULTIPART_THRESHOLD = 100 * 1024 * 1024; // 100 MB
+  const CHUNK_SIZE = 50 * 1024 * 1024; // 50 MB per part
+
+  async function putWithRetry(url: string, chunk: Blob, attempt = 0): Promise<string> {
+    const res = await fetch(url, { method: "PUT", body: chunk });
+    if (!res.ok) {
+      if (attempt < 3) return putWithRetry(url, chunk, attempt + 1);
+      throw new Error(`Part upload failed (HTTP ${res.status})`);
+    }
+    const etag = res.headers.get("ETag") ?? res.headers.get("etag") ?? "";
+    if (!etag) throw new Error("S3 did not return an ETag — check bucket CORS config");
+    return etag;
+  }
+
   async function uploadBandFile(file: File) {
     fileUploading = true;
     fileUploadError = "";
     fileUploadProgress = 0;
+
+    if (file.size <= MULTIPART_THRESHOLD) {
+      // Small file: use the existing single-request upload path.
+      try {
+        const created = await uploadFile<BandFile>(
+          `/api/bands/${slug}/files`,
+          file,
+          {},
+          (pct) => (fileUploadProgress = pct),
+        );
+        files = [created, ...files];
+      } catch (e: any) {
+        fileUploadError = e.message || "Upload failed";
+      } finally {
+        fileUploading = false;
+        fileUploadProgress = 0;
+      }
+      return;
+    }
+
+    // Large file: chunk directly to S3 via presigned multipart URLs.
+    let fileId = "";
     try {
-      const created = await uploadFile<BandFile>(
-        `/api/bands/${slug}/files`,
-        file,
-        {},
-        (pct) => (fileUploadProgress = pct),
+      const initiated = await apiPost<{ file_id: string }>(
+        `/api/bands/${slug}/files/multipart/initiate`,
+        { name: file.name, content_type: file.type || "application/octet-stream", file_size: file.size },
+      );
+      fileId = initiated.file_id;
+
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const parts: { part_number: number; etag: string }[] = [];
+
+      for (let i = 0; i < totalChunks; i++) {
+        const partNumber = i + 1;
+        const start = i * CHUNK_SIZE;
+        const chunk = file.slice(start, Math.min(start + CHUNK_SIZE, file.size));
+
+        const { url } = await api<{ url: string }>(
+          `/api/bands/${slug}/files/multipart/part?file_id=${fileId}&part=${partNumber}`,
+        );
+        const etag = await putWithRetry(url, chunk);
+        parts.push({ part_number: partNumber, etag });
+
+        fileUploadProgress = Math.round((partNumber / totalChunks) * 100);
+      }
+
+      const created = await apiPost<BandFile>(
+        `/api/bands/${slug}/files/multipart/complete`,
+        { file_id: fileId, parts },
       );
       files = [created, ...files];
     } catch (e: any) {
       fileUploadError = e.message || "Upload failed";
+      if (fileId) {
+        api(`/api/bands/${slug}/files/multipart?file_id=${fileId}`, { method: "DELETE" }).catch(() => {});
+      }
     } finally {
       fileUploading = false;
       fileUploadProgress = 0;

@@ -1922,19 +1922,44 @@ func (q *Queries) GetLatestRppVersion(ctx context.Context, trackID uuid.UUID) (*
 
 func (q *Queries) CreateBandFile(ctx context.Context, f *models.BandFile) error {
 	return q.pool.QueryRow(ctx, `
-		INSERT INTO band_files (band_id, name, storage_key, file_size, content_type, uploaded_by)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO band_files (band_id, name, storage_key, file_size, content_type, uploaded_by, status)
+		VALUES ($1, $2, $3, $4, $5, $6, 'complete')
 		RETURNING id, created_at
 	`, f.BandID, f.Name, f.StorageKey, f.FileSize, f.ContentType, f.UploadedBy).Scan(&f.ID, &f.CreatedAt)
 }
 
+// CreatePendingBandFile inserts a band_files row in 'pending' state for a
+// multipart upload that has not yet been completed.
+func (q *Queries) CreatePendingBandFile(ctx context.Context, f *models.BandFile) error {
+	return q.pool.QueryRow(ctx, `
+		INSERT INTO band_files (band_id, name, storage_key, upload_id, file_size, content_type, uploaded_by, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+		RETURNING id, created_at
+	`, f.BandID, f.Name, f.StorageKey, f.UploadID, f.FileSize, f.ContentType, f.UploadedBy).Scan(&f.ID, &f.CreatedAt)
+}
+
+// CompleteBandFile marks a pending multipart upload as complete and records the
+// final file size (which S3 reports after CompleteMultipartUpload).
+func (q *Queries) CompleteBandFile(ctx context.Context, id uuid.UUID, fileSize int64) error {
+	tag, err := q.pool.Exec(ctx, `
+		UPDATE band_files SET status = 'complete', file_size = $2, upload_id = '' WHERE id = $1 AND status = 'pending'
+	`, id, fileSize)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func (q *Queries) ListBandFiles(ctx context.Context, bandID uuid.UUID) ([]models.BandFile, error) {
 	rows, err := q.pool.Query(ctx, `
-		SELECT f.id, f.band_id, f.name, f.storage_key, f.file_size, f.content_type, f.uploaded_by, f.created_at,
+		SELECT f.id, f.band_id, f.name, f.storage_key, f.file_size, f.content_type, f.uploaded_by, f.status, f.created_at,
 		       u.id, u.display_name, u.email
 		FROM band_files f
 		JOIN users u ON u.id = f.uploaded_by
-		WHERE f.band_id = $1
+		WHERE f.band_id = $1 AND f.status = 'complete'
 		ORDER BY f.created_at DESC
 	`, bandID)
 	if err != nil {
@@ -1946,7 +1971,7 @@ func (q *Queries) ListBandFiles(ctx context.Context, bandID uuid.UUID) ([]models
 	for rows.Next() {
 		var f models.BandFile
 		var u models.User
-		if err := rows.Scan(&f.ID, &f.BandID, &f.Name, &f.StorageKey, &f.FileSize, &f.ContentType, &f.UploadedBy, &f.CreatedAt,
+		if err := rows.Scan(&f.ID, &f.BandID, &f.Name, &f.StorageKey, &f.FileSize, &f.ContentType, &f.UploadedBy, &f.Status, &f.CreatedAt,
 			&u.ID, &u.DisplayName, &u.Email); err != nil {
 			return nil, err
 		}
@@ -1959,9 +1984,9 @@ func (q *Queries) ListBandFiles(ctx context.Context, bandID uuid.UUID) ([]models
 func (q *Queries) GetBandFile(ctx context.Context, id, bandID uuid.UUID) (*models.BandFile, error) {
 	var f models.BandFile
 	err := q.pool.QueryRow(ctx, `
-		SELECT id, band_id, name, storage_key, file_size, content_type, uploaded_by, created_at
+		SELECT id, band_id, name, storage_key, upload_id, file_size, content_type, uploaded_by, status, created_at
 		FROM band_files WHERE id = $1 AND band_id = $2
-	`, id, bandID).Scan(&f.ID, &f.BandID, &f.Name, &f.StorageKey, &f.FileSize, &f.ContentType, &f.UploadedBy, &f.CreatedAt)
+	`, id, bandID).Scan(&f.ID, &f.BandID, &f.Name, &f.StorageKey, &f.UploadID, &f.FileSize, &f.ContentType, &f.UploadedBy, &f.Status, &f.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}

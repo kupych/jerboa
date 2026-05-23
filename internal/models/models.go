@@ -297,9 +297,11 @@ type BandFile struct {
 	BandID      uuid.UUID `json:"band_id"`
 	Name        string    `json:"name"`
 	StorageKey  string    `json:"-"`
+	UploadID    string    `json:"-"`
 	FileSize    int64     `json:"file_size"`
 	ContentType string    `json:"content_type"`
 	UploadedBy  uuid.UUID `json:"uploaded_by"`
+	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	Uploader    *User     `json:"uploader,omitempty"`
 }
