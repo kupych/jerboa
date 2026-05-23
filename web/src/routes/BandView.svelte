@@ -321,6 +321,9 @@
     }
 
     // Large file: chunk directly to S3 via presigned multipart URLs.
+    // Four workers run in parallel so we saturate the connection rather than
+    // waiting for each chunk's round-trip before starting the next.
+    const CONCURRENCY = 4;
     let fileId = "";
     try {
       const initiated = await apiPost<{ file_id: string }>(
@@ -330,25 +333,38 @@
       fileId = initiated.file_id;
 
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-      const parts: { part_number: number; etag: string }[] = [];
-      let bytesUploaded = 0;
+      const parts: { part_number: number; etag: string }[] = new Array(totalChunks);
+      // Per-chunk bytes-sent for smooth aggregate progress across parallel uploads.
+      const chunkLoaded = new Float64Array(totalChunks);
 
-      for (let i = 0; i < totalChunks; i++) {
-        const partNumber = i + 1;
-        const start = i * CHUNK_SIZE;
-        const chunk = file.slice(start, Math.min(start + CHUNK_SIZE, file.size));
-        const bytesAtChunkStart = bytesUploaded;
+      const updateProgress = () => {
+        let total = 0;
+        for (let j = 0; j < totalChunks; j++) total += chunkLoaded[j];
+        fileUploadProgress = Math.round((total / file.size) * 100);
+      };
 
-        const { url } = await api<{ url: string }>(
-          `/api/bands/${slug}/files/multipart/part?file_id=${fileId}&part=${partNumber}`,
-        );
-        const etag = await putChunk(url, chunk, (loaded) => {
-          fileUploadProgress = Math.round(((bytesAtChunkStart + loaded) / file.size) * 100);
-        });
-        bytesUploaded += chunk.size;
-        parts.push({ part_number: partNumber, etag });
-        fileUploadProgress = Math.round((bytesUploaded / file.size) * 100);
-      }
+      let nextIndex = 0;
+      const worker = async () => {
+        while (nextIndex < totalChunks) {
+          const i = nextIndex++;
+          const partNumber = i + 1;
+          const start = i * CHUNK_SIZE;
+          const chunk = file.slice(start, Math.min(start + CHUNK_SIZE, file.size));
+
+          const { url } = await api<{ url: string }>(
+            `/api/bands/${slug}/files/multipart/part?file_id=${fileId}&part=${partNumber}`,
+          );
+          const etag = await putChunk(url, chunk, (loaded) => {
+            chunkLoaded[i] = loaded;
+            updateProgress();
+          });
+          chunkLoaded[i] = chunk.size;
+          updateProgress();
+          parts[i] = { part_number: partNumber, etag };
+        }
+      };
+
+      await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
       const created = await apiPost<BandFile>(
         `/api/bands/${slug}/files/multipart/complete`,
