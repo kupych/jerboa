@@ -263,17 +263,37 @@
   // Files larger than this threshold use the multipart path (browser → S3 direct).
   // Smaller files still go through the regular POST endpoint.
   const MULTIPART_THRESHOLD = 100 * 1024 * 1024; // 100 MB
-  const CHUNK_SIZE = 50 * 1024 * 1024; // 50 MB per part
+  const CHUNK_SIZE = 10 * 1024 * 1024; // 10 MB per part (S3 minimum is 5 MB)
 
-  async function putWithRetry(url: string, chunk: Blob, attempt = 0): Promise<string> {
-    const res = await fetch(url, { method: "PUT", body: chunk });
-    if (!res.ok) {
-      if (attempt < 3) return putWithRetry(url, chunk, attempt + 1);
-      throw new Error(`Part upload failed (HTTP ${res.status})`);
-    }
-    const etag = res.headers.get("ETag") ?? res.headers.get("etag") ?? "";
-    if (!etag) throw new Error("S3 did not return an ETag — check bucket CORS config");
-    return etag;
+  // PUT a chunk directly to a presigned S3 URL via XHR so we get upload progress
+  // events within the chunk. Returns the ETag S3 puts on the part.
+  function putChunk(
+    url: string,
+    chunk: Blob,
+    onProgress: (loaded: number) => void,
+    attempt = 0,
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", url);
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded); };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const etag = xhr.getResponseHeader("ETag") ?? xhr.getResponseHeader("etag") ?? "";
+          if (!etag) { reject(new Error("S3 did not return an ETag — check bucket CORS ExposeHeaders")); return; }
+          resolve(etag);
+        } else if (attempt < 3) {
+          putChunk(url, chunk, onProgress, attempt + 1).then(resolve, reject);
+        } else {
+          reject(new Error(`Part upload failed (HTTP ${xhr.status})`));
+        }
+      };
+      xhr.onerror = () => {
+        if (attempt < 3) putChunk(url, chunk, onProgress, attempt + 1).then(resolve, reject);
+        else reject(new Error("Network error uploading part"));
+      };
+      xhr.send(chunk);
+    });
   }
 
   async function uploadBandFile(file: File) {
@@ -311,19 +331,23 @@
 
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
       const parts: { part_number: number; etag: string }[] = [];
+      let bytesUploaded = 0;
 
       for (let i = 0; i < totalChunks; i++) {
         const partNumber = i + 1;
         const start = i * CHUNK_SIZE;
         const chunk = file.slice(start, Math.min(start + CHUNK_SIZE, file.size));
+        const bytesAtChunkStart = bytesUploaded;
 
         const { url } = await api<{ url: string }>(
           `/api/bands/${slug}/files/multipart/part?file_id=${fileId}&part=${partNumber}`,
         );
-        const etag = await putWithRetry(url, chunk);
+        const etag = await putChunk(url, chunk, (loaded) => {
+          fileUploadProgress = Math.round(((bytesAtChunkStart + loaded) / file.size) * 100);
+        });
+        bytesUploaded += chunk.size;
         parts.push({ part_number: partNumber, etag });
-
-        fileUploadProgress = Math.round((partNumber / totalChunks) * 100);
+        fileUploadProgress = Math.round((bytesUploaded / file.size) * 100);
       }
 
       const created = await apiPost<BandFile>(
