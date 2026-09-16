@@ -24,6 +24,8 @@ build-sync:
 	@mkdir -p bin
 	CGO_ENABLED=0 GOOS=linux  GOARCH=amd64 go build -o bin/jerboa-sync-linux-amd64   ./cmd/jerboa-sync
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o bin/jerboa-sync-windows-amd64.exe ./cmd/jerboa-sync
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -o bin/jerboa-sync-darwin-arm64   ./cmd/jerboa-sync
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -o bin/jerboa-sync-darwin-amd64   ./cmd/jerboa-sync
 	@echo "sync binaries built"
 
 # Database

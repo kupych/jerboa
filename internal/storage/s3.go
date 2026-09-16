@@ -19,13 +19,14 @@ type S3Client struct {
 }
 
 func NewS3Client(endpoint, bucket, region, accessKey, secretKey string) (*S3Client, error) {
-	// Strip scheme if provided
+	// Strip scheme if provided; an explicit http:// means plaintext (local dev).
+	secure := !strings.HasPrefix(endpoint, "http://")
 	endpoint = strings.TrimPrefix(endpoint, "https://")
 	endpoint = strings.TrimPrefix(endpoint, "http://")
 
 	opts := &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: true,
+		Secure: secure,
 		Region: region,
 	}
 	client, err := minio.New(endpoint, opts)
@@ -52,6 +53,25 @@ func (s *S3Client) PresignedURL(ctx context.Context, key string, ttl time.Durati
 		return "", err
 	}
 	return u.String(), nil
+}
+
+// PresignedPutURL returns a short-lived URL the client can PUT an object to
+// directly, so large files never transit the server.
+func (s *S3Client) PresignedPutURL(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	u, err := s.client.Presign(ctx, "PUT", s.bucket, key, ttl, url.Values{})
+	if err != nil {
+		return "", err
+	}
+	return u.String(), nil
+}
+
+// Stat returns an object's size, or an error if it isn't there.
+func (s *S3Client) Stat(ctx context.Context, key string) (int64, error) {
+	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		return 0, err
+	}
+	return info.Size, nil
 }
 
 func (s *S3Client) Delete(ctx context.Context, key string) error {

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -27,9 +26,9 @@ type Config struct {
 }
 
 type syncState struct {
-	TrackID    string       `json:"track_id"`
-	Files      []fileInfo   `json:"files"`
-	BakedStems []bakedStem  `json:"baked_stems"`
+	TrackID    string      `json:"track_id"`
+	Files      []fileInfo  `json:"files"`
+	BakedStems []bakedStem `json:"baked_stems"`
 }
 
 type fileInfo struct {
@@ -50,11 +49,51 @@ type sessionInfo struct {
 	SessionName string `json:"session_name"`
 }
 
+const usage = `usage: jerboa-sync [flags] [project.band]
+
+Run inside a Reaper project folder to push/pull that session, or point it at a
+GarageBand .band project (or run it next to one) to mirror it file-by-file.
+With no project around, it lists what's on the server to pull.
+
+flags:
+  --pull              pick a session/project from the server and download it
+  --dry-run           GarageBand: show what would be sent/received, change nothing
+  --list              GarageBand: list every file, not just a per-track summary
+  --exclude PATTERN   GarageBand: skip files/folders matching PATTERN (repeatable);
+                      the same patterns can go one per line in .jerboaignore
+                      next to the .band
+`
+
 func main() {
 	manifestMode := false
-	for _, a := range os.Args[1:] {
-		if a == "--manifest" {
+	pullMode := false
+	var opts mirrorOpts
+	var target string
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--manifest":
 			manifestMode = true
+		case a == "--pull":
+			pullMode = true
+		case a == "--dry-run":
+			opts.DryRun = true
+		case a == "--list":
+			opts.Verbose = true
+		case a == "--exclude" && i+1 < len(args):
+			i++
+			opts.Excludes = append(opts.Excludes, args[i])
+		case strings.HasPrefix(a, "--exclude="):
+			opts.Excludes = append(opts.Excludes, strings.TrimPrefix(a, "--exclude="))
+		case a == "-h" || a == "--help":
+			fmt.Print(usage)
+			return
+		case !strings.HasPrefix(a, "-") && target == "":
+			target = a
+		default:
+			fmt.Fprint(os.Stderr, usage)
+			fatalf("unknown argument %q", a)
 		}
 	}
 
@@ -79,10 +118,49 @@ func main() {
 
 	fmt.Printf("jerboa-sync  →  %s / %s\n\n", cfg.ServerURL, cfg.BandSlug)
 
+	if pullMode {
+		runPull(client, cfg, opts)
+		return
+	}
+
+	if target != "" {
+		if !isBandDir(target) {
+			fatalf("%s is not a GarageBand .band project", target)
+		}
+		runBandPush(cfg, target, opts)
+		return
+	}
+
 	rppPath, err := findRPP(".")
 	if err != nil {
-		// No .rpp found — interactive pull mode
-		runPull(client, cfg, "")
+		// No .rpp — look for GarageBand projects here, then in ~/Music/GarageBand
+		// (where a double-clicked binary on a Mac would want to look).
+		bands := findBands(".")
+		if len(bands) == 1 {
+			runBandPush(cfg, bands[0], opts)
+			return
+		}
+		if len(bands) == 0 {
+			if dir := garageBandDir(); dir != "" {
+				bands = findBands(dir)
+			}
+		}
+		if len(bands) == 0 {
+			runPull(client, cfg, opts)
+			return
+		}
+		fmt.Println("GarageBand projects:")
+		for i, b := range bands {
+			fmt.Printf("  %d) push %s\n", i+1, filepath.Base(b))
+		}
+		fmt.Printf("  %d) pull a session or project from Jerboa instead\n", len(bands)+1)
+		n := promptChoice(len(bands) + 1)
+		fmt.Println()
+		if n == len(bands)+1 {
+			runPull(client, cfg, opts)
+		} else {
+			runBandPush(cfg, bands[n-1], opts)
+		}
 		return
 	}
 
@@ -321,79 +399,64 @@ func uploadBaked(client *http.Client, cfg *Config, trackID, reaperGUID, reaperNa
 	}
 	defer f.Close()
 
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	mw.WriteField("track_id", trackID)
-	mw.WriteField("reaper_guid", reaperGUID)
-	mw.WriteField("reaper_name", reaperName)
-	mw.WriteField("render_hash", renderHash)
-
-	fw, err := mw.CreateFormFile("file", filepath.Base(wavPath))
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(fw, f); err != nil {
-		return err
-	}
-	mw.Close()
-
-	url := fmt.Sprintf("%s/api/bands/%s/sync/baked", cfg.ServerURL, cfg.BandSlug)
-	req, _ := http.NewRequest("POST", url, &buf)
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%d: %s", resp.StatusCode, body)
-	}
-	return nil
+	return postMultipart(client, cfg, "sync/baked", filepath.Base(wavPath), f, [][2]string{
+		{"track_id", trackID},
+		{"reaper_guid", reaperGUID},
+		{"reaper_name", reaperName},
+		{"render_hash", renderHash},
+	})
 }
 
-// runPull is the interactive no-.rpp mode: list sessions, prompt, pull.
-func runPull(client *http.Client, cfg *Config, sessionName string) {
+// runPull is the interactive pull mode: list Reaper sessions and GarageBand
+// projects on the server, prompt, pull.
+func runPull(client *http.Client, cfg *Config, opts mirrorOpts) {
 	sessions, err := listSessions(client, cfg)
 	if err != nil {
 		fatalf("list sessions: %v", err)
 	}
-	if len(sessions) == 0 {
+	projects, err := listMirrorProjects(cfg)
+	if err != nil {
+		fatalf("list GarageBand projects: %v", err)
+	}
+	if len(sessions)+len(projects) == 0 {
 		fmt.Println("No sessions found on server.")
 		waitIfWindows()
 		return
 	}
 
-	var chosen sessionInfo
-	if sessionName != "" {
-		for _, s := range sessions {
-			if s.SessionName == sessionName {
-				chosen = s
-				break
-			}
+	fmt.Println("Available sessions:")
+	for i, s := range sessions {
+		fmt.Printf("  %d) %s  (Reaper)\n", i+1, s.SessionName)
+	}
+	for i, p := range projects {
+		fmt.Printf("  %d) %s  (GarageBand, %d files, %s)\n", len(sessions)+i+1, p.Name, p.FileCount, humanSize(p.TotalSize))
+	}
+	n := promptChoice(len(sessions) + len(projects))
+
+	if n > len(sessions) {
+		dest := "."
+		if dir := garageBandDir(); dir != "" && len(findBands(".")) == 0 {
+			dest = dir
 		}
-		if chosen.TrackID == "" {
-			fatalf("session %q not found on server", sessionName)
-		}
-	} else {
-		fmt.Println("Available sessions:")
-		for i, s := range sessions {
-			fmt.Printf("  %d) %s\n", i+1, s.SessionName)
-		}
-		fmt.Print("\nEnter number to pull: ")
-		scanner := bufio.NewScanner(os.Stdin)
-		scanner.Scan()
-		n, err := strconv.Atoi(strings.TrimSpace(scanner.Text()))
-		if err != nil || n < 1 || n > len(sessions) {
-			fatalf("invalid selection")
-		}
-		chosen = sessions[n-1]
+		fmt.Println()
+		runBandPull(cfg, projects[n-len(sessions)-1].Name, dest, opts)
+		return
 	}
 
+	chosen := sessions[n-1]
 	fmt.Printf("\npulling %s ...\n\n", chosen.SessionName)
 	runPullInto(client, cfg, chosen.SessionName, ".")
+}
+
+func promptChoice(max int) int {
+	fmt.Print("\nEnter number: ")
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	n, err := strconv.Atoi(strings.TrimSpace(scanner.Text()))
+	if err != nil || n < 1 || n > max {
+		fatalf("invalid selection")
+	}
+	return n
 }
 
 // runPullInto downloads any server-side files missing or conflicting locally.
@@ -558,36 +621,47 @@ func getState(client *http.Client, cfg *Config, sessionName string) (*syncState,
 	return &state, nil
 }
 
-func uploadAudio(client *http.Client, cfg *Config, trackID string, item RPPItem, hash string) error {
-	f, err := os.Open(item.FilePath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+// streamMultipart builds a multipart body that is generated as the request is
+// sent, so a file is never held in memory. The previous version copied whole
+// files into a bytes.Buffer, which on a 4 GB laptop meant a 500 MB stem cost
+// 500 MB of RAM before a single byte went out.
+//
+// The file part goes first, as streamMultipartToStorage on the server expects.
+func streamMultipart(filename string, file io.Reader, fields [][2]string) (*io.PipeReader, string) {
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
 
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	mw.WriteField("track_id", trackID)
-	mw.WriteField("filename", filepath.Base(item.FilePath))
-	mw.WriteField("file_hash", hash)
-	mw.WriteField("offset_ms", fmt.Sprintf("%d", item.OffsetMS))
-	if item.Gain > 0 {
-		mw.WriteField("gain", fmt.Sprintf("%.6f", item.Gain))
-	}
+	go func() {
+		var err error
+		defer func() { pw.CloseWithError(err) }()
 
-	fw, err := mw.CreateFormFile("file", filepath.Base(item.FilePath))
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(fw, f); err != nil {
-		return err
-	}
-	mw.Close()
+		var fw io.Writer
+		if fw, err = mw.CreateFormFile("file", filename); err != nil {
+			return
+		}
+		if _, err = io.Copy(fw, file); err != nil {
+			return
+		}
+		for _, kv := range fields {
+			if err = mw.WriteField(kv[0], kv[1]); err != nil {
+				return
+			}
+		}
+		err = mw.Close()
+	}()
 
-	url := fmt.Sprintf("%s/api/bands/%s/sync/file", cfg.ServerURL, cfg.BandSlug)
-	req, _ := http.NewRequest("POST", url, &buf)
+	return pr, mw.FormDataContentType()
+}
+
+// postMultipart sends one streamed upload and expects 201.
+func postMultipart(client *http.Client, cfg *Config, endpoint, filename string, file io.Reader, fields [][2]string) error {
+	body, contentType := streamMultipart(filename, file, fields)
+	defer body.Close()
+
+	url := fmt.Sprintf("%s/api/bands/%s/%s", cfg.ServerURL, cfg.BandSlug, endpoint)
+	req, _ := http.NewRequest("POST", url, body)
 	req.Header.Set("Authorization", "Bearer "+cfg.Token)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Content-Type", contentType)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -596,10 +670,30 @@ func uploadAudio(client *http.Client, cfg *Config, trackID string, item RPPItem,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%d: %s", resp.StatusCode, body)
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("%d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
 	}
 	return nil
+}
+
+func uploadAudio(client *http.Client, cfg *Config, trackID string, item RPPItem, hash string) error {
+	f, err := os.Open(item.FilePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	base := filepath.Base(item.FilePath)
+	fields := [][2]string{
+		{"track_id", trackID},
+		{"filename", base},
+		{"file_hash", hash},
+		{"offset_ms", fmt.Sprintf("%d", item.OffsetMS)},
+	}
+	if item.Gain > 0 {
+		fields = append(fields, [2]string{"gain", fmt.Sprintf("%.6f", item.Gain)})
+	}
+	return postMultipart(client, cfg, "sync/file", base, f, fields)
 }
 
 func uploadRPP(client *http.Client, cfg *Config, trackID string, rppPath string) error {
@@ -609,34 +703,7 @@ func uploadRPP(client *http.Client, cfg *Config, trackID string, rppPath string)
 	}
 	defer f.Close()
 
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	mw.WriteField("track_id", trackID)
-	fw, err := mw.CreateFormFile("file", filepath.Base(rppPath))
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(fw, f); err != nil {
-		return err
-	}
-	mw.Close()
-
-	url := fmt.Sprintf("%s/api/bands/%s/sync/rpp", cfg.ServerURL, cfg.BandSlug)
-	req, _ := http.NewRequest("POST", url, &buf)
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%d: %s", resp.StatusCode, body)
-	}
-	return nil
+	return postMultipart(client, cfg, "sync/rpp", filepath.Base(rppPath), f, [][2]string{{"track_id", trackID}})
 }
 
 func downloadRPP(client *http.Client, cfg *Config, trackID, dest string) error {

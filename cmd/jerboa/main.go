@@ -75,6 +75,17 @@ func run() error {
 		slog.Warn("S3 not configured — file uploads will return 501")
 	}
 
+	var mirrorS3 *storage.S3Client
+	if cfg.MirrorS3Endpoint != "" && cfg.MirrorS3Bucket != "" {
+		mirrorS3, err = storage.NewS3Client(cfg.MirrorS3Endpoint, cfg.MirrorS3Bucket, cfg.MirrorS3Region, cfg.MirrorS3AccessKey, cfg.MirrorS3SecretKey)
+		if err != nil {
+			return fmt.Errorf("mirror s3: %w", err)
+		}
+		slog.Info("project mirror storage configured", "endpoint", cfg.MirrorS3Endpoint, "bucket", cfg.MirrorS3Bucket)
+	} else {
+		slog.Warn("project mirror storage not configured — GarageBand sync will return 503")
+	}
+
 	var authProvider *auth.Provider
 	if cfg.OIDCIssuer != "" {
 		callbackURL := cfg.BaseURL + "/auth/callback"
@@ -102,7 +113,7 @@ func run() error {
 	// These were recorded via MediaRecorder before the re-probe-from-opus fix.
 	go fixBadMetadata(queries, processor)
 
-	router := server.NewRouter(cfg, queries, authProvider, store, s3Client, processor, webFS)
+	router := server.NewRouter(cfg, queries, authProvider, store, s3Client, mirrorS3, processor, webFS)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,

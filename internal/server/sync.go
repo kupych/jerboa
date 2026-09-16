@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -29,16 +30,23 @@ type SyncHandler struct {
 	hub       *Hub
 	maxBytes  int64
 	binDir    string
+
+	// Project mirror (GarageBand) storage — a separate bucket from the main
+	// one, see mirror.go.
+	mirrorS3       *storage.S3Client
+	mirrorMaxBytes int64
 }
 
-func NewSyncHandler(queries *db.Queries, store *storage.Store, processor *audio.Processor, hub *Hub, maxUploadMB int64, binDir string) *SyncHandler {
+func NewSyncHandler(queries *db.Queries, store *storage.Store, processor *audio.Processor, hub *Hub, maxUploadMB int64, binDir string, mirrorS3 *storage.S3Client, mirrorMaxMB int64) *SyncHandler {
 	return &SyncHandler{
-		queries:   queries,
-		store:     store,
-		processor: processor,
-		hub:       hub,
-		maxBytes:  maxUploadMB * 1024 * 1024,
-		binDir:    binDir,
+		queries:        queries,
+		store:          store,
+		processor:      processor,
+		hub:            hub,
+		maxBytes:       maxUploadMB * 1024 * 1024,
+		binDir:         binDir,
+		mirrorS3:       mirrorS3,
+		mirrorMaxBytes: mirrorMaxMB * 1024 * 1024,
 	}
 }
 
@@ -48,6 +56,23 @@ type SyncConfig struct {
 	BandSlug  string `json:"band_slug"`
 	Token     string `json:"token"`
 	SongID    string `json:"song_id,omitempty"`
+}
+
+// cleanupUpload removes a partially stored file after a failed upload, so a
+// broken connection doesn't leave an orphan in storage.
+func (h *SyncHandler) cleanupUpload(up *streamedUpload) {
+	if up != nil && up.FilePath != "" {
+		h.store.Delete(up.FilePath)
+	}
+}
+
+func writeUploadError(w http.ResponseWriter, err error) {
+	var maxErr *http.MaxBytesError
+	if errors.As(err, &maxErr) {
+		http.Error(w, `{"error":"file too large"}`, http.StatusRequestEntityTooLarge)
+		return
+	}
+	http.Error(w, `{"error":"file is required"}`, http.StatusBadRequest)
 }
 
 // Sessions lists all Reaper sessions for a band.
@@ -109,9 +134,9 @@ func (h *SyncHandler) State(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"track_id":     track.ID,
-		"files":        files,
-		"baked_stems":  stems,
+		"track_id":    track.ID,
+		"files":       files,
+		"baked_stems": stems,
 	})
 }
 
@@ -124,38 +149,33 @@ func (h *SyncHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, `{"error":"file too large"}`, http.StatusRequestEntityTooLarge)
+	// Streamed, not ParseMultipartForm: that spills bodies over its limit to
+	// /tmp and leaks the spill file on every aborted upload.
+	up, err := streamMultipartToStorage(w, r, h.store, band.ID, h.maxBytes)
+	if err != nil {
+		h.cleanupUpload(up)
+		writeUploadError(w, err)
 		return
 	}
+	filePath, fileSize := up.FilePath, up.FileSize
 
-	trackID, err := uuid.Parse(r.FormValue("track_id"))
+	trackID, err := uuid.Parse(up.Fields["track_id"])
 	if err != nil {
+		h.store.Delete(filePath)
 		http.Error(w, `{"error":"invalid track_id"}`, http.StatusBadRequest)
 		return
 	}
 
-	filename := r.FormValue("filename")
-	fileHash := r.FormValue("file_hash")
+	filename := up.Fields["filename"]
+	if filename == "" {
+		filename = up.Filename
+	}
+	fileHash := up.Fields["file_hash"]
 	var offsetMS int64
-	fmt.Sscanf(r.FormValue("offset_ms"), "%d", &offsetMS)
+	fmt.Sscanf(up.Fields["offset_ms"], "%d", &offsetMS)
 	var gain float64 = 1.0
-	if g, err := strconv.ParseFloat(r.FormValue("gain"), 64); err == nil && g > 0 {
+	if g, err := strconv.ParseFloat(up.Fields["gain"], 64); err == nil && g > 0 {
 		gain = g
-	}
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, `{"error":"file is required"}`, http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	filePath, fileSize, err := h.store.Save(band.ID, header.Filename, file)
-	if err != nil {
-		http.Error(w, `{"error":"failed to save file"}`, http.StatusInternalServerError)
-		return
 	}
 
 	overdub := &models.Track{
@@ -198,41 +218,32 @@ func (h *SyncHandler) UploadBaked(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, h.maxBytes)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, `{"error":"file too large"}`, http.StatusRequestEntityTooLarge)
+	up, err := streamMultipartToStorage(w, r, h.store, band.ID, h.maxBytes)
+	if err != nil {
+		h.cleanupUpload(up)
+		writeUploadError(w, err)
 		return
 	}
+	filePath, fileSize := up.FilePath, up.FileSize
 
-	trackID, err := uuid.Parse(r.FormValue("track_id"))
+	trackID, err := uuid.Parse(up.Fields["track_id"])
 	if err != nil {
+		h.store.Delete(filePath)
 		http.Error(w, `{"error":"invalid track_id"}`, http.StatusBadRequest)
 		return
 	}
-	reaperGUID := r.FormValue("reaper_guid")
-	reaperName := r.FormValue("reaper_name")
-	renderHash := r.FormValue("render_hash")
+	reaperGUID := up.Fields["reaper_guid"]
+	reaperName := up.Fields["reaper_name"]
+	renderHash := up.Fields["render_hash"]
 	if reaperGUID == "" || renderHash == "" {
+		h.store.Delete(filePath)
 		http.Error(w, `{"error":"reaper_guid and render_hash required"}`, http.StatusBadRequest)
-		return
-	}
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, `{"error":"file is required"}`, http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	filePath, fileSize, err := h.store.Save(band.ID, header.Filename, file)
-	if err != nil {
-		http.Error(w, `{"error":"failed to save file"}`, http.StatusInternalServerError)
 		return
 	}
 
 	title := reaperName
 	if title == "" {
-		title = header.Filename
+		title = up.Filename
 	}
 	overdub := &models.Track{
 		BandID:     band.ID,
@@ -278,28 +289,18 @@ func (h *SyncHandler) UploadRPP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+	up, err := streamMultipartToStorage(w, r, h.store, band.ID, 64<<20)
+	if err != nil {
+		h.cleanupUpload(up)
+		writeUploadError(w, err)
 		return
 	}
+	filePath := up.FilePath
 
-	trackID, err := uuid.Parse(r.FormValue("track_id"))
+	trackID, err := uuid.Parse(up.Fields["track_id"])
 	if err != nil {
+		h.store.Delete(filePath)
 		http.Error(w, `{"error":"invalid track_id"}`, http.StatusBadRequest)
-		return
-	}
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, `{"error":"file is required"}`, http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	filePath, _, err := h.store.Save(band.ID, header.Filename, file)
-	if err != nil {
-		http.Error(w, `{"error":"failed to save rpp"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -316,7 +317,7 @@ func (h *SyncHandler) UploadRPP(w http.ResponseWriter, r *http.Request) {
 }
 
 // DownloadBinary serves a pre-built sync binary with config baked in.
-// GET /api/bands/{slug}/sync/binary?platform=linux|windows
+// GET /api/bands/{slug}/sync/binary?platform=linux|windows|mac|mac-intel
 func (h *SyncHandler) DownloadBinary(w http.ResponseWriter, r *http.Request) {
 	user := UserFrom(r.Context())
 	band, ok := h.getBand(w, r, user)
@@ -325,17 +326,20 @@ func (h *SyncHandler) DownloadBinary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	platform := r.URL.Query().Get("platform")
-	if platform != "linux" && platform != "windows" {
+	binNames := map[string]string{
+		"linux":     "jerboa-sync-linux-amd64",
+		"windows":   "jerboa-sync-windows-amd64.exe",
+		"mac":       "jerboa-sync-darwin-arm64",
+		"mac-intel": "jerboa-sync-darwin-amd64",
+	}
+	if _, ok := binNames[platform]; !ok {
 		platform = runtime.GOOS
 		if platform != "linux" && platform != "windows" {
 			platform = "linux"
 		}
 	}
 
-	binName := fmt.Sprintf("jerboa-sync-%s-amd64", platform)
-	if platform == "windows" {
-		binName += ".exe"
-	}
+	binName := binNames[platform]
 	binPath := filepath.Join(h.binDir, binName)
 
 	binData, err := os.ReadFile(binPath)

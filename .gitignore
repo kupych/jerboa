@@ -31,7 +31,7 @@ data/
 # Test
 coverage.out
 *.test
-jerboa-sync
+/jerboa-sync
 
 .codex
 output/

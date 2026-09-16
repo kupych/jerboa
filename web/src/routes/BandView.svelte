@@ -1156,6 +1156,15 @@
       {#if fileUploadError}
         <p class="label-sm text-red-400 mb-3">{fileUploadError}</p>
       {/if}
+      <p
+        class="label-sm text-text-muted mb-3"
+        title="Syncs a GarageBand .band project file-by-file — only changed files upload, undo/freeze data is skipped. In Terminal: chmod +x the download, xattr -d com.apple.quarantine it, then run it next to your .band (or it looks in ~/Music/GarageBand)."
+      >
+        GarageBand project too big to zip? sync it instead:
+        <a href="/api/bands/{slug}/sync/binary?platform=mac" class="text-accent hover:text-accent/70 transition-colors">mac (apple silicon)</a>
+        ·
+        <a href="/api/bands/{slug}/sync/binary?platform=mac-intel" class="text-accent hover:text-accent/70 transition-colors">mac (intel)</a>
+      </p>
 
       {#if filesLoading}
         <div class="text-center py-8 label text-text-muted">loading...</div>

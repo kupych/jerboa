@@ -44,6 +44,15 @@ type Config struct {
 	MaxFileMB   int64
 	BinDir      string
 
+	// Project mirror storage (Backblaze B2). Kept separate from the main S3
+	// bucket on purpose: the mirror is the band's off-site backup, so it lives
+	// with a different provider than the server and its uploads.
+	MirrorS3Endpoint  string
+	MirrorS3Bucket    string
+	MirrorS3Region    string
+	MirrorS3AccessKey string
+	MirrorS3SecretKey string
+
 	DevAuth bool // JERBOA_DEV_AUTH — allows unauthenticated dev login when OIDC is absent
 }
 
@@ -111,6 +120,12 @@ func Load() (*Config, error) {
 		S3SecretKey: env("JERBOA_S3_SECRET_KEY", ""),
 		MaxFileMB:   envInt("JERBOA_MAX_FILE_MB", 2000),
 		BinDir:      env("JERBOA_BIN_DIR", "./bin"),
+
+		MirrorS3Endpoint:  env("JERBOA_MIRROR_S3_ENDPOINT", ""),
+		MirrorS3Bucket:    env("JERBOA_MIRROR_S3_BUCKET", ""),
+		MirrorS3Region:    env("JERBOA_MIRROR_S3_REGION", ""),
+		MirrorS3AccessKey: env("JERBOA_MIRROR_S3_ACCESS_KEY", ""),
+		MirrorS3SecretKey: env("JERBOA_MIRROR_S3_SECRET_KEY", ""),
 
 		DevAuth: envBool("JERBOA_DEV_AUTH", false),
 	}

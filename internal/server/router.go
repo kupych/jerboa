@@ -17,7 +17,7 @@ import (
 	"jerboa/internal/storage"
 )
 
-func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provider, store *storage.Store, s3 *storage.S3Client, processor *audio.Processor, webFS fs.FS) http.Handler {
+func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provider, store *storage.Store, s3, mirrorS3 *storage.S3Client, processor *audio.Processor, webFS fs.FS) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RealIP)
@@ -47,7 +47,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 	demucsH := NewDemucsHandler(queries, store, processor, hub, mix, cfg.ReplicateToken, cfg.ReplicateDemucsModel)
 	activityH := NewActivityHandler(queries)
 	fileH := NewFileHandler(queries, s3, cfg.MaxFileMB)
-	syncH := NewSyncHandler(queries, store, processor, hub, cfg.MaxUploadMB, cfg.BinDir)
+	syncH := NewSyncHandler(queries, store, processor, hub, cfg.MaxUploadMB, cfg.BinDir, mirrorS3, cfg.MaxFileMB)
 	pairH := NewPairHandler(queries, cfg.BaseURL)
 
 	// Auth routes (no auth middleware). Rate-limited to slow brute-force
@@ -168,6 +168,14 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Post("/api/bands/{slug}/sync/rpp", syncH.UploadRPP)
 		r.Get("/api/bands/{slug}/sync/binary", syncH.DownloadBinary)
 		r.Get("/api/bands/{slug}/sync/rpp/{trackID}", syncH.ServeRPP)
+
+		// GarageBand project mirror (files live in the B2 bucket)
+		r.Get("/api/bands/{slug}/mirror/projects", syncH.MirrorProjects)
+		r.Get("/api/bands/{slug}/mirror/files", syncH.MirrorFiles)
+		r.Post("/api/bands/{slug}/mirror/upload-url", syncH.MirrorUploadURL)
+		r.Post("/api/bands/{slug}/mirror/commit", syncH.MirrorCommit)
+		r.Get("/api/bands/{slug}/mirror/download-url", syncH.MirrorDownloadURL)
+		r.Delete("/api/bands/{slug}/mirror/files", syncH.MirrorDelete)
 
 		r.Post("/api/pair/authorize", pairH.Authorize)
 
