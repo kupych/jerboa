@@ -6,6 +6,13 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "0.25.0",
+    date: "2026-09-15",
+    summary: [
+  "GarageBand sync (i hope)"
+    ]
+  },
+  {   
     version: "0.24.0",
     date: "2026-05-23",
     summary: [
