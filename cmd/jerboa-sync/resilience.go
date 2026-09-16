@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -152,6 +153,90 @@ func (w *stallWatchdog) stop() {
 	w.cancel()
 }
 
+// ---------------------------------------------------------------- errors
+
+// httpError is a failed HTTP response, kept as a type so retry logic can tell
+// "try again" from "never going to work". Source distinguishes Jerboa's API
+// from the storage bucket, because the same status means different things and
+// needs different advice.
+type httpError struct {
+	Status int
+	Body   string
+	Source string // "" for the Jerboa API, "bucket" for B2
+}
+
+func (e *httpError) Error() string {
+	prefix := ""
+	if e.Source == "bucket" {
+		prefix = "bucket returned "
+	}
+	if e.Body == "" {
+		return fmt.Sprintf("%s%d", prefix, e.Status)
+	}
+	return fmt.Sprintf("%s%d: %s", prefix, e.Status, e.Body)
+}
+
+// isPermanent reports whether retrying is pointless. Network errors are always
+// worth another go. A 4xx from the bucket counts as permanent because every
+// attempt mints a brand new presigned URL — so it can't be a stale signature,
+// it means the credentials or region are wrong.
+func isPermanent(err error) bool {
+	var he *httpError
+	if !errors.As(err, &he) {
+		return false
+	}
+	switch {
+	case he.Status == http.StatusNotImplemented:
+		return true // feature is switched off server-side
+	case he.Status == http.StatusTooManyRequests:
+		return false // back off and try again
+	case he.Status >= 500:
+		return false // genuine server trouble, usually transient
+	default:
+		return he.Status >= 400 // bad request, auth, size — our fault, won't change
+	}
+}
+
+// isFatal reports whether a failure will hit every remaining file too, so the
+// run should stop instead of working through the whole project one 8-minute
+// retry cycle at a time.
+func isFatal(err error) bool {
+	var he *httpError
+	if !errors.As(err, &he) {
+		return false
+	}
+	switch he.Status {
+	case http.StatusNotImplemented, http.StatusUnauthorized, http.StatusForbidden:
+		return true
+	}
+	return false
+}
+
+// fatalHint turns a run-stopping error into something the person running the
+// sync can act on, rather than a bare status code.
+func fatalHint(err error) string {
+	var he *httpError
+	if !errors.As(err, &he) {
+		return ""
+	}
+	if he.Source == "bucket" {
+		switch he.Status {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return "the storage bucket rejected the server's credentials — check that JERBOA_MIRROR_S3_REGION matches the region in JERBOA_MIRROR_S3_ENDPOINT, and that the application key is valid for that bucket"
+		case http.StatusNotFound:
+			return "the storage bucket wasn't found — check JERBOA_MIRROR_S3_BUCKET and the endpoint"
+		}
+		return ""
+	}
+	switch he.Status {
+	case http.StatusNotImplemented:
+		return "the server doesn't have project mirror storage configured — whoever runs it needs to set JERBOA_MIRROR_S3_* and restart"
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return "this utility's access token was rejected — download a fresh copy from the band's settings page"
+	}
+	return ""
+}
+
 // ---------------------------------------------------------------- retry
 
 // withRetry runs op until it succeeds or the attempts run out, reporting each
@@ -162,6 +247,9 @@ func withRetry(label string, op func(attempt int) error) error {
 	for i, delay := range retryDelays {
 		if err == nil {
 			return nil
+		}
+		if isPermanent(err) {
+			return err // retrying won't change the answer
 		}
 		fmt.Printf("\r  %s  FAILED: %v — retry %d/%d in %s\n", label, err, i+1, len(retryDelays), delay)
 		time.Sleep(delay)

@@ -83,7 +83,7 @@ func run() error {
 		}
 		slog.Info("project mirror storage configured", "endpoint", cfg.MirrorS3Endpoint, "bucket", cfg.MirrorS3Bucket)
 	} else {
-		slog.Warn("project mirror storage not configured — GarageBand sync will return 503")
+		slog.Warn("project mirror storage not configured — GarageBand sync will return 501")
 	}
 
 	var authProvider *auth.Provider

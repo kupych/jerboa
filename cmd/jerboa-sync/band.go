@@ -449,8 +449,15 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) {
 			return putMirrorFile(cfg, name, p.f, p.hash)
 		})
 		if err != nil {
-			fmt.Printf("\r  up    %s  GAVE UP: %v\n", p.f.Rel, err)
+			fmt.Printf("\r  up    %s  FAILED: %v\n", p.f.Rel, err)
 			failed++
+			if isFatal(err) {
+				fmt.Printf("\nstopping — this affects every file, so there's no point continuing.\n")
+				if hint := fatalHint(err); hint != "" {
+					fmt.Printf("%s\n", hint)
+				}
+				break
+			}
 			continue
 		}
 		fmt.Printf("\r  up    %-50s %9s  done                    \n", p.f.Rel, humanSize(p.f.Size))
@@ -624,7 +631,7 @@ func postJSON(u string, cfg *Config, payload, v any) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("%d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+		return &httpError{Status: resp.StatusCode, Body: strings.TrimSpace(string(msg))}
 	}
 	if v == nil {
 		return nil
@@ -641,8 +648,8 @@ func getJSON(u string, cfg *Config, v any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("server returned %d: %s", resp.StatusCode, body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return &httpError{Status: resp.StatusCode, Body: strings.TrimSpace(string(body))}
 	}
 	return json.NewDecoder(resp.Body).Decode(v)
 }
@@ -681,7 +688,7 @@ func putMirrorFile(cfg *Config, project string, f localFile, hash string) error 
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("bucket returned %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+		return &httpError{Status: resp.StatusCode, Body: strings.TrimSpace(string(msg)), Source: "bucket"}
 	}
 
 	// Commit — the server checks the object really landed at the right size.
@@ -697,8 +704,8 @@ func deleteMirrorFile(cfg *Config, project, rel string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
-		msg, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return &httpError{Status: resp.StatusCode, Body: strings.TrimSpace(string(msg))}
 	}
 	return nil
 }
@@ -725,7 +732,7 @@ func getMirrorFile(cfg *Config, project string, f mirrorFile, dest, label string
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("bucket returned %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+		return &httpError{Status: resp.StatusCode, Body: strings.TrimSpace(string(msg)), Source: "bucket"}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {

@@ -24,7 +24,11 @@ import (
 // Clients upload straight to the bucket with a presigned URL and then commit
 // the result here, so project files never transit the server.
 
-const mirrorURLTTL = time.Hour
+// Long enough that a multi-gigabyte file on a slow domestic uplink can't have
+// its URL expire mid-transfer. An expired signature and bad credentials both
+// come back as 403, and the client treats bucket 403s as permanent, so this
+// window has to comfortably outlast the slowest realistic upload.
+const mirrorURLTTL = 12 * time.Hour
 
 // mirrorObjectKey is deterministic: overwriting the same key is what gives us
 // version history in the bucket.
@@ -209,9 +213,13 @@ func (h *SyncHandler) MirrorDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// mirrorConfigured reports 501 rather than 503 on purpose: the feature is off
+// until someone sets JERBOA_MIRROR_S3_*, so it is permanent from the client's
+// point of view and must not be retried. Matches files.go's handling of
+// unconfigured object storage.
 func (h *SyncHandler) mirrorConfigured(w http.ResponseWriter) bool {
 	if h.mirrorS3 == nil {
-		http.Error(w, `{"error":"project mirror storage is not configured on this server"}`, http.StatusServiceUnavailable)
+		http.Error(w, `{"error":"project mirror storage is not configured on this server (JERBOA_MIRROR_S3_* unset)"}`, http.StatusNotImplemented)
 		return false
 	}
 	return true
