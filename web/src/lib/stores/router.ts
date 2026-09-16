@@ -17,13 +17,22 @@ export function navigate(to: string) {
   path.set(url.pathname);
 }
 
+// Tabs inside BandView that are reflected in the URL as /band/:slug/:tab.
+// "feed" is the default and stays at the bare /band/:slug.
+export const BAND_TABS = ["feed", "songs", "sets", "tags", "files"] as const;
+export type BandTab = (typeof BAND_TABS)[number];
+
 export const route = derived(path, ($path) => {
   const parts = $path.split("/").filter(Boolean);
+  const bandTab =
+    parts[0] === "band" && parts.length === 3 && (BAND_TABS as readonly string[]).includes(parts[2])
+      ? (parts[2] as BandTab)
+      : null;
   return {
     path: $path,
     parts,
-    // /band/:slug
-    isBand: parts[0] === "band" && parts.length === 2,
+    // /band/:slug, with or without a tab segment
+    isBand: parts[0] === "band" && (parts.length === 2 || bandTab !== null),
     // /band/:slug/track/:id
     isTrack: parts[0] === "band" && parts[2] === "track",
     // /band/:slug/song/:id
@@ -51,6 +60,8 @@ export const route = derived(path, ($path) => {
     // /connect?code=… — Reaper device-pairing landing
     isConnect: parts[0] === "connect",
     bandSlug: parts[0] === "band" ? parts[1] : null,
+    // /band/:slug/:tab
+    bandTab,
     trackId: parts[0] === "band" && parts[2] === "track" ? parts[3] : null,
     songId: parts[0] === "band" && parts[2] === "song" ? parts[3] : null,
     setId: parts[0] === "band" && parts[2] === "set" ? parts[3] : null,

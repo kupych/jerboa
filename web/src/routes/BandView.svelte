@@ -4,7 +4,7 @@
   import { markBandSeen } from "../lib/stores/notifications";
   import { ws } from "../lib/ws";
   import { user as currentUser, isDemo } from "../lib/stores/auth";
-  import { navigate } from "../lib/stores/router";
+  import { navigate, route, type BandTab } from "../lib/stores/router";
   import { loadBands } from "../lib/stores/bands";
   import { colorSchemes, applyColorScheme } from "../lib/colorSchemes";
   import TrackCard from "../lib/components/TrackCard.svelte";
@@ -124,9 +124,16 @@
   let loading = $state(true);
   let feedItems = $state<ActivityItem[]>([]);
   let expandedGroups = $state(new Set<string>());
-  let viewTab = $state<"feed" | "songs" | "sets" | "tags" | "files">("feed");
+  // The active tab lives in the URL, so a tab is linkable and the back button
+  // steps through tabs instead of leaving the band entirely.
+  let viewTab = $derived($route.bandTab ?? "feed");
+
+  function selectTab(tab: BandTab) {
+    navigate(tab === "feed" ? `/band/${slug}` : `/band/${slug}/${tab}`);
+  }
   let files = $state<BandFile[]>([]);
   let filesLoading = $state(false);
+  let filesLoaded = $state(false);
   let fileUploadProgress = $state(0);
   let fileUploading = $state(false);
   let fileUploadError = $state("");
@@ -255,10 +262,17 @@
     filesLoading = true;
     try {
       files = await api<BandFile[]>(`/api/bands/${slug}/files`);
+      filesLoaded = true;
     } finally {
       filesLoading = false;
     }
   }
+
+  // Files are the one tab not fetched up front, so landing directly on
+  // /band/:slug/files has to trigger the load itself.
+  $effect(() => {
+    if (viewTab === "files" && !filesLoaded && !filesLoading) loadFiles();
+  });
 
   // Files larger than this threshold use the multipart path (browser → S3 direct).
   // Smaller files still go through the regular POST endpoint.
@@ -792,18 +806,27 @@
         </div>
 
         <div>
-          <span class="label-sm md:label text-text-muted block mb-1">reaper sync</span>
-          <p class="label-sm text-text-muted/50 mb-3">drop the utility in your reaper project folder and run it — it syncs takes directly to jerboa</p>
-          <div class="flex gap-2">
+          <span class="label-sm md:label text-text-muted block mb-1">daw sync</span>
+          <p class="label-sm text-text-muted/50 mb-3">drop the utility in your reaper project folder, or next to a garageband .band, and run it — it syncs takes directly to jerboa, no zipping</p>
+          <div class="flex gap-2 flex-wrap">
             <a
-              href="/api/bands/{slug}/sync/binary?platform=linux"
+              href="/api/bands/{slug}/sync/binary?platform=mac-intel"
               class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
-            >linux</a>
+            >mac (intel)</a>
+            <a
+              href="/api/bands/{slug}/sync/binary?platform=mac"
+              class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
+            >mac (apple silicon)</a>
             <a
               href="/api/bands/{slug}/sync/binary?platform=windows"
               class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
             >windows</a>
+            <a
+              href="/api/bands/{slug}/sync/binary?platform=linux"
+              class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
+            >linux</a>
           </div>
+          <p class="label-sm text-text-muted/50 mt-2">on mac, terminal first: <span class="font-mono">chmod +x</span> the download, then <span class="font-mono">xattr -d com.apple.quarantine</span> it</p>
         </div>
 
         <button
@@ -885,25 +908,25 @@
     <div class="sticky top-0 z-20 bg-bg-primary -mx-5 px-5 md:mx-0 md:px-0 border-b border-border/40 mb-2">
       <div class="flex items-center gap-5 py-2.5">
         <button
-          onclick={() => (viewTab = "feed")}
+          onclick={() => selectTab("feed")}
           class="label transition-colors {viewTab === 'feed' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
         >activity</button>
         <button
-          onclick={() => (viewTab = "songs")}
+          onclick={() => selectTab("songs")}
           class="label transition-colors {viewTab === 'songs' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
         >songs</button>
         <button
-          onclick={() => (viewTab = "sets")}
+          onclick={() => selectTab("sets")}
           class="label transition-colors {viewTab === 'sets' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
         >sets</button>
         {#if taggedTracks.size > 0}
           <button
-            onclick={() => (viewTab = "tags")}
+            onclick={() => selectTab("tags")}
             class="label transition-colors {viewTab === 'tags' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
           >tags</button>
         {/if}
         <button
-          onclick={() => { viewTab = "files"; if (files.length === 0 && !filesLoading) loadFiles(); }}
+          onclick={() => selectTab("files")}
           class="label transition-colors {viewTab === 'files' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
         >files</button>
       </div>
@@ -1156,14 +1179,12 @@
       {#if fileUploadError}
         <p class="label-sm text-red-400 mb-3">{fileUploadError}</p>
       {/if}
-      <p
-        class="label-sm text-text-muted mb-3"
-        title="Syncs a GarageBand .band project file-by-file — only changed files upload, undo/freeze data is skipped. In Terminal: chmod +x the download, xattr -d com.apple.quarantine it, then run it next to your .band (or it looks in ~/Music/GarageBand)."
-      >
-        GarageBand project too big to zip? sync it instead:
-        <a href="/api/bands/{slug}/sync/binary?platform=mac" class="text-accent hover:text-accent/70 transition-colors">mac (apple silicon)</a>
-        ·
-        <a href="/api/bands/{slug}/sync/binary?platform=mac-intel" class="text-accent hover:text-accent/70 transition-colors">mac (intel)</a>
+      <p class="label-sm text-text-muted mb-3">
+        project too big to zip? don't — sync it file-by-file with the
+        <button
+          onclick={() => (showSettings = true)}
+          class="text-accent hover:text-accent/70 transition-colors underline underline-offset-2"
+        >daw sync utility</button>
       </p>
 
       {#if filesLoading}
