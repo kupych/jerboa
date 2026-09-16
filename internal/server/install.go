@@ -20,6 +20,11 @@ import (
 //go:embed install.sh.tmpl
 var installScriptSrc string
 
+// Jerbert, as the Mac app's icon. Regenerate with make icon.
+//
+//go:embed jerbert.icns
+var jerbertIcon []byte
+
 var installScript = template.Must(template.New("install.sh").Parse(installScriptSrc))
 
 // The server URL is spliced into a shell script, so only accept characters a
@@ -39,6 +44,14 @@ func (h *SyncHandler) InstallScript(w http.ResponseWriter, r *http.Request) {
 	if err := installScript.Execute(w, struct{ ServerURL string }{base}); err != nil {
 		http.Error(w, "internal", http.StatusInternalServerError)
 	}
+}
+
+// AppIcon serves the icon the installer puts on the Mac app.
+// GET /dl/jerbert.icns
+func (h *SyncHandler) AppIcon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/icns")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(jerbertIcon)
 }
 
 // GenericBinary serves a sync binary with no embedded config. It pairs on

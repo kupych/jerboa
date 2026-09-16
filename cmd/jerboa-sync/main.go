@@ -52,6 +52,7 @@ const usage = `usage: jerboa-sync [flags] [project.band | folder ...]
        jerboa-sync pair --server URL
        jerboa-sync status
        jerboa-sync forget PATH
+       jerboa-sync delete PROJECT
 
 Backs up GarageBand projects to your band, file by file, and syncs Reaper
 sessions when run inside a Reaper project folder.
@@ -64,6 +65,8 @@ commands:
   pair --server URL   connect this computer to a band (the installer does this)
   status              check the connection; exits non-zero if it isn't working
   forget PATH         stop syncing a remembered project or folder
+  delete PROJECT      delete a project's backup for the whole band (admins only;
+                      never touches anyone's local copy)
 
 flags:
   --pull              pick a session/project from the server and download it
@@ -101,6 +104,15 @@ func main() {
 			return
 		case "status":
 			os.Exit(runStatus())
+		case "delete":
+			if len(args) != 2 {
+				fatalf("usage: jerboa-sync delete PROJECT")
+			}
+			cfg, err := resolveConfig()
+			if err != nil {
+				fatalf("%v", err)
+			}
+			finish(runDelete(cfg, args[1]))
 		case "forget":
 			if len(args) < 2 {
 				fatalf("usage: jerboa-sync forget PATH")

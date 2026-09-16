@@ -74,6 +74,24 @@ func (s *S3Client) Stat(ctx context.Context, key string) (int64, error) {
 	return info.Size, nil
 }
 
+// DeletePrefix removes every object whose key starts with prefix and returns
+// how many it removed. On a versioned bucket this hides the objects rather
+// than purging them, so the bucket's lifecycle rule still governs how long
+// they can be recovered. Stops at the first error; safe to re-run.
+func (s *S3Client) DeletePrefix(ctx context.Context, prefix string) (int, error) {
+	n := 0
+	for obj := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if obj.Err != nil {
+			return n, obj.Err
+		}
+		if err := s.client.RemoveObject(ctx, s.bucket, obj.Key, minio.RemoveObjectOptions{}); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
 func (s *S3Client) Delete(ctx context.Context, key string) error {
 	return s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
 }

@@ -94,6 +94,20 @@ APPLESCRIPT
 	rm -rf "$APP"
 	osacompile -o "$APP" "$src" || fail "couldn't build the Jerboa Sync app"
 
+	# Jerbert as the icon. Purely cosmetic, so any failure leaves the default.
+	# Newer macOS prefers an asset-catalog icon (CFBundleIconName) over
+	# applet.icns, so drop that key. Editing the bundle invalidates the ad hoc
+	# signature osacompile gave it, so sign it again the same way.
+	icon="$APP/Contents/Resources/applet.icns"
+	if curl -fsSL "$SERVER/dl/jerbert.icns" -o "$icon.download"; then
+		mv "$icon.download" "$icon"
+		plutil -remove CFBundleIconName "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+		codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+		touch "$APP"
+	else
+		rm -f "$icon.download"
+	fi
+
 	# Something visible on the Desktop to drop projects onto. It has to be a real
 	# Finder alias: dropping onto a symlink launches the app without handing it
 	# the dropped files. Written through the bookmark API rather than by

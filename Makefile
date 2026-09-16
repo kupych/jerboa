@@ -1,4 +1,4 @@
-.PHONY: dev dev-api dev-web build build-web build-api build-sync clean migrate test
+.PHONY: dev dev-api dev-web build build-web build-api build-sync icon clean migrate test
 
 # Development - run both backend and frontend
 dev:
@@ -27,6 +27,11 @@ build-sync:
 	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -o bin/jerboa-sync-darwin-arm64   ./cmd/jerboa-sync
 	CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -o bin/jerboa-sync-darwin-amd64   ./cmd/jerboa-sync
 	@echo "sync binaries built"
+
+# Mac app icon for the sync installer, from web/public/logo.svg. Run after
+# changing Jerbert; needs rsvg-convert and Pillow, so it isn't part of build.
+icon:
+	python3 extras/icon/make-jerbert-icns.py
 
 # Database
 migrate:

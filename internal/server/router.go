@@ -81,6 +81,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Use(RateLimitMiddleware(30, time.Minute))
 		r.Get("/install.sh", syncH.InstallScript)
 		r.Get("/dl/jerboa-sync/{platform}", syncH.GenericBinary)
+		r.Get("/dl/jerbert.icns", syncH.AppIcon)
 	})
 
 	// Authenticated routes
@@ -189,6 +190,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Get("/api/bands/{slug}/mirror/projects", syncH.MirrorProjects)
 		r.Get("/api/bands/{slug}/mirror/files", syncH.MirrorFiles)
 		r.Post("/api/bands/{slug}/mirror/claim", syncH.MirrorClaim)
+		r.Delete("/api/bands/{slug}/mirror/projects", syncH.MirrorDeleteProject)
 		r.Post("/api/bands/{slug}/mirror/upload-url", syncH.MirrorUploadURL)
 		r.Post("/api/bands/{slug}/mirror/commit", syncH.MirrorCommit)
 		r.Get("/api/bands/{slug}/mirror/download-url", syncH.MirrorDownloadURL)

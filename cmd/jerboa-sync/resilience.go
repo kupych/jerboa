@@ -176,6 +176,21 @@ func (e *httpError) Error() string {
 	return fmt.Sprintf("%s%d: %s", prefix, e.Status, e.Body)
 }
 
+// apiMessage is the server's own explanation when it sent one (its errors are
+// {"error": "..."}), rather than a status code and raw JSON.
+func apiMessage(err error) string {
+	var he *httpError
+	if errors.As(err, &he) {
+		var body struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal([]byte(he.Body), &body) == nil && body.Error != "" {
+			return body.Error
+		}
+	}
+	return err.Error()
+}
+
 // isPermanent reports whether retrying is pointless. Network errors are always
 // worth another go. A 4xx from the bucket counts as permanent because every
 // attempt mints a brand new presigned URL — so it can't be a stale signature,

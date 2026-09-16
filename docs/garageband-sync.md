@@ -116,6 +116,31 @@ and a declined drop isn't remembered. Moving a project to a new folder also
 triggers the question once, since the tool can't tell a move from a
 different project with the same name.
 
+### Deleting a project's backup
+
+```
+jerboa-sync delete "My Song.band"
+```
+
+Band admins only; anyone else is told so before being asked anything. It shows
+what's there and requires typing the project name. It deletes the band's
+backup, **never anyone's local copy**, and B2's 30-day version history makes it
+recoverable from the B2 console until then.
+
+The project row stays behind as a tombstone, which does two jobs:
+
+- **Nothing quietly brings it back.** A machine that still remembers the project
+  asks "deleted by Stefan on Sep 16 — back it up again?" instead of re-uploading.
+  Only `yes` restores it; declining makes that machine stop offering it (unless
+  it's inside a remembered folder, which it then says).
+- **Old clients can't recreate it.** The server refuses uploads into a deleted
+  project until a client that asked first restores it, so a sync binary from
+  before this feature can't leave invisible files behind.
+
+Storage is cleared by key prefix, which also sweeps leftovers from interrupted
+uploads. If that step fails part-way, the project is already marked deleted —
+just run `delete` again.
+
 ## What makes it survivable on a slow link
 
 A first sync of a large project is hours of upload, unattended. So:

@@ -72,10 +72,19 @@ func runProjects(cfg *Config, projects []chosenProject, opts mirrorOpts) int {
 		r := runBandPush(cfg, p.band, opts)
 		counts[r]++
 
-		// Declining to replace another copy's backup means "not this one",
-		// so don't keep offering it. A folder stays: it was chosen as a whole.
-		if r == pushDeclined && p.origin == p.band {
-			forgetProject(p.band)
+		// Declining — to replace another copy's backup, or to restore a deleted
+		// one — means "not this one", so stop offering it. A remembered folder
+		// stays: it was chosen as a whole, and the project inside it will ask
+		// again, which is worth saying since forget wouldn't fix that.
+		if r == pushDeclined {
+			if p.origin == p.band {
+				if forgetProject(p.band) {
+					fmt.Println("This computer won't offer it again.")
+				}
+			} else {
+				fmt.Printf("It's inside %s, which is being synced, so you'll be asked again.\n", tildePath(p.origin))
+				fmt.Println("Move the project out of that folder to stop.")
+			}
 		}
 		if r == pushAbortAll {
 			if left := len(projects) - i - 1; left > 0 {
@@ -216,4 +225,64 @@ func tildePath(p string) string {
 		return "~" + strings.TrimPrefix(p, home)
 	}
 	return p
+}
+
+// runDelete deletes a project's backup for the whole band. It never touches
+// anyone's local copy. Band admins only — the server enforces that.
+func runDelete(cfg *Config, arg string) int {
+	// Accept "My Song", "My Song.band", or a path to the project.
+	name := filepath.Base(strings.TrimRight(arg, "/"))
+	if !strings.EqualFold(filepath.Ext(name), ".band") {
+		name += ".band"
+	}
+
+	state, err := listMirrorState(cfg, name)
+	if err != nil {
+		fmt.Printf("error: %s\n", apiMessage(err))
+		return 1
+	}
+	if !state.CanDelete {
+		fmt.Println("Only band admins can delete a project's backup. Ask one of them to run this.")
+		return 1
+	}
+
+	// Already deleted means a previous run marked it but didn't finish clearing
+	// storage; nothing is left to lose, so re-run without asking again.
+	if state.DeletedAt == nil {
+		var total int64
+		for _, f := range state.Files {
+			total += f.Size
+		}
+		fmt.Printf("Delete the band's backup of %q?\n\n", name)
+		fmt.Printf("  %d files, %s\n", len(state.Files), humanSize(total))
+		if state.SourceLabel != "" {
+			fmt.Printf("  last synced from %s\n", state.SourceLabel)
+		}
+		fmt.Println()
+		fmt.Println("This removes it from Jerboa for the whole band. It does NOT touch the")
+		fmt.Println("project on anyone's computer, and older versions stay recoverable in the")
+		fmt.Println("storage bucket for 30 days.")
+		fmt.Println()
+		typed := readLine(fmt.Sprintf("Type %s to delete it: ", name))
+		if typed != name && typed+".band" != name {
+			fmt.Println("not deleted.")
+			return 1
+		}
+	}
+
+	files, _, err := deleteMirrorProject(cfg, name)
+	if err != nil {
+		fmt.Printf("error: %s\n", apiMessage(err))
+		return 1
+	}
+	fmt.Printf("Deleted %q from the band's backups (%d files).\n", name, files)
+
+	// This computer shouldn't keep offering it. Other machines that remember it
+	// will be asked before anything is re-uploaded.
+	for _, p := range append([]string(nil), stored.Projects...) {
+		if filepath.Base(p) == name && forgetProject(p) {
+			fmt.Printf("This computer will stop syncing %s.\n", tildePath(p))
+		}
+	}
+	return 0
 }

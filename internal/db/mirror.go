@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,7 +30,7 @@ func (q *Queries) ListMirrorProjects(ctx context.Context, bandID uuid.UUID) ([]M
 		SELECT p.name, COUNT(f.id), COALESCE(SUM(f.file_size), 0), p.updated_at
 		FROM mirror_projects p
 		LEFT JOIN mirror_files f ON f.project_id = p.id
-		WHERE p.band_id = $1
+		WHERE p.band_id = $1 AND p.deleted_at IS NULL
 		GROUP BY p.id
 		ORDER BY p.updated_at DESC
 	`, bandID)
@@ -98,13 +99,20 @@ func (q *Queries) UpsertMirrorFile(ctx context.Context, bandID, userID uuid.UUID
 	}
 	defer tx.Rollback(ctx)
 
+	// The WHERE makes a deleted project return no row, so a client that
+	// doesn't know about deletion can't write files into it.
 	var projectID uuid.UUID
-	if err := tx.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO mirror_projects (band_id, name, created_by)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (band_id, name) DO UPDATE SET updated_at = now()
+		WHERE mirror_projects.deleted_at IS NULL
 		RETURNING id
-	`, bandID, project, userID).Scan(&projectID); err != nil {
+	`, bandID, project, userID).Scan(&projectID)
+	if err == pgx.ErrNoRows {
+		return ErrMirrorProjectDeleted
+	}
+	if err != nil {
 		return err
 	}
 
@@ -146,15 +154,33 @@ type MirrorSource struct {
 	Label string `json:"source_label"`
 }
 
-// GetMirrorSource returns the recorded source, or an empty one if the project
-// doesn't exist yet or predates source tracking.
-func (q *Queries) GetMirrorSource(ctx context.Context, bandID uuid.UUID, project string) (MirrorSource, error) {
-	var s MirrorSource
+// ErrMirrorProjectDeleted means the project was deleted and hasn't been
+// deliberately backed up again since.
+var ErrMirrorProjectDeleted = errors.New("mirror project was deleted")
+
+// MirrorProjectState is what a client needs before pushing: who owns the
+// backup, and whether it was deleted (and by whom).
+type MirrorProjectState struct {
+	MirrorSource
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	DeletedBy string     `json:"deleted_by,omitempty"`
+}
+
+// GetMirrorProjectState returns an empty state if the project doesn't exist.
+func (q *Queries) GetMirrorProjectState(ctx context.Context, bandID uuid.UUID, project string) (MirrorProjectState, error) {
+	var s MirrorProjectState
 	err := q.pool.QueryRow(ctx, `
-		SELECT source_id, source_label FROM mirror_projects WHERE band_id = $1 AND name = $2
-	`, bandID, project).Scan(&s.ID, &s.Label)
+		SELECT p.source_id, p.source_label, p.deleted_at,
+		       COALESCE(NULLIF(u.display_name, ''), u.email, '')
+		FROM mirror_projects p
+		LEFT JOIN users u ON u.id = p.deleted_by
+		WHERE p.band_id = $1 AND p.name = $2
+	`, bandID, project).Scan(&s.ID, &s.Label, &s.DeletedAt, &s.DeletedBy)
 	if err == pgx.ErrNoRows {
-		return MirrorSource{}, nil
+		return MirrorProjectState{}, nil
+	}
+	if s.DeletedAt == nil {
+		s.DeletedBy = ""
 	}
 	return s, err
 }
@@ -166,7 +192,41 @@ func (q *Queries) ClaimMirrorProject(ctx context.Context, bandID, userID uuid.UU
 		INSERT INTO mirror_projects (band_id, name, created_by, source_id, source_label)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (band_id, name) DO UPDATE SET
-			source_id = $4, source_label = $5, updated_at = now()
+			source_id = $4, source_label = $5, updated_at = now(),
+			deleted_at = NULL, deleted_by = NULL
 	`, bandID, project, userID, src.ID, src.Label)
 	return err
+}
+
+// DeleteMirrorProject removes a project's file records and leaves the project
+// row as a tombstone. Returns the number of files removed, and false if no
+// such project exists. Running it again on a deleted project is harmless.
+func (q *Queries) DeleteMirrorProject(ctx context.Context, bandID, userID uuid.UUID, project string) (int64, bool, error) {
+	tx, err := q.pool.Begin(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	defer tx.Rollback(ctx)
+
+	var projectID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		UPDATE mirror_projects
+		SET deleted_at = COALESCE(deleted_at, now()),
+		    deleted_by = COALESCE(deleted_by, $3),
+		    source_id = '', source_label = '', updated_at = now()
+		WHERE band_id = $1 AND name = $2
+		RETURNING id
+	`, bandID, project, userID).Scan(&projectID)
+	if err == pgx.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+
+	tag, err := tx.Exec(ctx, `DELETE FROM mirror_files WHERE project_id = $1`, projectID)
+	if err != nil {
+		return 0, true, err
+	}
+	return tag.RowsAffected(), true, tx.Commit(ctx)
 }

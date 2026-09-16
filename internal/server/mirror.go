@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -80,15 +81,21 @@ func (h *SyncHandler) MirrorFiles(w http.ResponseWriter, r *http.Request) {
 	if files == nil {
 		files = []db.MirrorFile{}
 	}
-	src, err := h.queries.GetMirrorSource(r.Context(), band.ID, project)
+	state, err := h.queries.GetMirrorProjectState(r.Context(), band.ID, project)
 	if err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
 	}
+	// Lets the client refuse a delete up front instead of after the person has
+	// typed the project name to confirm it. The delete endpoint still enforces it.
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, UserFrom(r.Context()).ID, UserFrom(r.Context()).IsAdmin)
 	writeJSON(w, map[string]any{
 		"files":        files,
-		"source_id":    src.ID,
-		"source_label": src.Label,
+		"source_id":    state.ID,
+		"source_label": state.Label,
+		"deleted_at":   state.DeletedAt,
+		"deleted_by":   state.DeletedBy,
+		"can_delete":   role == "admin",
 	})
 }
 
@@ -138,6 +145,14 @@ func (h *SyncHandler) MirrorUploadURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if state, err := h.queries.GetMirrorProjectState(r.Context(), band.ID, req.Project); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	} else if state.DeletedAt != nil {
+		writeDeletedConflict(w)
+		return
+	}
+
 	key := mirrorObjectKey(band.ID, req.Project, req.Path)
 	url, err := h.mirrorS3.PresignedPutURL(r.Context(), key, mirrorURLTTL)
 	if err != nil {
@@ -179,7 +194,10 @@ func (h *SyncHandler) MirrorCommit(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.queries.UpsertMirrorFile(r.Context(), band.ID, user.ID, req.Project, db.MirrorFile{
 		Path: req.Path, Hash: req.Hash, Size: req.Size, ObjectKey: key,
-	}); err != nil {
+	}); errors.Is(err, db.ErrMirrorProjectDeleted) {
+		writeDeletedConflict(w)
+		return
+	} else if err != nil {
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
 	}
@@ -251,6 +269,55 @@ func (h *SyncHandler) MirrorDelete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// MirrorDeleteProject deletes a project's backup. Band admins only: it's the
+// one near-irreversible action here. The project row stays as a tombstone so
+// machines still syncing it ask before re-uploading, and the objects are
+// removed by key prefix, which also sweeps any the database never recorded.
+// DELETE /api/bands/{slug}/mirror/projects?project=
+func (h *SyncHandler) MirrorDeleteProject(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	band, ok := h.getBand(w, r, user)
+	if !ok {
+		return
+	}
+	if _, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin); role != "admin" {
+		http.Error(w, `{"error":"only band admins can delete a project's backup"}`, http.StatusForbidden)
+		return
+	}
+	if !h.mirrorConfigured(w) {
+		return
+	}
+	project, ok := mirrorProjectParam(w, r.URL.Query().Get("project"))
+	if !ok {
+		return
+	}
+
+	files, found, err := h.queries.DeleteMirrorProject(r.Context(), band.ID, user.ID, project)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.Error(w, `{"error":"no backup with that name"}`, http.StatusNotFound)
+		return
+	}
+
+	// Trailing slash: "My Song.band" must not sweep "My Song.band 2".
+	prefix := mirrorObjectKey(band.ID, project, "") + "/"
+	objects, err := h.mirrorS3.DeletePrefix(r.Context(), prefix)
+	if err != nil {
+		slog.Error("mirror: delete project objects", "prefix", prefix, "removed", objects, "error", err)
+		http.Error(w, `{"error":"the backup is marked deleted, but some stored files couldn't be removed — run delete again"}`, http.StatusBadGateway)
+		return
+	}
+	slog.Info("mirror: deleted project", "band", band.Slug, "project", project, "by", user.ID, "files", files, "objects", objects)
+	writeJSON(w, map[string]any{"files": files, "objects": objects})
+}
+
+func writeDeletedConflict(w http.ResponseWriter) {
+	http.Error(w, `{"error":"this project's backup was deleted — update jerboa-sync and confirm to back it up again"}`, http.StatusConflict)
 }
 
 // mirrorConfigured reports 501 rather than 503 on purpose: the feature is off

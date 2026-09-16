@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -352,6 +353,23 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) pushResult {
 		remoteByPath[f.Path] = f
 	}
 
+	// A band admin deleted this project's backup. This machine still has it
+	// remembered, so ask rather than quietly bringing it back.
+	if state.DeletedAt != nil {
+		who := state.DeletedBy
+		if who == "" {
+			who = "a band admin"
+		}
+		fmt.Printf("\n%q was deleted from the band's backups by %s on %s.\n",
+			name, who, state.DeletedAt.Local().Format("Jan 2, 2006"))
+		if opts.DryRun {
+			fmt.Printf("  (dry run — a real sync would ask before backing it up again)\n")
+		} else if !confirm("Back it up again? Type yes to continue: ") {
+			fmt.Printf("skipped.\n")
+			return pushDeclined
+		}
+	}
+
 	// The server knows projects by name only. If this name's backup belongs to
 	// a different copy — another folder, or another computer — pushing would
 	// replace that backup with this one, so ask first.
@@ -485,6 +503,7 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) pushResult {
 	var sentBytes int64
 	uploaded := 0
 	aborted := false
+	deletedMidway := false
 	for _, p := range toSend {
 		// On a retry, re-hash first: GarageBand may have re-saved the file
 		// under us, and uploading bytes that don't match the committed hash
@@ -506,6 +525,12 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) pushResult {
 		if err != nil {
 			fmt.Printf("\r  up    %s  FAILED: %v\n", p.f.Rel, err)
 			failed++
+			var he *httpError
+			if errors.As(err, &he) && he.Status == http.StatusConflict {
+				fmt.Printf("\nstopping — a band admin deleted this project's backup while it was syncing.\n")
+				deletedMidway = true
+				break
+			}
 			if isFatal(err) {
 				fmt.Printf("\nstopping — this affects every file, so there's no point continuing.\n")
 				if hint := fatalHint(err); hint != "" {
@@ -522,7 +547,7 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) pushResult {
 	}
 
 	deleted := 0
-	if aborted {
+	if aborted || deletedMidway {
 		toDelete = nil // the same failure would hit every delete too
 	}
 	for _, rel := range toDelete {
@@ -678,6 +703,9 @@ type mirrorState struct {
 	Files       []mirrorFile `json:"files"`
 	SourceID    string       `json:"source_id"`
 	SourceLabel string       `json:"source_label"`
+	DeletedAt   *time.Time   `json:"deleted_at"`
+	DeletedBy   string       `json:"deleted_by"`
+	CanDelete   bool         `json:"can_delete"`
 }
 
 func listMirrorState(cfg *Config, project string) (*mirrorState, error) {
@@ -686,6 +714,27 @@ func listMirrorState(cfg *Config, project string) (*mirrorState, error) {
 		return nil, err
 	}
 	return &state, nil
+}
+
+// deleteMirrorProject deletes a project's backup on the server (admins only).
+func deleteMirrorProject(cfg *Config, project string) (files, objects int, err error) {
+	req, _ := http.NewRequest("DELETE", mirrorURL(cfg, "projects", url.Values{"project": {project}}), nil)
+	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	resp, err := transferClient.Do(req)
+	if err != nil {
+		return 0, 0, transferError(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return 0, 0, &httpError{Status: resp.StatusCode, Body: strings.TrimSpace(string(msg))}
+	}
+	var result struct {
+		Files   int `json:"files"`
+		Objects int `json:"objects"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	return result.Files, result.Objects, err
 }
 
 func claimMirrorProject(cfg *Config, project string, src projectSourceInfo) error {
