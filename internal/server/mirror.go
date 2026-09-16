@@ -80,7 +80,47 @@ func (h *SyncHandler) MirrorFiles(w http.ResponseWriter, r *http.Request) {
 	if files == nil {
 		files = []db.MirrorFile{}
 	}
-	writeJSON(w, map[string]any{"files": files})
+	src, err := h.queries.GetMirrorSource(r.Context(), band.ID, project)
+	if err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"files":        files,
+		"source_id":    src.ID,
+		"source_label": src.Label,
+	})
+}
+
+// MirrorClaim records which copy of a project owns its backup. Clients call it
+// before their first upload, after asking the user if a different copy owned it.
+// POST /api/bands/{slug}/mirror/claim  {project, source_id, source_label}
+func (h *SyncHandler) MirrorClaim(w http.ResponseWriter, r *http.Request) {
+	user := UserFrom(r.Context())
+	band, ok := h.getBand(w, r, user)
+	if !ok {
+		return
+	}
+	var req struct {
+		Project string `json:"project"`
+		db.MirrorSource
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	if _, ok := mirrorProjectParam(w, req.Project); !ok {
+		return
+	}
+	if req.ID == "" || len(req.ID) > 128 || len(req.Label) > 1024 {
+		http.Error(w, `{"error":"invalid source"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.queries.ClaimMirrorProject(r.Context(), band.ID, user.ID, req.Project, req.MirrorSource); err != nil {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // MirrorUploadURL hands out a presigned PUT for one file.

@@ -301,10 +301,21 @@ func printGroups(files []localFile, sending map[string]bool) {
 
 // ---------------------------------------------------------------- push
 
-func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) {
+// pushResult tells a multi-project run what happened to one project.
+type pushResult int
+
+const (
+	pushOK       pushResult = iota // everything synced
+	pushFailed                     // some files failed; re-running picks up where it left off
+	pushDeclined                   // the user chose not to replace another copy's backup
+	pushAbortAll                   // will fail for every project too, so stop the run
+)
+
+func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) pushResult {
 	root, err := filepath.Abs(bandPath)
 	if err != nil {
-		fatalf("%v", err)
+		fmt.Printf("error: %v\n", err)
+		return pushFailed
 	}
 	name := filepath.Base(root)
 	fmt.Printf("project : %s (GarageBand)\n", name)
@@ -320,16 +331,45 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) {
 	ex := loadExcluder(root, opts.Excludes)
 	files, excluded, err := scanBand(root, ex)
 	if err != nil {
-		fatalf("scan %s: %v", name, err)
+		fmt.Printf("error: can't read %s: %v\n", name, err)
+		return pushFailed
 	}
 
-	remote, err := listMirrorFiles(cfg, name)
+	state, err := listMirrorState(cfg, name)
 	if err != nil {
-		fatalf("get state: %v", err)
+		fmt.Printf("error: couldn't get the server's copy of %s: %v\n", name, err)
+		if isFatal(err) {
+			if hint := fatalHint(err); hint != "" {
+				fmt.Println(hint)
+			}
+			return pushAbortAll
+		}
+		return pushFailed
 	}
+	remote := state.Files
 	remoteByPath := map[string]mirrorFile{}
 	for _, f := range remote {
 		remoteByPath[f.Path] = f
+	}
+
+	// The server knows projects by name only. If this name's backup belongs to
+	// a different copy — another folder, or another computer — pushing would
+	// replace that backup with this one, so ask first.
+	mine := projectSource(root)
+	if state.SourceID != "" && state.SourceID != mine.ID {
+		fmt.Printf("\nA different copy of %q is already backed up.\n", name)
+		fmt.Printf("  backed up from: %s\n", state.SourceLabel)
+		fmt.Printf("  this copy is:   %s\n", mine.Label)
+		if opts.DryRun {
+			fmt.Printf("  (dry run — a real sync would ask before replacing it)\n")
+		} else {
+			fmt.Printf("\nSyncing this copy REPLACES that backup. Older versions stay in the\n")
+			fmt.Printf("bucket for 30 days. If these are different songs, rename one project instead.\n")
+			if !confirm("Replace it? Type yes to continue: ") {
+				fmt.Printf("left the existing backup alone.\n")
+				return pushDeclined
+			}
+		}
 	}
 
 	if len(excluded) > 0 {
@@ -420,8 +460,22 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) {
 	fmt.Printf("\n%d to upload (%s), %d to remove from server, %d unchanged\n",
 		len(toSend), humanSize(sendBytes), len(toDelete), len(files)-len(toSend)-failed)
 	if opts.DryRun {
-		waitIfWindows()
-		return
+		return pushOK
+	}
+
+	// Claim before touching anything, so a push from another copy sees this
+	// one as the owner from now on.
+	if state.SourceID != mine.ID {
+		if err := claimMirrorProject(cfg, name, mine); err != nil {
+			fmt.Printf("error: couldn't register this copy with the server: %v\n", err)
+			if isFatal(err) {
+				if hint := fatalHint(err); hint != "" {
+					fmt.Println(hint)
+				}
+				return pushAbortAll
+			}
+			return pushFailed
+		}
 	}
 	if len(toSend) > 0 {
 		fmt.Println()
@@ -430,6 +484,7 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) {
 	started := time.Now()
 	var sentBytes int64
 	uploaded := 0
+	aborted := false
 	for _, p := range toSend {
 		// On a retry, re-hash first: GarageBand may have re-saved the file
 		// under us, and uploading bytes that don't match the committed hash
@@ -456,6 +511,7 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) {
 				if hint := fatalHint(err); hint != "" {
 					fmt.Printf("%s\n", hint)
 				}
+				aborted = true
 				break
 			}
 			continue
@@ -466,6 +522,9 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) {
 	}
 
 	deleted := 0
+	if aborted {
+		toDelete = nil // the same failure would hit every delete too
+	}
 	for _, rel := range toDelete {
 		if err := withRetry("del   "+rel, func(int) error { return deleteMirrorFile(cfg, name, rel) }); err != nil {
 			fmt.Printf("  del   %s  FAILED: %v\n", rel, err)
@@ -481,10 +540,13 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) {
 		fmt.Printf("       %s in %s (%s/s average)\n", humanSize(sentBytes), elapsed.Round(time.Second),
 			humanSize(int64(float64(sentBytes)/elapsed.Seconds())))
 	}
-	waitIfWindows()
-	if failed > 0 {
-		os.Exit(1)
+	switch {
+	case aborted:
+		return pushAbortAll
+	case failed > 0:
+		return pushFailed
 	}
+	return pushOK
 }
 
 // ---------------------------------------------------------------- pull
@@ -492,7 +554,7 @@ func runBandPush(cfg *Config, bandPath string, opts mirrorOpts) {
 // runBandPull downloads a mirrored project into destDir/<name>. Changed local
 // files are moved to a timestamped backup folder first; files that exist only
 // locally are left alone.
-func runBandPull(cfg *Config, name, destDir string, opts mirrorOpts) {
+func runBandPull(cfg *Config, name, destDir string, opts mirrorOpts) int {
 	root := filepath.Join(destDir, name)
 	fmt.Printf("pulling %s → %s\n", name, root)
 	if opts.DryRun {
@@ -501,10 +563,15 @@ func runBandPull(cfg *Config, name, destDir string, opts mirrorOpts) {
 	warnIfGarageBandRunning()
 	keepAwake()
 
-	remote, err := listMirrorFiles(cfg, name)
+	state, err := listMirrorState(cfg, name)
 	if err != nil {
-		fatalf("get state: %v", err)
+		fmt.Printf("error: couldn't get %s from the server: %v\n", name, err)
+		if hint := fatalHint(err); hint != "" {
+			fmt.Println(hint)
+		}
+		return 1
 	}
+	remote := state.Files
 	ex := loadExcluder(root, opts.Excludes)
 	backupDir := root + ".jerboa-backup-" + time.Now().Format("20060102-150405")
 	backedUp := false
@@ -583,10 +650,10 @@ func runBandPull(cfg *Config, name, destDir string, opts mirrorOpts) {
 	if backedUp {
 		fmt.Printf("your previous versions of changed files are in %s\n", backupDir)
 	}
-	waitIfWindows()
 	if failed > 0 {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 // ---------------------------------------------------------------- http
@@ -595,18 +662,38 @@ func mirrorURL(cfg *Config, endpoint string, q url.Values) string {
 	return fmt.Sprintf("%s/api/bands/%s/mirror/%s?%s", cfg.ServerURL, cfg.BandSlug, endpoint, q.Encode())
 }
 
+// Note: the request runs before result is read. `return result.X, getJSON(&result)`
+// looks equivalent but Go leaves that evaluation order unspecified.
 func listMirrorProjects(cfg *Config) ([]mirrorProject, error) {
 	var result struct {
 		Projects []mirrorProject `json:"projects"`
 	}
-	return result.Projects, getJSON(mirrorURL(cfg, "projects", nil), cfg, &result)
+	err := getJSON(mirrorURL(cfg, "projects", nil), cfg, &result)
+	return result.Projects, err
 }
 
-func listMirrorFiles(cfg *Config, project string) ([]mirrorFile, error) {
-	var result struct {
-		Files []mirrorFile `json:"files"`
+// mirrorState is the server's view of one project: its files, and which copy
+// last pushed it.
+type mirrorState struct {
+	Files       []mirrorFile `json:"files"`
+	SourceID    string       `json:"source_id"`
+	SourceLabel string       `json:"source_label"`
+}
+
+func listMirrorState(cfg *Config, project string) (*mirrorState, error) {
+	var state mirrorState
+	if err := getJSON(mirrorURL(cfg, "files", url.Values{"project": {project}}), cfg, &state); err != nil {
+		return nil, err
 	}
-	return result.Files, getJSON(mirrorURL(cfg, "files", url.Values{"project": {project}}), cfg, &result)
+	return &state, nil
+}
+
+func claimMirrorProject(cfg *Config, project string, src projectSourceInfo) error {
+	return postJSON(mirrorURL(cfg, "claim", nil), cfg, map[string]string{
+		"project":      project,
+		"source_id":    src.ID,
+		"source_label": src.Label,
+	}, nil)
 }
 
 type mirrorFileRequest struct {
@@ -629,11 +716,12 @@ func postJSON(u string, cfg *Config, payload, v any) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return &httpError{Status: resp.StatusCode, Body: strings.TrimSpace(string(msg))}
 	}
-	if v == nil {
+	// 204 carries no body; nothing to decode even if the caller passed v.
+	if v == nil || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(v)

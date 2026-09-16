@@ -186,6 +186,21 @@
 
   // Band management
   let showSettings = $state(false);
+
+  // One-line installer for the sync utility. curl doesn't quarantine what it
+  // downloads, so on a Mac this skips the chmod/xattr dance a browser download needs.
+  const installCommand = `curl -fsSL ${window.location.origin}/install.sh | sh`;
+  let installCopied = $state(false);
+
+  async function copyInstallCommand() {
+    try {
+      await navigator.clipboard.writeText(installCommand);
+      installCopied = true;
+      setTimeout(() => (installCopied = false), 2000);
+    } catch {
+      // Clipboard can be unavailable (non-secure context); the command is still selectable.
+    }
+  }
   let editBandName = $state("");
   let savingBandName = $state(false);
   let addMemberEmail = $state("");
@@ -807,16 +822,22 @@
 
         <div>
           <span class="label-sm md:label text-text-muted block mb-1">daw sync</span>
-          <p class="label-sm text-text-muted/50 mb-3">drop the utility in your reaper project folder, or next to a garageband .band, and run it — it syncs takes directly to jerboa, no zipping</p>
+          <p class="label-sm text-text-muted/50 mb-3">back up garageband projects and sync reaper sessions straight to jerboa — no zipping</p>
+
+          <span class="label-sm text-text-muted block mb-1">mac</span>
+          <p class="label-sm text-text-muted/50 mb-2">paste into terminal. it installs, connects to your band, and adds a jerboa sync app to drop projects onto</p>
+          <div class="flex items-stretch gap-2 mb-4">
+            <!-- Not label-sm: that uppercases, and this has to read exactly as typed. -->
+            <code class="flex-1 min-w-0 overflow-x-auto whitespace-nowrap px-3 py-1.5 border border-border bg-bg-surface font-mono text-xs font-semibold text-text-secondary">{installCommand}</code>
+            <button
+              onclick={copyInstallCommand}
+              class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors shrink-0"
+            >{installCopied ? "copied" : "copy"}</button>
+          </div>
+
+          <span class="label-sm text-text-muted block mb-1">windows / linux</span>
+          <p class="label-sm text-text-muted/50 mb-2">drop the utility in your reaper project folder and run it</p>
           <div class="flex gap-2 flex-wrap">
-            <a
-              href="/api/bands/{slug}/sync/binary?platform=mac-intel"
-              class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
-            >mac (intel)</a>
-            <a
-              href="/api/bands/{slug}/sync/binary?platform=mac"
-              class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
-            >mac (apple silicon)</a>
             <a
               href="/api/bands/{slug}/sync/binary?platform=windows"
               class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
@@ -826,7 +847,6 @@
               class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
             >linux</a>
           </div>
-          <p class="label-sm text-text-muted/50 mt-2">on mac, terminal first: <span class="font-mono">chmod +x</span> the download, then <span class="font-mono">xattr -d com.apple.quarantine</span> it</p>
         </div>
 
         <button

@@ -1,0 +1,303 @@
+#!/bin/sh
+# Jerboa Sync installer. Backs up GarageBand and Reaper projects to your band.
+#
+#   curl -fsSL {{.ServerURL}}/install.sh | sh
+#
+# Installs into ~/.jerboa (no sudo) and connects this computer to your band in
+# the browser. On a Mac it also adds a "Jerboa Sync" app to drop projects onto,
+# and a "Sync to Jerboa" Quick Action in Finder's right-click menu.
+set -eu
+
+SERVER='{{.ServerURL}}'
+JERBOA_HOME="$HOME/.jerboa"
+BIN="$JERBOA_HOME/bin/jerboa-sync"
+
+say() { printf '%s\n' "$*"; }
+fail() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
+
+os=$(uname -s)
+arch=$(uname -m)
+case "$os/$arch" in
+	Darwin/arm64) platform=mac ;;
+	Darwin/x86_64) platform=mac-intel ;;
+	Linux/x86_64) platform=linux ;;
+	*) fail "this installer doesn't support $os on $arch yet" ;;
+esac
+
+say "Installing Jerboa Sync..."
+mkdir -p "$JERBOA_HOME/bin"
+# curl doesn't set macOS's quarantine flag, so the tool runs without a
+# Gatekeeper warning — unlike a download from the browser.
+curl -fsSL "$SERVER/dl/jerboa-sync/$platform" -o "$BIN.download" ||
+	fail "couldn't download the sync tool from $SERVER"
+chmod +x "$BIN.download"
+mv "$BIN.download" "$BIN"
+
+# Re-running the installer to update shouldn't make anyone authorize again.
+# Pairing reads the terminal directly: stdin is the pipe this script came from.
+if "$BIN" status >/dev/null 2>&1; then
+	say "Already connected to your band."
+else
+	"$BIN" pair --server "$SERVER" </dev/tty ||
+		fail "connecting didn't finish — run the installer again to retry"
+fi
+
+if [ "$os" = Darwin ]; then
+	APP="$HOME/Applications/Jerboa Sync.app"
+	mkdir -p "$HOME/Applications"
+
+	# The app is compiled here, on this Mac, so it is never quarantined and needs
+	# no code signing. Double-click re-syncs what it remembers; dropping projects
+	# on it syncs those and remembers them. It runs in Terminal on purpose, so
+	# long uploads show progress instead of looking frozen.
+	src="$JERBOA_HOME/Jerboa Sync.applescript"
+	cat >"$src" <<'APPLESCRIPT'
+on syncCommand()
+	return quoted form of (POSIX path of (path to home folder) & ".jerboa/bin/jerboa-sync")
+end syncCommand
+
+on runInTerminal(cmd)
+	set wasRunning to application "Terminal" is running
+	tell application "Terminal"
+		activate
+		if wasRunning then
+			do script cmd
+		else
+			-- A freshly launched Terminal opens its own window; reuse it rather
+			-- than leaving an empty one behind.
+			set tries to 0
+			repeat while (count of windows) is 0 and tries < 50
+				delay 0.1
+				set tries to tries + 1
+			end repeat
+			if (count of windows) > 0 then
+				do script cmd in window 1
+			else
+				do script cmd
+			end if
+		end if
+	end tell
+end runInTerminal
+
+on open droppedItems
+	set cmd to my syncCommand()
+	repeat with f in droppedItems
+		set cmd to cmd & " " & quoted form of POSIX path of f
+	end repeat
+	my runInTerminal(cmd)
+end open
+
+on run
+	my runInTerminal(my syncCommand())
+end run
+APPLESCRIPT
+	rm -rf "$APP"
+	osacompile -o "$APP" "$src" || fail "couldn't build the Jerboa Sync app"
+
+	# Something visible to drop projects onto.
+	ln -sfn "$APP" "$HOME/Desktop/Jerboa Sync"
+
+	# Finder: right-click a project -> Quick Actions -> Sync to Jerboa.
+	# It hands the selection to the app above, so there is one code path.
+	WF="$HOME/Library/Services/Sync to Jerboa.workflow"
+	rm -rf "$WF"
+	mkdir -p "$WF/Contents"
+	cat >"$WF/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSIconName</key>
+			<string>NSActionTemplate</string>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Sync to Jerboa</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>runWorkflowAsService</string>
+			<key>NSRequiredContext</key>
+			<dict>
+				<key>NSApplicationIdentifier</key>
+				<string>com.apple.finder</string>
+			</dict>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>com.apple.package</string>
+				<string>public.folder</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
+PLIST
+	cat >"$WF/Contents/document.wflow" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AMApplicationBuild</key>
+	<string>523</string>
+	<key>AMApplicationVersion</key>
+	<string>2.10</string>
+	<key>AMDocumentVersion</key>
+	<string>2</string>
+	<key>actions</key>
+	<array>
+		<dict>
+			<key>action</key>
+			<dict>
+				<key>AMAccepts</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Optional</key>
+					<true/>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>AMActionVersion</key>
+				<string>2.0.3</string>
+				<key>AMApplication</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>AMParameterProperties</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<dict/>
+					<key>CheckedForUserDefaultShell</key>
+					<dict/>
+					<key>inputMethod</key>
+					<dict/>
+					<key>shell</key>
+					<dict/>
+					<key>source</key>
+					<dict/>
+				</dict>
+				<key>AMProvides</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>ActionBundlePath</key>
+				<string>/System/Library/Automator/Run Shell Script.action</string>
+				<key>ActionName</key>
+				<string>Run Shell Script</string>
+				<key>ActionParameters</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<string>open -a "$HOME/Applications/Jerboa Sync.app" "$@"</string>
+					<key>CheckedForUserDefaultShell</key>
+					<true/>
+					<key>inputMethod</key>
+					<integer>1</integer>
+					<key>shell</key>
+					<string>/bin/sh</string>
+					<key>source</key>
+					<string></string>
+				</dict>
+				<key>BundleIdentifier</key>
+				<string>com.apple.RunShellScript</string>
+				<key>CFBundleVersion</key>
+				<string>2.0.3</string>
+				<key>CanShowSelectedItemsWhenRun</key>
+				<false/>
+				<key>CanShowWhenRun</key>
+				<true/>
+				<key>Category</key>
+				<array>
+					<string>AMCategoryUtilities</string>
+				</array>
+				<key>Class Name</key>
+				<string>RunShellScriptAction</string>
+				<key>InputUUID</key>
+				<string>6B1E1C2A-1F0B-4C57-9A0E-3B6D8F1A2C01</string>
+				<key>Keywords</key>
+				<array>
+					<string>Shell</string>
+					<string>Script</string>
+					<string>Command</string>
+					<string>Run</string>
+				</array>
+				<key>OutputUUID</key>
+				<string>6B1E1C2A-1F0B-4C57-9A0E-3B6D8F1A2C02</string>
+				<key>UUID</key>
+				<string>6B1E1C2A-1F0B-4C57-9A0E-3B6D8F1A2C03</string>
+				<key>UnlocalizedApplications</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>isViewVisible</key>
+				<integer>1</integer>
+				<key>location</key>
+				<string>309.000000:253.000000</string>
+				<key>nibPath</key>
+				<string>/System/Library/Automator/Run Shell Script.action/Contents/Resources/Base.lproj/main.nib</string>
+			</dict>
+			<key>isViewVisible</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>connectors</key>
+	<dict/>
+	<key>workflowMetaData</key>
+	<dict>
+		<key>applicationBundleID</key>
+		<string>com.apple.finder</string>
+		<key>applicationPath</key>
+		<string>/System/Library/CoreServices/Finder.app</string>
+		<key>inputTypeIdentifier</key>
+		<string>com.apple.Automator.fileSystemObject</string>
+		<key>outputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>presentationMode</key>
+		<integer>15</integer>
+		<key>processesInput</key>
+		<false/>
+		<key>serviceApplicationBundleID</key>
+		<string>com.apple.finder</string>
+		<key>serviceApplicationPath</key>
+		<string>/System/Library/CoreServices/Finder.app</string>
+		<key>serviceInputTypeIdentifier</key>
+		<string>com.apple.Automator.fileSystemObject</string>
+		<key>serviceOutputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>serviceProcessesInput</key>
+		<false/>
+		<key>systemImageName</key>
+		<string>NSActionTemplate</string>
+		<key>useAutomaticInputType</key>
+		<false/>
+		<key>workflowTypeIdentifier</key>
+		<string>com.apple.Automator.servicesMenu</string>
+	</dict>
+</dict>
+</plist>
+PLIST
+	# Ask macOS to pick up the new Quick Action now rather than after a logout.
+	/System/Library/CoreServices/pbs -update >/dev/null 2>&1 || true
+fi
+
+say ""
+say "Jerboa Sync is installed."
+if [ "$os" = Darwin ]; then
+	say ""
+	say "  - Drag a GarageBand project onto 'Jerboa Sync' on your Desktop to back it up."
+	say "  - Or right-click a project in Finder -> Quick Actions -> Sync to Jerboa."
+	say "  - Double-click Jerboa Sync any time to sync everything it remembers."
+	say ""
+	say "The first time, macOS asks whether Jerboa Sync may control Terminal. Click OK:"
+	say "that's the window that shows the upload progress."
+else
+	say "Run $BIN inside a project folder, or pass it a project path."
+fi

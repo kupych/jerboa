@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -49,11 +48,22 @@ type sessionInfo struct {
 	SessionName string `json:"session_name"`
 }
 
-const usage = `usage: jerboa-sync [flags] [project.band]
+const usage = `usage: jerboa-sync [flags] [project.band | folder ...]
+       jerboa-sync pair --server URL
+       jerboa-sync status
+       jerboa-sync forget PATH
 
-Run inside a Reaper project folder to push/pull that session, or point it at a
-GarageBand .band project (or run it next to one) to mirror it file-by-file.
-With no project around, it lists what's on the server to pull.
+Backs up GarageBand projects to your band, file by file, and syncs Reaper
+sessions when run inside a Reaper project folder.
+
+Projects you name — on the command line, by dropping them on the Jerboa Sync
+app, or with Finder's "Sync to Jerboa" — are remembered. Run it with no
+arguments to sync everything it remembers.
+
+commands:
+  pair --server URL   connect this computer to a band (the installer does this)
+  status              check the connection; exits non-zero if it isn't working
+  forget PATH         stop syncing a remembered project or folder
 
 flags:
   --pull              pick a session/project from the server and download it
@@ -65,11 +75,51 @@ flags:
 `
 
 func main() {
+	stored = loadStored()
+	args := os.Args[1:]
+
+	// Subcommands come first so they can't be mistaken for project paths.
+	if len(args) > 0 {
+		switch args[0] {
+		case "pair":
+			server := ""
+			for i := 1; i < len(args); i++ {
+				switch {
+				case args[i] == "--server" && i+1 < len(args):
+					i++
+					server = args[i]
+				case strings.HasPrefix(args[i], "--server="):
+					server = strings.TrimPrefix(args[i], "--server=")
+				}
+			}
+			if server == "" {
+				server = stored.ServerURL // re-pairing with the same server
+			}
+			if err := runPair(server); err != nil {
+				fatalf("%v", err)
+			}
+			return
+		case "status":
+			os.Exit(runStatus())
+		case "forget":
+			if len(args) < 2 {
+				fatalf("usage: jerboa-sync forget PATH")
+			}
+			for _, p := range args[1:] {
+				if forgetProject(p) {
+					fmt.Printf("forgot %s\n", p)
+				} else {
+					fmt.Printf("%s wasn't remembered\n", p)
+				}
+			}
+			return
+		}
+	}
+
 	manifestMode := false
 	pullMode := false
 	var opts mirrorOpts
-	var target string
-	args := os.Args[1:]
+	var targets []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -89,17 +139,17 @@ func main() {
 		case a == "-h" || a == "--help":
 			fmt.Print(usage)
 			return
-		case !strings.HasPrefix(a, "-") && target == "":
-			target = a
+		case !strings.HasPrefix(a, "-"):
+			targets = append(targets, a)
 		default:
 			fmt.Fprint(os.Stderr, usage)
 			fatalf("unknown argument %q", a)
 		}
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := resolveConfig()
 	if err != nil {
-		fatalf("config: %v\n\nMake sure you downloaded this utility from Jerboa — it needs to be pre-configured.", err)
+		fatalf("%v.\n\nRun the installer from your band's settings page on Jerboa, or:\n  jerboa-sync pair --server https://your-jerboa-server", err)
 	}
 
 	client := &http.Client{Timeout: 10 * time.Minute}
@@ -119,57 +169,29 @@ func main() {
 	fmt.Printf("jerboa-sync  →  %s / %s\n\n", cfg.ServerURL, cfg.BandSlug)
 
 	if pullMode {
-		runPull(client, cfg, opts)
-		return
+		finish(runPull(client, cfg, opts))
+	}
+	if len(targets) > 0 {
+		finish(syncTargets(cfg, targets, opts))
 	}
 
-	if target != "" {
-		if !isBandDir(target) {
-			fatalf("%s is not a GarageBand .band project", target)
-		}
-		runBandPush(cfg, target, opts)
-		return
+	if rppPath, err := findRPP("."); err == nil {
+		fmt.Printf("project : %s\n", filepath.Base(rppPath))
+		sessionName := strings.TrimSuffix(filepath.Base(rppPath), filepath.Ext(rppPath))
+		runPush(client, cfg, rppPath, sessionName)
+		runBake(client, cfg, rppPath, sessionName)
+		runPullInto(client, cfg, sessionName, filepath.Dir(rppPath))
+		finish(0)
 	}
 
-	rppPath, err := findRPP(".")
-	if err != nil {
-		// No .rpp — look for GarageBand projects here, then in ~/Music/GarageBand
-		// (where a double-clicked binary on a Mac would want to look).
-		bands := findBands(".")
-		if len(bands) == 1 {
-			runBandPush(cfg, bands[0], opts)
-			return
-		}
-		if len(bands) == 0 {
-			if dir := garageBandDir(); dir != "" {
-				bands = findBands(dir)
-			}
-		}
-		if len(bands) == 0 {
-			runPull(client, cfg, opts)
-			return
-		}
-		fmt.Println("GarageBand projects:")
-		for i, b := range bands {
-			fmt.Printf("  %d) push %s\n", i+1, filepath.Base(b))
-		}
-		fmt.Printf("  %d) pull a session or project from Jerboa instead\n", len(bands)+1)
-		n := promptChoice(len(bands) + 1)
-		fmt.Println()
-		if n == len(bands)+1 {
-			runPull(client, cfg, opts)
-		} else {
-			runBandPush(cfg, bands[n-1], opts)
-		}
-		return
-	}
+	finish(runInteractive(client, cfg, opts))
+}
 
-	fmt.Printf("project : %s\n", filepath.Base(rppPath))
-	sessionName := strings.TrimSuffix(filepath.Base(rppPath), filepath.Ext(rppPath))
-
-	runPush(client, cfg, rppPath, sessionName)
-	runBake(client, cfg, rppPath, sessionName)
-	runPullInto(client, cfg, sessionName, filepath.Dir(rppPath))
+// finish is the single exit point for a normal run, so a double-clicked
+// window on Windows pauses exactly once before closing.
+func finish(code int) {
+	waitIfWindows()
+	os.Exit(code)
 }
 
 // emitManifest writes one TSV line to stdout per Reaper track whose render
@@ -409,7 +431,7 @@ func uploadBaked(client *http.Client, cfg *Config, trackID, reaperGUID, reaperNa
 
 // runPull is the interactive pull mode: list Reaper sessions and GarageBand
 // projects on the server, prompt, pull.
-func runPull(client *http.Client, cfg *Config, opts mirrorOpts) {
+func runPull(client *http.Client, cfg *Config, opts mirrorOpts) int {
 	sessions, err := listSessions(client, cfg)
 	if err != nil {
 		fatalf("list sessions: %v", err)
@@ -420,8 +442,7 @@ func runPull(client *http.Client, cfg *Config, opts mirrorOpts) {
 	}
 	if len(sessions)+len(projects) == 0 {
 		fmt.Println("No sessions found on server.")
-		waitIfWindows()
-		return
+		return 0
 	}
 
 	fmt.Println("Available sessions:")
@@ -439,20 +460,17 @@ func runPull(client *http.Client, cfg *Config, opts mirrorOpts) {
 			dest = dir
 		}
 		fmt.Println()
-		runBandPull(cfg, projects[n-len(sessions)-1].Name, dest, opts)
-		return
+		return runBandPull(cfg, projects[n-len(sessions)-1].Name, dest, opts)
 	}
 
 	chosen := sessions[n-1]
 	fmt.Printf("\npulling %s ...\n\n", chosen.SessionName)
 	runPullInto(client, cfg, chosen.SessionName, ".")
+	return 0
 }
 
 func promptChoice(max int) int {
-	fmt.Print("\nEnter number: ")
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	n, err := strconv.Atoi(strings.TrimSpace(scanner.Text()))
+	n, err := strconv.Atoi(readLine("\nEnter number: "))
 	if err != nil || n < 1 || n > max {
 		fatalf("invalid selection")
 	}
@@ -533,7 +551,6 @@ func runPullInto(client *http.Client, cfg *Config, sessionName, dir string) {
 	}
 
 	fmt.Printf("\npull — %d downloaded, %d skipped, %d conflict(s) saved as _remote\n", downloaded, skipped, conflicts)
-	waitIfWindows()
 }
 
 func findRPP(dir string) (string, error) {
@@ -759,9 +776,9 @@ func downloadAudio(client *http.Client, cfg *Config, overdubID, dest string) err
 	return err
 }
 
-// loadConfig reads the embedded config from the end of the binary.
+// loadEmbeddedConfig reads the config appended to binaries downloaded from the band settings page.
 // Format: [binary][JSON config][uint64 LE length of JSON]
-func loadConfig() (*Config, error) {
+func loadEmbeddedConfig() (*Config, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err

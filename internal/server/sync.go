@@ -50,6 +50,29 @@ func NewSyncHandler(queries *db.Queries, store *storage.Store, processor *audio.
 	}
 }
 
+// syncBinNames maps the platform names used in URLs to the files make
+// build-sync produces.
+var syncBinNames = map[string]string{
+	"linux":     "jerboa-sync-linux-amd64",
+	"windows":   "jerboa-sync-windows-amd64.exe",
+	"mac":       "jerboa-sync-darwin-arm64",
+	"mac-intel": "jerboa-sync-darwin-amd64",
+}
+
+// publicBaseURL is the scheme and host the client actually reached us on,
+// honouring the reverse proxy's forwarding headers.
+func publicBaseURL(r *http.Request) string {
+	scheme := "https"
+	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
+		scheme = "http"
+	}
+	host := r.Host
+	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
+		host = fwd
+	}
+	return scheme + "://" + host
+}
+
 // SyncConfig is embedded into the downloaded binary.
 type SyncConfig struct {
 	ServerURL string `json:"server_url"`
@@ -326,20 +349,14 @@ func (h *SyncHandler) DownloadBinary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	platform := r.URL.Query().Get("platform")
-	binNames := map[string]string{
-		"linux":     "jerboa-sync-linux-amd64",
-		"windows":   "jerboa-sync-windows-amd64.exe",
-		"mac":       "jerboa-sync-darwin-arm64",
-		"mac-intel": "jerboa-sync-darwin-amd64",
-	}
-	if _, ok := binNames[platform]; !ok {
+	if _, ok := syncBinNames[platform]; !ok {
 		platform = runtime.GOOS
 		if platform != "linux" && platform != "windows" {
 			platform = "linux"
 		}
 	}
 
-	binName := binNames[platform]
+	binName := syncBinNames[platform]
 	binPath := filepath.Join(h.binDir, binName)
 
 	binData, err := os.ReadFile(binPath)
@@ -354,17 +371,8 @@ func (h *SyncHandler) DownloadBinary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scheme := "https"
-	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
-		scheme = "http"
-	}
-	host := r.Host
-	if fwd := r.Header.Get("X-Forwarded-Host"); fwd != "" {
-		host = fwd
-	}
-
 	cfg := SyncConfig{
-		ServerURL: fmt.Sprintf("%s://%s", scheme, host),
+		ServerURL: publicBaseURL(r),
 		BandSlug:  band.Slug,
 		Token:     token.Token,
 		SongID:    r.URL.Query().Get("song_id"),

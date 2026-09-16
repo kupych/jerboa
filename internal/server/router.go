@@ -61,10 +61,26 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		r.Post("/auth/magic-link", authH.SendMagicLink)
 		r.Get("/auth/magic-link/verify", authH.VerifyMagicLink)
 
-		// Reaper device-pairing (start + poll are unauthenticated; the code
-		// itself is the bearer until an authenticated user authorizes it).
+		// Device pairing for the sync utility and the Reaper script. Start is
+		// unauthenticated and creates a row, so it stays under the strict limit.
 		r.Post("/api/pair/start", pairH.Start)
+	})
+
+	// Pair polling gets its own, looser limit. Clients poll every couple of
+	// seconds while someone finds the tab, logs in and picks a band — well past
+	// 10 requests a minute. Codes are 8 characters from a 31-symbol alphabet
+	// and expire in 10 minutes, so this doesn't make guessing one practical.
+	r.Group(func(r chi.Router) {
+		r.Use(RateLimitMiddleware(120, time.Minute))
 		r.Post("/api/pair/poll", pairH.Poll)
+	})
+
+	// One-line installer and the token-free binary it fetches. Public on
+	// purpose: the binary holds no credentials until it pairs.
+	r.Group(func(r chi.Router) {
+		r.Use(RateLimitMiddleware(30, time.Minute))
+		r.Get("/install.sh", syncH.InstallScript)
+		r.Get("/dl/jerboa-sync/{platform}", syncH.GenericBinary)
 	})
 
 	// Authenticated routes
@@ -172,6 +188,7 @@ func NewRouter(cfg *config.Config, queries *db.Queries, authProvider *auth.Provi
 		// GarageBand project mirror (files live in the B2 bucket)
 		r.Get("/api/bands/{slug}/mirror/projects", syncH.MirrorProjects)
 		r.Get("/api/bands/{slug}/mirror/files", syncH.MirrorFiles)
+		r.Post("/api/bands/{slug}/mirror/claim", syncH.MirrorClaim)
 		r.Post("/api/bands/{slug}/mirror/upload-url", syncH.MirrorUploadURL)
 		r.Post("/api/bands/{slug}/mirror/commit", syncH.MirrorCommit)
 		r.Get("/api/bands/{slug}/mirror/download-url", syncH.MirrorDownloadURL)

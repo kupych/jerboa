@@ -40,13 +40,13 @@
   <div class="w-full max-w-md space-y-6">
     <div class="text-center">
       <h2 class="text-lg font-bold tracking-wider font-display text-text-primary">connect device</h2>
-      <p class="text-xs font-semibold text-text-muted mt-2">authorize a Reaper installation to sync with one of your bands</p>
+      <p class="text-xs font-semibold text-text-muted mt-2">authorize a computer to sync with one of your bands</p>
     </div>
 
     {#if done}
       <div class="border border-accent/40 px-4 py-6 text-center space-y-2">
         <div class="label text-accent">connected</div>
-        <p class="text-xs font-semibold text-text-muted">return to Reaper — the panel will pick up the connection automatically</p>
+        <p class="text-xs font-semibold text-text-muted">you can close this tab — Reaper or Jerboa Sync picks up the connection automatically</p>
       </div>
     {:else}
       <div class="space-y-4">

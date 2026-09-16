@@ -40,41 +40,81 @@ the previous version.
 
 ## Getting the tool to a bandmate
 
-Band page → files tab → "sync it instead" → the Mac download. macOS quarantines
-anything downloaded from a browser, so in Terminal:
+Band page → gear icon → **daw sync** shows a one-line installer. They paste it
+into Terminal:
 
 ```
-chmod +x ~/Downloads/jerboa-sync-<band>
-xattr -d com.apple.quarantine ~/Downloads/jerboa-sync-<band>
+curl -fsSL https://jerboa.dad/install.sh | sh
 ```
 
-The download has the server URL, band and an API token baked into it, so it
-needs no configuration — and it is worth treating like a password.
+It detects Apple Silicon vs Intel, installs into `~/.jerboa` (no sudo), and opens
+the browser to approve the connection — they sign in, pick the band, click
+authorize. On a Mac it also adds:
 
-> **Untested:** the config is appended to the end of the binary, and Go
-> ad-hoc-signs darwin/arm64 builds. Appended bytes sit outside any mapped
-> segment so this is expected to run fine, but it has not been verified on a
-> real Mac. If it dies with "killed: 9", the fix is to ship the config as a
-> sidecar file instead.
+- **Jerboa Sync** in `~/Applications`, linked on the Desktop. Drop projects or
+  folders onto it to sync them; double-click to re-sync everything it remembers.
+- **Sync to Jerboa** in Finder's right-click menu under Quick Actions.
+
+That single paste is the only Terminal step. Why it avoids Gatekeeper: `curl`
+doesn't set the quarantine flag browsers add to downloads, and the app and
+Quick Action are generated on the Mac itself, so nothing needs signing or
+notarization. Re-running the installer updates the tool without re-pairing.
+
+First runs trigger two one-time macOS prompts worth warning people about:
+Jerboa Sync asking to control Terminal (that window shows upload progress), and
+Terminal asking for Documents or Desktop access if projects live there.
+
+Windows and Linux Reaper users can still download a binary with the token baked
+in from the same panel; those keep working.
+
+### Connections and tokens
+
+Pairing (installer or Reaper script) and the settings-page download all issue
+the user's single token for that band, **replacing any previous one**. So a
+second computer paired on the same account disconnects the first. Use a
+separate account per person, or re-run the installer on whichever machine
+stopped working.
+
+Credentials live in the user config dir (`~/Library/Application Support/jerboa-sync/config.json`
+on a Mac), owner-readable only.
 
 ## Using it
 
+Everything a person picks — dropped on the app, chosen in Finder, passed on the
+command line, or picked from the double-click menu — is **remembered**. A
+remembered folder includes projects saved into it later.
+
 ```
-jerboa-sync                     # next to a .band, or pick from ~/Music/GarageBand
-jerboa-sync "My Song.band"      # explicit
-jerboa-sync --dry-run           # list every file with sizes, change nothing
-jerboa-sync --pull              # download a project from the server
-jerboa-sync --exclude 'Take 3*' # skip files, repeatable
+jerboa-sync                        # menu: Enter syncs everything remembered
+jerboa-sync "My Song.band" ~/Band  # sync these (a folder means every .band in it)
+jerboa-sync --dry-run              # show what would move, change nothing
+jerboa-sync --pull                 # download a project from the server
+jerboa-sync --exclude 'Take 3*'    # skip files, repeatable
+jerboa-sync forget PATH            # stop syncing something
+jerboa-sync status                 # check the connection (non-zero exit if broken)
 ```
+
+With nothing remembered, a plain run looks in the current folder,
+`~/Music/GarageBand`, and iCloud Drive. At end of input every prompt takes its
+safe default, so a plain `jerboa-sync` from cron or launchd syncs everything
+remembered and never replaces another copy's backup.
 
 Always skipped: `*.nosync` (undo history, frozen-track renders), `Output`,
 `.DS_Store`. To skip more permanently, put one pattern per line in
 `.jerboaignore` **next to** the `.band` (not inside it). Patterns are
 case-insensitive globs; one without a `/` matches any file or folder name,
-one with a `/` matches a path from the package root.
+one with a `/` matches a path from the package root. `--dry-run` groups files
+by track, and each group's name works as a pattern.
 
-`--dry-run` is the tool for deciding what to exclude: it prints every file with
-its size and totals up what the current excludes are already saving.
+### Same name, different project
+
+The server identifies projects by name. Each push records which computer and
+folder it came from; if a later push of the same name comes from somewhere
+else, it stops and shows both locations before replacing anything. Only typing
+`yes` replaces the backup. Answering anything else, or nothing, leaves it alone,
+and a declined drop isn't remembered. Moving a project to a new folder also
+triggers the question once, since the tool can't tell a move from a
+different project with the same name.
 
 ## What makes it survivable on a slow link
 

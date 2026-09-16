@@ -138,3 +138,35 @@ func (q *Queries) DeleteMirrorFile(ctx context.Context, bandID uuid.UUID, projec
 	}
 	return key, err
 }
+
+// MirrorSource identifies the copy of a project that owns the backup: an
+// opaque id (install + absolute path) and a human-readable label for prompts.
+type MirrorSource struct {
+	ID    string `json:"source_id"`
+	Label string `json:"source_label"`
+}
+
+// GetMirrorSource returns the recorded source, or an empty one if the project
+// doesn't exist yet or predates source tracking.
+func (q *Queries) GetMirrorSource(ctx context.Context, bandID uuid.UUID, project string) (MirrorSource, error) {
+	var s MirrorSource
+	err := q.pool.QueryRow(ctx, `
+		SELECT source_id, source_label FROM mirror_projects WHERE band_id = $1 AND name = $2
+	`, bandID, project).Scan(&s.ID, &s.Label)
+	if err == pgx.ErrNoRows {
+		return MirrorSource{}, nil
+	}
+	return s, err
+}
+
+// ClaimMirrorProject records which copy now owns the project, creating the
+// project row if this is its first push.
+func (q *Queries) ClaimMirrorProject(ctx context.Context, bandID, userID uuid.UUID, project string, src MirrorSource) error {
+	_, err := q.pool.Exec(ctx, `
+		INSERT INTO mirror_projects (band_id, name, created_by, source_id, source_label)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (band_id, name) DO UPDATE SET
+			source_id = $4, source_label = $5, updated_at = now()
+	`, bandID, project, userID, src.ID, src.Label)
+	return err
+}
