@@ -94,11 +94,42 @@ APPLESCRIPT
 	rm -rf "$APP"
 	osacompile -o "$APP" "$src" || fail "couldn't build the Jerboa Sync app"
 
-	# Something visible to drop projects onto.
-	ln -sfn "$APP" "$HOME/Desktop/Jerboa Sync"
+	# Something visible on the Desktop to drop projects onto. It has to be a real
+	# Finder alias: dropping onto a symlink launches the app without handing it
+	# the dropped files. Written through the bookmark API rather than by
+	# scripting Finder, which would add a permission prompt. rm -f (not -rf)
+	# clears an old symlink or alias but can never delete a real folder.
+	SHORTCUT="$HOME/Desktop/Jerboa Sync"
+	rm -f "$SHORTCUT" "$SHORTCUT.app" 2>/dev/null || true
+	if ! osascript -l JavaScript - "$APP" "$SHORTCUT" >/dev/null 2>&1 <<'JXA'
+function run(argv) {
+	ObjC.import('Foundation');
+	const err = Ref();
+	const target = $.NSURL.fileURLWithPath(argv[0]);
+	// 1024 = NSURLBookmarkCreationSuitableForBookmarkFile
+	const data = target.bookmarkDataWithOptionsIncludingResourceValuesForKeysRelativeToURLError(1024, $(), $(), err);
+	if (data.isNil()) throw new Error('bookmark failed');
+	if (!$.NSURL.writeBookmarkDataToURLOptionsError(data, $.NSURL.fileURLWithPath(argv[1]), 0, err)) {
+		throw new Error('write failed');
+	}
+}
+JXA
+	then
+		# Fallback: ask Finder. May show a one-time permission prompt.
+		osascript -e 'on run argv' \
+			-e 'tell application "Finder" to make alias file to (POSIX file (item 1 of argv) as alias) at (POSIX file (item 2 of argv) as alias)' \
+			-e 'end run' "$APP" "$HOME/Desktop" >/dev/null 2>&1 ||
+			say "(Couldn't put a shortcut on the Desktop — Jerboa Sync is in your Applications folder.)"
+	fi
 
 	# Finder: right-click a project -> Quick Actions -> Sync to Jerboa.
 	# It hands the selection to the app above, so there is one code path.
+	#
+	# Both files below were saved by Automator itself (macOS 26), not written by
+	# hand. Don't trim them: a hand-written version missing keys like the
+	# action's "arguments" block made Automator refuse to load the workflow, and
+	# macOS silently left it out of the menu. If this needs changing, rebuild it
+	# in Automator and paste the output back in.
 	WF="$HOME/Library/Services/Sync to Jerboa.workflow"
 	rm -rf "$WF"
 	mkdir -p "$WF/Contents"
@@ -110,6 +141,8 @@ APPLESCRIPT
 	<key>NSServices</key>
 	<array>
 		<dict>
+			<key>NSBackgroundColorName</key>
+			<string>background</string>
 			<key>NSIconName</key>
 			<string>NSActionTemplate</string>
 			<key>NSMenuItem</key>
@@ -126,8 +159,7 @@ APPLESCRIPT
 			</dict>
 			<key>NSSendFileTypes</key>
 			<array>
-				<string>com.apple.package</string>
-				<string>public.folder</string>
+				<string>public.item</string>
 			</array>
 		</dict>
 	</array>
@@ -140,7 +172,7 @@ PLIST
 <plist version="1.0">
 <dict>
 	<key>AMApplicationBuild</key>
-	<string>523</string>
+	<string>533</string>
 	<key>AMApplicationVersion</key>
 	<string>2.10</string>
 	<key>AMDocumentVersion</key>
@@ -221,26 +253,97 @@ PLIST
 				<key>Class Name</key>
 				<string>RunShellScriptAction</string>
 				<key>InputUUID</key>
-				<string>6B1E1C2A-1F0B-4C57-9A0E-3B6D8F1A2C01</string>
+				<string>DECA4EA3-B6DE-416C-A3F7-9A2CDDDBFFFC</string>
 				<key>Keywords</key>
 				<array>
 					<string>Shell</string>
 					<string>Script</string>
 					<string>Command</string>
 					<string>Run</string>
+					<string>Unix</string>
 				</array>
 				<key>OutputUUID</key>
-				<string>6B1E1C2A-1F0B-4C57-9A0E-3B6D8F1A2C02</string>
+				<string>D4122965-7B98-4E3F-8BD6-E91978B24D98</string>
 				<key>UUID</key>
-				<string>6B1E1C2A-1F0B-4C57-9A0E-3B6D8F1A2C03</string>
+				<string>14C12004-C639-4316-B720-B98703B5AEF4</string>
 				<key>UnlocalizedApplications</key>
 				<array>
 					<string>Automator</string>
 				</array>
+				<key>arguments</key>
+				<dict>
+					<key>0</key>
+					<dict>
+						<key>default value</key>
+						<integer>0</integer>
+						<key>name</key>
+						<string>inputMethod</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>0</string>
+					</dict>
+					<key>1</key>
+					<dict>
+						<key>default value</key>
+						<false/>
+						<key>name</key>
+						<string>CheckedForUserDefaultShell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>1</string>
+					</dict>
+					<key>2</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>source</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>2</string>
+					</dict>
+					<key>3</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>COMMAND_STRING</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>3</string>
+					</dict>
+					<key>4</key>
+					<dict>
+						<key>default value</key>
+						<string>/bin/sh</string>
+						<key>name</key>
+						<string>shell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>4</string>
+					</dict>
+				</dict>
+				<key>conversionLabel</key>
+				<integer>0</integer>
 				<key>isViewVisible</key>
 				<integer>1</integer>
 				<key>location</key>
-				<string>309.000000:253.000000</string>
+				<string>485.000000:305.000000</string>
 				<key>nibPath</key>
 				<string>/System/Library/Automator/Run Shell Script.action/Contents/Resources/Base.lproj/main.nib</string>
 			</dict>
@@ -254,8 +357,17 @@ PLIST
 	<dict>
 		<key>applicationBundleID</key>
 		<string>com.apple.finder</string>
+		<key>applicationBundleIDsByPath</key>
+		<dict>
+			<key>/System/Library/CoreServices/Finder.app</key>
+			<string>com.apple.finder</string>
+		</dict>
 		<key>applicationPath</key>
 		<string>/System/Library/CoreServices/Finder.app</string>
+		<key>applicationPaths</key>
+		<array>
+			<string>/System/Library/CoreServices/Finder.app</string>
+		</array>
 		<key>inputTypeIdentifier</key>
 		<string>com.apple.Automator.fileSystemObject</string>
 		<key>outputTypeIdentifier</key>
