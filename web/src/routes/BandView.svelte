@@ -134,6 +134,25 @@
   let files = $state<BandFile[]>([]);
   let filesLoading = $state(false);
   let filesLoaded = $state(false);
+
+  // Sync tab: GarageBand projects backed up with jerboa-sync. They live in their
+  // own tables, not band files, so they'd never show in the files tab.
+  interface MirrorProject {
+    name: string;
+    file_count: number;
+    total_size: number;
+    updated_at: string;
+    source_label: string;
+  }
+  let mirrorProjects = $state<MirrorProject[]>([]);
+  let mirrorCanDelete = $state(false);
+  let mirrorLoading = $state(false);
+  let mirrorLoaded = $state(false);
+  let mirrorError = $state("");
+  let confirmingDelete = $state<string | null>(null);
+  let deleteTyped = $state("");
+  let deletingProject = $state(false);
+  let deleteError = $state("");
   let fileUploadProgress = $state(0);
   let fileUploading = $state(false);
   let fileUploadError = $state("");
@@ -214,6 +233,7 @@
     viewTab === "songs" ? "SNG" :
     viewTab === "sets" ? "SET" :
     viewTab === "tags" ? "TAG" :
+    viewTab === "sync" ? "SYN" :
     "FIL"
   );
   let activeTabLabel = $derived(
@@ -221,6 +241,7 @@
     viewTab === "songs" ? "songs" :
     viewTab === "sets" ? "sets" :
     viewTab === "tags" ? "tags" :
+    viewTab === "sync" ? "sync" :
     "files"
   );
   let activeTabCount = $derived(
@@ -228,12 +249,20 @@
     viewTab === "songs" ? songs.length :
     viewTab === "sets" ? sets.length :
     viewTab === "tags" ? taggedTracks.size :
+    viewTab === "sync" ? mirrorProjects.length :
     files.length
   );
 
-  // Reload when slug changes (band switching)
+  // Reload when slug changes (band switching). BandView stays mounted across
+  // bands, so the lazily loaded tabs have to be reset too, or the previous
+  // band's files and backups would still be showing.
   $effect(() => {
     slug; // track dependency
+    files = [];
+    filesLoaded = false;
+    mirrorProjects = [];
+    mirrorLoaded = false;
+    confirmingDelete = null;
     loadData();
   });
 
@@ -288,6 +317,46 @@
   $effect(() => {
     if (viewTab === "files" && !filesLoaded && !filesLoading) loadFiles();
   });
+
+  async function loadMirror() {
+    mirrorLoading = true;
+    mirrorError = "";
+    try {
+      const res = await api<{ projects: MirrorProject[]; can_delete: boolean }>(`/api/bands/${slug}/mirror/projects`);
+      mirrorProjects = res.projects;
+      mirrorCanDelete = res.can_delete;
+    } catch (e: any) {
+      mirrorError = e?.message || "couldn't load backups";
+    } finally {
+      // Set even on failure, so a broken request isn't retried in a loop.
+      mirrorLoaded = true;
+      mirrorLoading = false;
+    }
+  }
+
+  $effect(() => {
+    if (viewTab === "sync" && !mirrorLoaded && !mirrorLoading) loadMirror();
+  });
+
+  // Same rule as jerboa-sync delete: the name, with or without ".band".
+  function deleteConfirmed(name: string) {
+    const typed = deleteTyped.trim();
+    return typed === name || typed + ".band" === name;
+  }
+
+  async function deleteMirrorProject(name: string) {
+    deletingProject = true;
+    deleteError = "";
+    try {
+      await apiDelete(`/api/bands/${slug}/mirror/projects?project=${encodeURIComponent(name)}`);
+      mirrorProjects = mirrorProjects.filter((p) => p.name !== name);
+      confirmingDelete = null;
+    } catch (e: any) {
+      deleteError = e?.message || "delete failed";
+    } finally {
+      deletingProject = false;
+    }
+  }
 
   // Files larger than this threshold use the multipart path (browser → S3 direct).
   // Smaller files still go through the regular POST endpoint.
@@ -820,35 +889,6 @@
           {/if}
         </div>
 
-        <div>
-          <span class="label-sm md:label text-text-muted block mb-1">daw sync</span>
-          <p class="label-sm text-text-muted/50 mb-3">back up garageband projects and sync reaper sessions straight to jerboa — no zipping</p>
-
-          <span class="label-sm text-text-muted block mb-1">mac</span>
-          <p class="label-sm text-text-muted/50 mb-2">paste into terminal. it installs, connects to your band, and adds a jerboa sync app to drop projects onto</p>
-          <div class="flex items-stretch gap-2 mb-4">
-            <!-- Not label-sm: that uppercases, and this has to read exactly as typed. -->
-            <code class="flex-1 min-w-0 overflow-x-auto whitespace-nowrap px-3 py-1.5 border border-border bg-bg-surface font-mono text-xs font-semibold text-text-secondary">{installCommand}</code>
-            <button
-              onclick={copyInstallCommand}
-              class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors shrink-0"
-            >{installCopied ? "copied" : "copy"}</button>
-          </div>
-
-          <span class="label-sm text-text-muted block mb-1">windows / linux</span>
-          <p class="label-sm text-text-muted/50 mb-2">drop the utility in your reaper project folder and run it</p>
-          <div class="flex gap-2 flex-wrap">
-            <a
-              href="/api/bands/{slug}/sync/binary?platform=windows"
-              class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
-            >windows</a>
-            <a
-              href="/api/bands/{slug}/sync/binary?platform=linux"
-              class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
-            >linux</a>
-          </div>
-        </div>
-
         <button
           onclick={() => (showSettings = false)}
           class="label text-text-muted hover:text-text-secondary transition-colors"
@@ -949,6 +989,10 @@
           onclick={() => selectTab("files")}
           class="label transition-colors {viewTab === 'files' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
         >files</button>
+        <button
+          onclick={() => selectTab("sync")}
+          class="label transition-colors {viewTab === 'sync' ? 'text-accent' : 'text-text-muted hover:text-text-secondary'}"
+        >sync</button>
       </div>
     </div>
 
@@ -1202,7 +1246,7 @@
       <p class="label-sm text-text-muted mb-3">
         project too big to zip? don't — sync it file-by-file with the
         <button
-          onclick={() => (showSettings = true)}
+          onclick={() => selectTab("sync")}
           class="text-accent hover:text-accent/70 transition-colors underline underline-offset-2"
         >daw sync utility</button>
       </p>
@@ -1241,6 +1285,114 @@
             </div>
           {/each}
         </div>
+      {/if}
+    {/if}
+
+    {#if viewTab === "sync"}
+      <!-- Getting the utility onto a computer -->
+      <div class="bg-bg-surface border border-border px-4 py-4 mb-6">
+        <div class="sys-kicker mb-3">SYN // set up a computer</div>
+
+        <span class="label-sm text-text-muted block mb-1">mac</span>
+        <p class="label-sm text-text-muted/50 mb-2">paste into terminal. it installs, connects to your band, and adds a jerboa sync app to drop garageband projects onto</p>
+        <div class="flex items-stretch gap-2 mb-4">
+          <!-- Not label-sm: that uppercases, and this has to read exactly as typed. -->
+          <code class="flex-1 min-w-0 overflow-x-auto whitespace-nowrap px-3 py-1.5 border border-border bg-bg-primary font-mono text-xs font-semibold text-text-secondary">{installCommand}</code>
+          <button
+            onclick={copyInstallCommand}
+            class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors shrink-0"
+          >{installCopied ? "copied" : "copy"}</button>
+        </div>
+
+        <span class="label-sm text-text-muted block mb-1">windows / linux</span>
+        <p class="label-sm text-text-muted/50 mb-2">drop the utility in your reaper project folder and run it</p>
+        <div class="flex gap-2 flex-wrap">
+          <a
+            href="/api/bands/{slug}/sync/binary?platform=windows"
+            class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
+          >windows</a>
+          <a
+            href="/api/bands/{slug}/sync/binary?platform=linux"
+            class="px-3 py-1.5 border border-border hover:border-accent/60 label-sm text-text-muted hover:text-accent transition-colors"
+          >linux</a>
+        </div>
+      </div>
+
+      <!-- What's backed up -->
+      <div class="flex items-baseline justify-between mb-2">
+        <span class="sys-kicker">BAK // garageband backups</span>
+        {#if mirrorProjects.length > 0}
+          <span class="sys-code text-text-muted/45">{mirrorProjects.length} projects</span>
+        {/if}
+      </div>
+
+      {#if mirrorLoading}
+        <div class="text-center py-8 label text-text-muted">loading...</div>
+      {:else if mirrorError}
+        <p class="label-sm text-red-400 mb-3">
+          {mirrorError}
+          <button onclick={() => (mirrorLoaded = false)} class="text-accent hover:text-accent/70 transition-colors ml-2">retry</button>
+        </p>
+      {:else if mirrorProjects.length === 0}
+        <div class="sys-empty mb-4">
+          <div class="sys-empty-code">BAK // 00</div>
+          <div class="sys-empty-title text-text-primary mt-3">No Backups Yet</div>
+          <p class="sys-empty-copy mt-3">Set up a Mac above, then drag a GarageBand project onto Jerboa Sync. It stays backed up from then on, and new versions upload by themselves each time it runs.</p>
+        </div>
+      {:else}
+        <div class="space-y-1 mb-3">
+          {#each mirrorProjects as project (project.name)}
+            <div class="bg-bg-surface border border-border px-4 py-3">
+              <div class="flex items-center justify-between gap-4">
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-semibold text-text-primary truncate">{project.name.replace(/\.band$/i, "")}</p>
+                  <p class="label-sm text-text-muted/60 mt-0.5">
+                    {project.file_count} files · {formatFileSize(project.total_size)} · synced {formatRelativeTime(project.updated_at)}
+                  </p>
+                  {#if project.source_label}
+                    <p class="text-xs font-semibold text-text-muted/50 mt-0.5 truncate" title={project.source_label}>from {project.source_label}</p>
+                  {/if}
+                </div>
+                {#if mirrorCanDelete && confirmingDelete !== project.name}
+                  <button
+                    onclick={() => { confirmingDelete = project.name; deleteTyped = ""; deleteError = ""; }}
+                    class="label-sm text-text-muted/40 hover:text-red-400 transition-colors shrink-0"
+                  >delete</button>
+                {/if}
+              </div>
+
+              {#if confirmingDelete === project.name}
+                <div class="mt-3 pt-3 border-t border-border/60">
+                  <p class="text-xs font-semibold text-text-secondary mb-2">
+                    Deletes the band's backup of this project. It doesn't touch anyone's computer, and older versions stay recoverable in storage for 30 days.
+                  </p>
+                  <div class="flex items-stretch gap-2">
+                    <input
+                      bind:value={deleteTyped}
+                      placeholder="type {project.name} to confirm"
+                      class="flex-1 min-w-0 px-3 py-1.5 bg-bg-primary border border-border focus:border-red-400/60 outline-none font-mono text-xs font-semibold text-text-primary"
+                    />
+                    <button
+                      disabled={!deleteConfirmed(project.name) || deletingProject}
+                      onclick={() => deleteMirrorProject(project.name)}
+                      class="px-3 py-1.5 border border-red-400/40 text-red-400 hover:bg-red-400/10 disabled:opacity-40 disabled:hover:bg-transparent label-sm transition-colors shrink-0"
+                    >{deletingProject ? "..." : "delete"}</button>
+                    <button
+                      onclick={() => (confirmingDelete = null)}
+                      class="px-3 py-1.5 border border-border label-sm text-text-muted hover:text-text-secondary transition-colors shrink-0"
+                    >cancel</button>
+                  </div>
+                  {#if deleteError}
+                    <p class="label-sm text-red-400 mt-2">{deleteError}</p>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+        <p class="text-xs font-semibold text-text-muted/50 mb-4">
+          To put a project back on a computer: <span class="font-mono">jerboa-sync --pull</span>
+        </p>
       {/if}
     {/if}
 

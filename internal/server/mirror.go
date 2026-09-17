@@ -44,10 +44,12 @@ type mirrorFileRequest struct {
 	Size    int64  `json:"size"`
 }
 
-// MirrorProjects lists mirrored projects for a band.
+// MirrorProjects lists mirrored projects for a band, and whether the caller may
+// delete them (the sync tab only shows delete controls to band admins).
 // GET /api/bands/{slug}/mirror/projects
 func (h *SyncHandler) MirrorProjects(w http.ResponseWriter, r *http.Request) {
-	band, ok := h.getBand(w, r, UserFrom(r.Context()))
+	user := UserFrom(r.Context())
+	band, ok := h.getBand(w, r, user)
 	if !ok {
 		return
 	}
@@ -59,7 +61,8 @@ func (h *SyncHandler) MirrorProjects(w http.ResponseWriter, r *http.Request) {
 	if projects == nil {
 		projects = []db.MirrorProject{}
 	}
-	writeJSON(w, map[string]any{"projects": projects})
+	_, role := CheckBandAccess(h.queries, r.Context(), band.ID, user.ID, user.IsAdmin)
+	writeJSON(w, map[string]any{"projects": projects, "can_delete": role == "admin"})
 }
 
 // MirrorFiles lists path/hash/size for every file in a project.

@@ -19,7 +19,7 @@ export function navigate(to: string) {
 
 // Tabs inside BandView that are reflected in the URL as /band/:slug/:tab.
 // "feed" is the default and stays at the bare /band/:slug.
-export const BAND_TABS = ["feed", "songs", "sets", "tags", "files"] as const;
+export const BAND_TABS = ["feed", "songs", "sets", "tags", "files", "sync"] as const;
 export type BandTab = (typeof BAND_TABS)[number];
 
 export const route = derived(path, ($path) => {

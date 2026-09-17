@@ -12,10 +12,11 @@ import (
 // Project mirrors (GarageBand .band packages synced file-by-file)
 
 type MirrorProject struct {
-	Name      string    `json:"name"`
-	FileCount int       `json:"file_count"`
-	TotalSize int64     `json:"total_size"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Name        string    `json:"name"`
+	FileCount   int       `json:"file_count"`
+	TotalSize   int64     `json:"total_size"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	SourceLabel string    `json:"source_label"`
 }
 
 type MirrorFile struct {
@@ -27,7 +28,7 @@ type MirrorFile struct {
 
 func (q *Queries) ListMirrorProjects(ctx context.Context, bandID uuid.UUID) ([]MirrorProject, error) {
 	rows, err := q.pool.Query(ctx, `
-		SELECT p.name, COUNT(f.id), COALESCE(SUM(f.file_size), 0), p.updated_at
+		SELECT p.name, COUNT(f.id), COALESCE(SUM(f.file_size), 0), p.updated_at, p.source_label
 		FROM mirror_projects p
 		LEFT JOIN mirror_files f ON f.project_id = p.id
 		WHERE p.band_id = $1 AND p.deleted_at IS NULL
@@ -41,7 +42,7 @@ func (q *Queries) ListMirrorProjects(ctx context.Context, bandID uuid.UUID) ([]M
 	var out []MirrorProject
 	for rows.Next() {
 		var p MirrorProject
-		if err := rows.Scan(&p.Name, &p.FileCount, &p.TotalSize, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.Name, &p.FileCount, &p.TotalSize, &p.UpdatedAt, &p.SourceLabel); err != nil {
 			return nil, err
 		}
 		out = append(out, p)

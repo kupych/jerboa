@@ -6,10 +6,10 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
-    version: "0.26.0",
+    version: "0.27.0",
     date: "2026-09-16",
     summary: [
-      "Now you can install the sync utility on your Mac and use Quick Actions to sync your Garageband projects!"
+      "Now you can install the sync utility on your Mac and use Quick Actions to sync your Garageband projects. Go check out the Sync tab to find out how."
     ]
   },
   {
