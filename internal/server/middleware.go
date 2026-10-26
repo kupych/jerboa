@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
@@ -20,6 +21,19 @@ func opusSibling(filePath string) string {
 		return filePath[:i] + ".opus"
 	}
 	return filePath + ".opus"
+}
+
+// browserLosslessType returns the Content-Type for originals that browsers can
+// decode natively (WAV, FLAC), or "" when the original must not be streamed
+// as-is (ALAC, AIFF, WebM recordings, lossy formats with nothing to gain).
+func browserLosslessType(filePath string) string {
+	switch strings.ToLower(filepath.Ext(filePath)) {
+	case ".wav":
+		return "audio/wav"
+	case ".flac":
+		return "audio/flac"
+	}
+	return ""
 }
 
 // safeDeleteFile deletes filePath and its Opus sibling only if no other track row

@@ -16,6 +16,7 @@
   import Recorder from "../lib/components/Recorder.svelte";
   import TrackUpload from "../lib/components/TrackUpload.svelte";
   import { globalPlayer, playerState } from "../lib/stores/globalPlayer";
+  import { losslessAudio, trackStreamUrl } from "../lib/stores/losslessAudio";
   import ChordProLyrics from "../lib/components/ChordProLyrics.svelte";
 
   marked.setOptions({ breaks: true, gfm: true });
@@ -1006,7 +1007,7 @@
     {#if playingTrackId}
       <audio
         bind:this={audioEl}
-        src={`/api/bands/${slug}/tracks/${playingTrackId}/stream`}
+        src={trackStreamUrl(slug, playingTrackId, $losslessAudio)}
         autoplay
         ontimeupdate={onTimeUpdate}
         onloadedmetadata={onLoadedMetadata}

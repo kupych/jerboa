@@ -2,6 +2,7 @@
 // Survives navigation — the <audio> element lives in Layout.
 
 import { writable, derived, get } from "svelte/store";
+import { trackStreamUrl } from "./losslessAudio";
 
 export interface TrackInfo {
   id: string;
@@ -110,7 +111,7 @@ function loadTrackAtIndex(idx: number) {
     loading: true,
     playing: true,
   }));
-  audioEl.src = `/api/bands/${track.bandSlug}/tracks/${track.id}/stream`;
+  audioEl.src = trackStreamUrl(track.bandSlug, track.id);
   audioEl.play();
 }
 

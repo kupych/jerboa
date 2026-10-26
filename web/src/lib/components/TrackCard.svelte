@@ -3,6 +3,7 @@
   import { apiPost, apiDelete } from "../api";
   import { formatDuration, formatRelativeTime, formatFileSize } from "../utils/format";
   import { globalPlayer, playerState } from "../stores/globalPlayer";
+  import { trackStreamUrl } from "../stores/losslessAudio";
 
   let { track, bandSlug, onRetry, onDelete }: {
     track: {
@@ -31,7 +32,7 @@
   const prefetched = new Set<string>();
   function prefetch() {
     if (track.status !== "ready") return;
-    const url = `/api/bands/${bandSlug}/tracks/${track.id}/stream`;
+    const url = trackStreamUrl(bandSlug, track.id);
     if (prefetched.has(url)) return;
     prefetched.add(url);
     fetch(url, { priority: "low" } as RequestInit).catch(() => {});

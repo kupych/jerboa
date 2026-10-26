@@ -344,6 +344,12 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	isDownload := r.URL.Query().Get("dl") == "1"
+	// hq=1 streams the original (lossless) file inline instead of the Opus
+	// transcode, but only for containers every browser can decode.
+	hqType := ""
+	if r.URL.Query().Get("hq") == "1" {
+		hqType = browserLosslessType(track.FilePath)
+	}
 
 	// For streaming, prefer the ephemeral session mix sibling when present
 	// (parent + all overdubs baked together), else the plain Opus transcode.
@@ -358,7 +364,7 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 			mixHit = true
 		}
 	}
-	if !isDownload && !mixHit {
+	if !isDownload && !mixHit && hqType == "" {
 		opus := opusSibling(track.FilePath)
 		if fileExists(opus) {
 			servePath = opus
@@ -403,6 +409,8 @@ func (h *TrackHandler) Stream(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	} else if useOpus {
 		w.Header().Set("Content-Type", "audio/ogg; codecs=opus")
+	} else if hqType != "" {
+		w.Header().Set("Content-Type", hqType)
 	}
 
 	// Use file's real modtime so bounced tracks bust the browser cache

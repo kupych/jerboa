@@ -5,6 +5,7 @@
   import { formatDuration, setTypeCode, setTypeLabel } from "../lib/utils/format";
   import WaveformPlayer from "../lib/components/WaveformPlayer.svelte";
   import { layoutWidth } from "../lib/stores/layoutWidth";
+  import { losslessAudio, trackStreamUrl } from "../lib/stores/losslessAudio";
 
   let { slug, setId }: { slug: string; setId: string } = $props();
 
@@ -88,7 +89,7 @@
 
   let primaryTrack = $derived(set?.tracks?.[0] ?? null);
   let streamUrl = $derived(
-    primaryTrack ? `/api/bands/${slug}/tracks/${primaryTrack.id}/stream` : ""
+    primaryTrack ? trackStreamUrl(slug, primaryTrack.id, $losslessAudio) : ""
   );
   let setRuntimeMs = $derived(
     set

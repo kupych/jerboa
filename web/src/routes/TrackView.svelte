@@ -10,6 +10,7 @@
   import MultiTrackMixer, { type MixerTrack } from "../lib/components/MultiTrackMixer.svelte";
   import { layoutWidth } from "../lib/stores/layoutWidth";
   import { isDemo } from "../lib/stores/auth";
+  import { losslessAudio, trackStreamUrl, hasLosslessOriginal } from "../lib/stores/losslessAudio";
 
   let { slug, trackId }: { slug: string; trackId: string } = $props();
 
@@ -138,7 +139,7 @@
                 duration_ms: track.duration_ms,
                 offset_ms: 0,
                 isParent: true,
-                streamUrl: `/api/bands/${slug}/tracks/${trackId}/stream`,
+                streamUrl: trackStreamUrl(slug, trackId, $losslessAudio),
                 gain: track.gain,
                 muted: track.muted,
                 loudness_lufs: track.loudness_lufs,
@@ -150,7 +151,7 @@
             duration_ms: od.duration_ms,
             offset_ms: od.offset_ms,
             isParent: false,
-            streamUrl: `/api/bands/${slug}/tracks/${od.id}/stream`,
+            streamUrl: trackStreamUrl(slug, od.id, $losslessAudio),
             uploader: od.uploader,
             vote_count: od.vote_count,
             user_voted: od.user_voted,
@@ -328,7 +329,10 @@
   let assigningSong = $state(false);
 
   let streamVersion = $state(0);
-  let streamUrl = $derived(`/api/bands/${slug}/tracks/${trackId}/stream${streamVersion ? `?v=${streamVersion}` : ""}`);
+  let streamUrl = $derived.by(() => {
+    const url = trackStreamUrl(slug, trackId, $losslessAudio);
+    return streamVersion ? `${url}${url.includes("?") ? "&" : "?"}v=${streamVersion}` : url;
+  });
   let timedComments = $derived(
     comments
       .flatMap((c) => {
@@ -849,6 +853,16 @@
               <span>{formatRelativeTime(track.created_at)}</span>
               <span class="vr-divider">/</span>
               <a href={`/api/bands/${slug}/tracks/${trackId}/stream?dl=1`} class="text-accent hover:text-accent-hover transition-colors">download</a>
+              {#if hasLosslessOriginal(track.format)}
+                <span class="vr-divider">/</span>
+                <button
+                  type="button"
+                  onclick={() => losslessAudio.update((on) => !on)}
+                  class="transition-colors {$losslessAudio ? 'text-accent hover:text-accent-hover' : 'hover:text-text-secondary'}"
+                  title={$losslessAudio ? "Streaming the original file — click for the smaller Opus stream" : "Streaming 128k Opus — click to stream the original lossless file"}
+                  aria-pressed={$losslessAudio}
+                >{$losslessAudio ? "lossless" : "opus"}</button>
+              {/if}
             </div>
           </div>
 
@@ -860,7 +874,7 @@
                   <span class="sys-kicker">PLAYBACK // waveform + markers</span>
                   <span class="sys-code text-text-muted/45">{timedComments.length} markers</span>
                 </div>
-                {#key streamVersion}
+                {#key streamUrl}
                   <WaveformPlayer
                     bind:this={playerRef}
                     src={streamUrl}
